@@ -9,7 +9,6 @@ HEADERS += \
     filter-i386.h
 
 SOURCES += \
-    xdisplay.c \
     unixinput.c \
     uart.c \
     pocsag.c \
@@ -22,7 +21,6 @@ SOURCES += \
     demod_hapn48.c \
     demod_fsk96.c \
     demod_dtmf.c \
-    demod_display.c \
     demod_clipfsk.c \
     demod_afsk24.c \
     demod_afsk24_3.c \
@@ -33,22 +31,27 @@ SOURCES += \
     clip.c \
     demod_eas.c
 
-
 macx{
 DEFINES += DUMMY_AUDIO
+DEFINES += NO_X11
 DEFINES += ARCH_X86_64
-LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib
+#LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib # If you care you can also compile this on OSX. Though
+                                                 # since Apple will remove Xorg from Mountain Lion I feel
+                                                 # like we should get rid of this dependency.
 }
 
 win32{
 }
-
 unix:linux-g++-32:!symbian:!macx{
 DEFINES += ARCH_I386
 LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib
+SOURCES +=  xdisplay.c \
+            demod_display.c
 }
 
 unix:linux-g++-64:!symbian:!macx{
 DEFINES += ARCH_X86_64
 LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib
+SOURCES +=  xdisplay.c \
+            demod_display.c
 }

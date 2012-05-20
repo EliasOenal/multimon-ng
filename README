@@ -3,7 +3,8 @@ MultimonNG is my fork of multimon.
 The following changes have been made so far:
 -Fixes for x64
 -Basic functionality on Mac OS X 'Lion' (Soundcard/OSS input is unsupported)
--DUMMY_AUDIO "backend" (Gets rid of the OSS dependency, breaks audio in doing so)
+-'DUMMY_AUDIO' "backend" (Gets rid of the OSS dependency, breaks audio in doing so)
+-Option 'NO_X11' to disable the X11 dependency since Apple will drop Xorg soon
 -Override mode for POCSAG decoding (e.g. force text decoding)
 -Verbose mode is now listed in '-h'
 -Merged Debian patches for EAS (Emergency Alert System) decoding (untested)

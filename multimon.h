@@ -165,11 +165,13 @@ struct demod_state {
             int lastch;
         } zvei;
 
+#ifndef NO_X11
         struct l1_state_scope {
             int datalen;
             int dispnum;
             float data[512];
         } scope;
+#endif
     } l1;
 };
 
@@ -203,11 +205,19 @@ extern const struct demod_param demod_fsk9600;
 extern const struct demod_param demod_dtmf;
 extern const struct demod_param demod_zvei;
 
+#ifndef NO_X11
 extern const struct demod_param demod_scope;
+#endif
 
+#ifdef NO_X11
+#define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_eas, &demod_ufsk1200, &demod_clipfsk, \
+&demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
+&demod_fsk9600, &demod_dtmf, &demod_zvei
+#else
 #define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_eas, &demod_ufsk1200, &demod_clipfsk, \
 &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
 &demod_fsk9600, &demod_dtmf, &demod_zvei, &demod_scope
+#endif
 
 /* ---------------------------------------------------------------------- */
 
