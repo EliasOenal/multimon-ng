@@ -5,7 +5,7 @@
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
  *      Copyright (C) 2012
- *          Elias Önal    (EliasOenal@gmail.com)
+ *          Elias Oenal    (EliasOenal@gmail.com)
  *
  *      POCSAG (Post Office Code Standard Advisory Group)
  *      Radio Paging Decoder

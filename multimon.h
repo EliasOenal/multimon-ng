@@ -5,7 +5,7 @@
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
  *      Copyright (C) 2012
- *          Elias Önal    (EliasOenal@gmail.com)
+ *          Elias Oenal    (EliasOenal@gmail.com)
  *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by

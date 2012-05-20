@@ -4,6 +4,9 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
+ *      Copyright (C) 2012
+ *          Elias Oenal    (EliasOenal@gmail.com)
+ *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
  *      the Free Software Foundation; either version 2 of the License, or
@@ -378,7 +381,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
 static const char usage_str[] = "multimonNG\n"
         "Demodulates many different radio transmission formats\n"
         "(C) 1996 by Thomas Sailer HB9JNX/AE4WA\n"
-        "(C) 2012 by Elias Önal\n"
+        "(C) 2012 by Elias Oenal\n"
         "  -t <type>  : input file type (any other type than raw requires sox)\n"
         "  -a <demod> : add demodulator\n"
         "  -s <demod> : subtract demodulator\n"
@@ -401,7 +404,7 @@ int main(int argc, char *argv[])
     char *input_type = "hw";
 
     fprintf(stderr, "multimonNG  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-            "            (C) 2012 by Elias Önal\n"
+            "            (C) 2012 by Elias Oenal\n"
             "available demodulators:");
     for (i = 0; i < NUMDEMOD; i++)
         fprintf(stderr, " %s", dem[i]->name);
