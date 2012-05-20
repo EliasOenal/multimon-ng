@@ -322,13 +322,11 @@ static void pocsag_printmessage(struct demod_state *s, struct l2_pocsag_rx *rx,
     if (!rx->numnibbles)
         return;
 
-    if((pocsag_mode == POCSAG_MODE_AUTO) || (pocsag_mode == POCSAG_MODE_NUMERIC))
         if (((service_mask & (0x01 << rx->func)) || (pocsag_mode == POCSAG_MODE_NUMERIC))) {
             verbprintf(-1, "%s%s: Numeric: ", s->dem_par->name, add_name);
             print_msg_numeric(rx);
         }
 
-    if((pocsag_mode == POCSAG_MODE_AUTO) || (pocsag_mode == POCSAG_MODE_ALPHA) || (pocsag_mode == POCSAG_MODE_SKYPER))
         if ((service_mask & (0x10 << rx->func)) || (pocsag_mode == POCSAG_MODE_ALPHA) || (pocsag_mode == POCSAG_MODE_SKYPER))
         {
             if (((rx->func == 3) && (rx->adr >= 4000) && (rx->adr <= 5000))
