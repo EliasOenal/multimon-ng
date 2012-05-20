@@ -8,5 +8,6 @@ The following changes have been made so far:
 -Verbose mode is now listed in '-h'
 
 
-In addition to the 'Makefile' there is also a file ('multimonNG.pro') for qmake. So far this
-has only been tested on OS X, though adding support for new operating systems should be easy.
+In addition to the 'Makefile' there is also a file ('multimonNG.pro') for qmake.
+So far this has only been tested on OS X, though adding support for new operating
+systems should be easy.
