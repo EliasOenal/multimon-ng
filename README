@@ -3,5 +3,10 @@ MultimonNG is my fork of multimon.
 The following changes have been made so far:
 -Fixes for x64
 -Basic functionality on Mac OS X 'Lion' (Soundcard/OSS input is unsupported)
+-DUMMY_AUDIO "backend" (Gets rid of the OSS dependency, breaks audio in doing so)
 -Override mode for POCSAG decoding (e.g. force text decoding)
 -Verbose mode is now listed in '-h'
+
+
+In addition to the 'Makefile' there is also a file ('multimonNG.pro') for qmake. So far this
+has only been tested on OS X, though adding support for new operating systems should be easy.
