@@ -335,7 +335,8 @@ static void pocsag_printmessage(struct demod_state *s, struct l2_pocsag_rx *rx,
                 verbprintf(-1, "%s%s: Alpha (SKYPER): ", s->dem_par->name, add_name);
                 print_msg_skyper(rx);
             }
-            else if ((pocsag_mode == POCSAG_MODE_AUTO) || (pocsag_mode == POCSAG_MODE_ALPHA))
+
+            if (!((rx->func == 3) && (rx->adr >= 4000) && (rx->adr <= 5000)) || (pocsag_mode == POCSAG_MODE_ALPHA))
             {
                 verbprintf(-1, "%s%s: Alpha: ", s->dem_par->name, add_name);
                 print_msg_alpha(rx);
