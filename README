@@ -1,0 +1,7 @@
+MultimonNG is my fork of multimon.
+
+The following changes have been made so far:
+-Fixes for x64
+-Basic functionality on Mac OS X 'Lion' (Soundcard/OSS input is unsupported)
+-Override mode for POCSAG decoding (e.g. force text decoding)
+-Verbose mode is now listed in '-h'
