@@ -6,7 +6,7 @@ The following changes have been made so far:
 -DUMMY_AUDIO "backend" (Gets rid of the OSS dependency, breaks audio in doing so)
 -Override mode for POCSAG decoding (e.g. force text decoding)
 -Verbose mode is now listed in '-h'
-
+-Merged Debian patches for EAS (Emergency Alert System) decoding (untested)
 
 In addition to the 'Makefile' there is also a file ('multimonNG.pro') for qmake.
 So far this has only been tested on OS X, though adding support for new operating

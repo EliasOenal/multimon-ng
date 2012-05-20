@@ -30,7 +30,8 @@ SOURCES += \
     demod_afsk12.c \
     costabi.c \
     costabf.c \
-    clip.c
+    clip.c \
+    demod_eas.c
 
 
 macx{
