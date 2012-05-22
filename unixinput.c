@@ -33,7 +33,6 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <sys/wait.h>
 #include <stdlib.h>
 
 #ifdef SUN_AUDIO
@@ -45,6 +44,7 @@
 #else /* SUN_AUDIO */
 #include <sys/soundcard.h>
 #include <sys/ioctl.h>
+//#include <sys/wait.h>
 #endif /* SUN_AUDIO */
 
 /* ---------------------------------------------------------------------- */

@@ -41,7 +41,12 @@ DEFINES += ARCH_X86_64
 }
 
 win32{
+DEFINES += DUMMY_AUDIO
+DEFINES += NO_X11
+DEFINES += ARCH_I386
 }
+
+
 unix:linux-g++-32:!symbian:!macx{
 DEFINES += ARCH_I386
 LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib
