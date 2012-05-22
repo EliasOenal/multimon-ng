@@ -77,12 +77,12 @@ struct demod_state {
         struct l2_state_pocsag {
             uint32_t rx_data;
             struct l2_pocsag_rx {
-                unsigned char rx_sync;
-                unsigned char rx_word;
-                unsigned char rx_bit;
-                char func;
-                uint32_t adr;
-                unsigned char buffer[128];
+                unsigned char rx_sync;      // sync status
+                unsigned char rx_word;      // word counter
+                unsigned char rx_bit;       // bit counter, counts 32bits
+                char func;                  // POCSAG function (eg 3 for text)
+                uint32_t adr;               // POCSAG address
+                unsigned char buffer[512];
                 uint32_t numnibbles;
             } rx[2];
         } pocsag;
@@ -232,7 +232,7 @@ void clip_init(struct demod_state *s);
 void clip_rxbit(struct demod_state *s, int bit);
 
 void pocsag_init(struct demod_state *s);
-void pocsag_rxbit(struct demod_state *s, int bit);
+void pocsag_rxbit(struct demod_state *s, int32_t bit);
 
 void xdisp_terminate(int cnum);
 int xdisp_start(void);
