@@ -10,8 +10,9 @@ The following changes have been made so far:
 -Brute-Force BCH implementation for POCSAG forward error correction
 -Verbose mode is now listed in '-h'
 -Merged Debian patches for EAS (Emergency Alert System) decoding (untested)
--Portability is a major goal, it now even compiles on Windows/Cygwin (without OSS/X11)
+-Portability is a major goal
+-Compiles on Windows (MinGW or Cygwin) without OSS/X11 and format conversion
 
 In addition to the 'Makefile' there is also a file ('multimonNG.pro') for qmake.
-So far this has only been tested on OS X, though adding support for new operating
+So far this has only been tested on OS X and Windows, though adding support for new operating
 systems should be easy.
