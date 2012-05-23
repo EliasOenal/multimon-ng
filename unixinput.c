@@ -311,11 +311,18 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
      * samples to the requested format
      */
     if (!type || !strcmp(type, "raw")) {
+#ifdef WINDOWS
+        if ((fd = open(fname, O_RDONLY | O_BINARY)) < 0) {
+#else
         if ((fd = open(fname, O_RDONLY)) < 0) {
+#endif
             perror("open");
             exit(10);
         }
-    } else {
+    }
+
+#ifndef ONLY_RAW
+    else {
         if (stat(fname, &statbuf)) {
             perror("stat");
             exit(10);
@@ -350,6 +357,8 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         close(pipedes[1]); /* close writing pipe end */
         fd = pipedes[0];
     }
+#endif
+
     /*
      * demodulate
      */
@@ -374,7 +383,10 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         }
     }
     close(fd);
+
+#ifndef ONLY_RAW
     waitpid(pid, &soxstat, 0);
+#endif
 }
 
 void quit(void)
