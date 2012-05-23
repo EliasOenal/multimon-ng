@@ -7,6 +7,7 @@ The following changes have been made so far:
 -'DUMMY_AUDIO' "backend" (Gets rid of the OSS dependency, breaks audio in doing so)
 -Option 'NO_X11' to disable the X11 dependency since Apple will drop Xorg soon
 -Override mode for POCSAG decoding (e.g. force text decoding)
+-Brute-Force BCH implementation for POCSAG forward error correction
 -Verbose mode is now listed in '-h'
 -Merged Debian patches for EAS (Emergency Alert System) decoding (untested)
 -Portability is a major goal, it now even compiles on Windows/Cygwin (without OSS/X11)
