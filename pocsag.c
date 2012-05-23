@@ -30,6 +30,7 @@
 #include "multimon.h"
 #include <string.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* ---------------------------------------------------------------------- */
 
@@ -371,16 +372,17 @@ void pocsag_de_init(void)
 {
     if(pocsag_total_error_count)
         verbprintf(1, "\n===POCSAG stats===\n"
-                   "Total errors: %u\n"
+                   "Words BCH checked: %u\n"
                    "Corrected errors: %u\n"
                    "Corrected 1bit errors: %u\n"
                    "Corrected 2bit errors: %u\n"
-                   "Uncorrected errors: %u\n"
+                   "Invalid word or >2 bits errors: %u\n\n"
                    "Total bits processed: %u\n"
                    "Bits processed while in sync: %u\n"
                    "Bits processed while out of sync: %u\n"
                    "Percentage of successfully decoded bits: %f\n"
-                   "(50 percent would be optimal)\n",
+                   "(A 50 percent error rate is normal since we always\n"
+                   "try to decode the inverted input signal as well)\n",
                    pocsag_total_error_count,
                    pocsag_corrected_error_count,
                    pocsag_corrected_1bit_error_count,
@@ -390,6 +392,7 @@ void pocsag_de_init(void)
                    pocsag_bits_processed_while_synced,
                    pocsag_bits_processed_while_not_synced,
                    (100./pocsag_total_bits_received)*pocsag_bits_processed_while_synced);
+    fflush(stdout);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -482,9 +485,14 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
 {
     pocsag_total_bits_received++;
 
+    if(!(pocsag_total_bits_received % 10000))
+        verbprintf(2, "Bits received: %u\n", pocsag_total_bits_received);
+
     // Search for Sync
     if (!rx->rx_sync)
     {
+        if(pocsag_brute_repair(&rx_data)); // try to repair sync code
+
         if (rx_data == POCSAG_SYNC) // Sync found!
         {
             verbprintf(2, "Aquired sync!\n");
@@ -533,7 +541,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         }
         else
         {
-            verbprintf(2, "Lost sync, this should have been a re-sync, but wasn't!\n");
+            verbprintf(2, "Lost sync, this (0x%x) should have been a re-sync, but wasn't!\n", rx_data);
             lost_sync(rx);
             return;
         }
@@ -612,6 +620,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         verbprintf(3, "Address!\n");
 
 
+        // new message incoming, output the old one first
         if(rx->numnibbles)
         {
             pocsag_printmessage(s, rx, add_name);
