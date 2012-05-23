@@ -118,7 +118,7 @@ static void clipfsk_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_clipfsk = {
-	"CLIPFSK", FREQ_SAMP, CORRLEN, clipfsk_init, clipfsk_demod
+    "CLIPFSK", FREQ_SAMP, CORRLEN, clipfsk_init, clipfsk_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

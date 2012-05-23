@@ -71,10 +71,15 @@ static void poc24_demod(struct demod_state *s, float *buffer, int length)
 	}
 }
 
+static void poc24_de_init(void)
+{
+    pocsag_de_init();
+}
+
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_poc24 = {
-	"POCSAG2400", FREQ_SAMP, FILTLEN, poc24_init, poc24_demod
+    "POCSAG2400", FREQ_SAMP, FILTLEN, poc24_init, poc24_demod, poc24_de_init
 };
 
 /* ---------------------------------------------------------------------- */

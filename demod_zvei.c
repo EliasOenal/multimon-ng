@@ -140,7 +140,7 @@ static void zvei_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_zvei = {
-	"ZVEI", SAMPLE_RATE, 0, zvei_init, zvei_demod
+    "ZVEI", SAMPLE_RATE, 0, zvei_init, zvei_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

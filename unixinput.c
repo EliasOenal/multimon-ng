@@ -71,6 +71,7 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 
 static int verbose_level = 0;
 extern int pocsag_mode;
+void quit(void);
 
 /* ---------------------------------------------------------------------- */
 
@@ -376,6 +377,19 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
     waitpid(pid, &soxstat, 0);
 }
 
+void quit(void)
+{
+    int i = 0;
+    for (i = 0; i < NUMDEMOD; i++)
+    {
+        if(MASK_ISSET(i))
+            if (dem[i]->de_init)
+            {
+                dem[i]->de_init();
+            }
+    }
+}
+
 /* ---------------------------------------------------------------------- */
 
 static const char usage_str[] = "multimonNG\n"
@@ -523,19 +537,24 @@ intypefound:
     if (!quietflg)
         fprintf(stdout, "\n");
 
+
     if (!strcmp(input_type, "hw")) {
         if ((argc - optind) >= 1)
             input_sound(sample_rate, overlap, argv[optind]);
         else
             input_sound(sample_rate, overlap, NULL);
+        quit();
         exit(0);
     }
     if ((argc - optind) < 1) {
         (void)fprintf(stderr, "no source files specified\n");
         exit(4);
     }
+
     for (i = optind; i < argc; i++)
         input_file(sample_rate, overlap, argv[i], input_type);
+
+    quit();
     exit(0);
 }
 

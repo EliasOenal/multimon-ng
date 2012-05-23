@@ -119,7 +119,7 @@ static void afsk24_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_afsk2400 = {
-	"AFSK2400", FREQ_SAMP, CORRLEN, afsk24_init, afsk24_demod
+    "AFSK2400", FREQ_SAMP, CORRLEN, afsk24_init, afsk24_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

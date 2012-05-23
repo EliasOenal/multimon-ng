@@ -95,7 +95,7 @@ static void hapn48_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_hapn4800 = {
-	"HAPN4800", FREQ_SAMP, 3, hapn48_init, hapn48_demod
+    "HAPN4800", FREQ_SAMP, 3, hapn48_init, hapn48_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

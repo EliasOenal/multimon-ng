@@ -181,6 +181,7 @@ struct demod_param {
     unsigned int overlap;
     void (*init)(struct demod_state *s);
     void (*demod)(struct demod_state *s, float *buffer, int length);
+    void (*de_init)(void);
 };
 
 /* ---------------------------------------------------------------------- */
@@ -233,6 +234,7 @@ void clip_rxbit(struct demod_state *s, int bit);
 
 void pocsag_init(struct demod_state *s);
 void pocsag_rxbit(struct demod_state *s, int32_t bit);
+void pocsag_de_init(void);
 
 void xdisp_terminate(int cnum);
 int xdisp_start(void);

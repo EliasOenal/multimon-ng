@@ -134,7 +134,7 @@ static void eas_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_eas = {
-    "EAS", FREQ_SAMP, CORRLEN, eas_init, eas_demod
+    "EAS", FREQ_SAMP, CORRLEN, eas_init, eas_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

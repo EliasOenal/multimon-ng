@@ -80,7 +80,7 @@ static void scope_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_scope = {
-	"SCOPE", SAMPLING_RATE, 0, scope_init, scope_demod
+    "SCOPE", SAMPLING_RATE, 0, scope_init, scope_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

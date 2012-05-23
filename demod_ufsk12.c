@@ -118,7 +118,7 @@ static void ufsk12_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_ufsk1200 = {
-	"UFSK1200", FREQ_SAMP, CORRLEN, ufsk12_init, ufsk12_demod
+    "UFSK1200", FREQ_SAMP, CORRLEN, ufsk12_init, ufsk12_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

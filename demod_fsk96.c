@@ -122,7 +122,7 @@ static void fsk96_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_fsk9600 = {
-	"FSK9600", FREQ_SAMP, FILTLEN, fsk96_init, fsk96_demod
+    "FSK9600", FREQ_SAMP, FILTLEN, fsk96_init, fsk96_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

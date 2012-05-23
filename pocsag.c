@@ -67,6 +67,14 @@
 
 static unsigned char service_mask = 0x87;
 int pocsag_mode = 0;
+uint32_t pocsag_total_error_count = 0;
+uint32_t pocsag_corrected_error_count = 0;
+uint32_t pocsag_corrected_1bit_error_count = 0;
+uint32_t pocsag_corrected_2bit_error_count = 0;
+uint32_t pocsag_uncorrected_error_count = 0;
+uint32_t pocsag_total_bits_received = 0;
+uint32_t pocsag_bits_processed_while_synced = 0;
+uint32_t pocsag_bits_processed_while_not_synced = 0;
 
 /* ---------------------------------------------------------------------- */
 
@@ -359,6 +367,31 @@ void pocsag_init(struct demod_state *s)
     memset(&s->l2.pocsag, 0, sizeof(s->l2.pocsag));
 }
 
+void pocsag_de_init(void)
+{
+    if(pocsag_total_error_count)
+        verbprintf(1, "\n===POCSAG stats===\n"
+                   "Total errors: %u\n"
+                   "Corrected errors: %u\n"
+                   "Corrected 1bit errors: %u\n"
+                   "Corrected 2bit errors: %u\n"
+                   "Uncorrected errors: %u\n"
+                   "Total bits processed: %u\n"
+                   "Bits processed while in sync: %u\n"
+                   "Bits processed while out of sync: %u\n"
+                   "Percentage of successfully decoded bits: %f\n"
+                   "(50 percent would be optimal)\n",
+                   pocsag_total_error_count,
+                   pocsag_corrected_error_count,
+                   pocsag_corrected_1bit_error_count,
+                   pocsag_corrected_2bit_error_count,
+                   pocsag_uncorrected_error_count,
+                   pocsag_total_bits_received,
+                   pocsag_bits_processed_while_synced,
+                   pocsag_bits_processed_while_not_synced,
+                   (100./pocsag_total_bits_received)*pocsag_bits_processed_while_synced);
+}
+
 /* ---------------------------------------------------------------------- */
 
 enum{
@@ -372,21 +405,104 @@ enum{
     MESSAGE_CLASS_TEXT = 3,
 };
 
+// This might not be elegant, yet effective!
+// Error correction via bruteforce ;)
+//
+// It's a pragmatic solution since this was much faster to implement
+// than understanding the math to solve it while being as effective.
+// Besides that the overhead is neglectable.
+int pocsag_brute_repair(uint32_t* data)
+{
+    if(pocsag_syndrome(*data))
+    {
+        pocsag_total_error_count++;
+        verbprintf(5, "Error in syndrome detected!\n");
+    }
+    else
+        return 0;
+
+    //        pocsag_uncorrected_error_count++;
+    //        return 1;
+
+    // check for single bit errors
+    {
+        uint32_t mask1 = 1;
+        mask1 <<= 31;
+        uint32_t tempData = 0;
+
+        while(mask1)
+        {
+            tempData = *data ^ mask1;
+            if(!pocsag_syndrome(tempData))
+            {
+                *data = tempData;
+                verbprintf(5, "Corrected one bit error!\n");
+                pocsag_corrected_error_count++;
+                pocsag_corrected_1bit_error_count++;
+                return 0;
+            }
+            mask1 >>= 1;
+        }
+
+        //check for two bit errors
+        mask1 = 1;
+        mask1 <<= 31;
+        uint32_t mask2 = 0;
+
+        while(mask1)
+        {
+            mask2 = mask1 >> 1;
+            while(mask2)
+            {
+                tempData = *data ^ mask1 ^ mask2;
+
+                if(!pocsag_syndrome(tempData))
+                {
+                    *data = tempData;
+                    verbprintf(5, "Corrected two bit errors!\n");
+                    pocsag_corrected_error_count++;
+                    pocsag_corrected_2bit_error_count++;
+                    return 0;
+                }
+
+                mask2 >>= 1;
+            }
+            mask1 >>= 1;
+        }
+
+    }
+
+    pocsag_uncorrected_error_count++;
+    verbprintf(5, "Couldn't correct error!\n");
+    return 1;
+}
+
 static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
                        uint32_t rx_data, const char *add_name)
 {
+    pocsag_total_bits_received++;
+
     // Search for Sync
     if (!rx->rx_sync)
     {
         if (rx_data == POCSAG_SYNC) // Sync found!
         {
-            verbprintf(1, "Aquired sync!\n");
+            verbprintf(2, "Aquired sync!\n");
             rx->rx_sync = GOT_SYNC;
             rx->rx_bit = 0;
             rx->rx_word = 0;
             rx->func = MESSAGE_CLASS_INVALID;
+            pocsag_bits_processed_while_synced++;
+        }
+        else
+        {
+            pocsag_bits_processed_while_not_synced++;
         }
         return;
+    }
+    else
+    {
+        pocsag_bits_processed_while_synced++;
     }
 
 
@@ -397,10 +513,10 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
 
 
     // We're in sync, now check the incoming data
-    if(pocsag_syndrome(rx_data))
+    if(pocsag_brute_repair(&rx_data))
     {
         // Invalid data, we lost sync
-        verbprintf(1, "Lost sync due to corrupted data!\n");
+        verbprintf(2, "Lost sync due to corrupted data!\n");
         lost_sync(rx);
         return;
     }
@@ -413,11 +529,11 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
     {
         if(rx_data == POCSAG_SYNC)
         {
-            verbprintf(2, "Re-Synced as expected!\n");
+            verbprintf(3, "Re-Synced as expected!\n");
         }
         else
         {
-            verbprintf(1, "Lost sync, this should have been a re-sync, but wasn't!\n");
+            verbprintf(2, "Lost sync, this should have been a re-sync, but wasn't!\n");
             lost_sync(rx);
             return;
         }
@@ -428,11 +544,11 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
     if(rx_data & POCSAG_MESSAGE_DETECTION)
     {
         // It's a message
-        verbprintf(2, "Message!\n");
+        verbprintf(3, "Message!\n");
 
         if(rx->func == MESSAGE_CLASS_INVALID)
         {
-            verbprintf(1, "We didn't get the header for this message and thus drop it!\n");
+            verbprintf(2, "We didn't get the header for this message and thus drop it!\n");
         }
 
         if (rx->numnibbles > sizeof(rx->buffer)*2 - 5) {
@@ -457,7 +573,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
             bp[2] = data << 4;
         }
         rx->numnibbles += 5;
-        verbprintf(2, "We received something!\n");
+        verbprintf(3, "We received something!\n");
         return;
     }
     else
@@ -469,7 +585,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         // Idle on idle message :D
         if(rx_data == POCSAG_IDLE)
         {
-            verbprintf(2, "Idling!\n");
+            verbprintf(3, "Idling!\n");
 
             // Seems like the transmission is over
             // and we can output now
@@ -484,7 +600,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         // Well sync messages are special as well
         if (rx_data == POCSAG_SYNC) // Sync found!
         {
-            verbprintf(1, "Unexpected re-sync!\n");
+            verbprintf(2, "Unexpected re-sync!\n");
             rx->rx_sync = GOT_SYNC;
             rx->rx_bit = 0;
             rx->rx_word = 0;
@@ -493,7 +609,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
             return;
         }
 
-        verbprintf(2, "Address!\n");
+        verbprintf(3, "Address!\n");
 
 
         if(rx->numnibbles)
@@ -504,7 +620,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         rx->func = (rx_data >> 11) & 3;
         rx->adr = ((rx_data >> 10) & 0x1ffff8) | ((rxword >> 1) & 7); // no idea what this does
         rx->numnibbles = 0;
-        verbprintf(2, "Message class: %u Address: %u\n", rx->func, rx->adr);
+        verbprintf(3, "Message class: %u Address: %u\n", rx->func, rx->adr);
     }
 }
 

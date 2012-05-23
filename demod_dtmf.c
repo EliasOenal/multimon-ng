@@ -145,7 +145,7 @@ static void dtmf_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_dtmf = {
-	"DTMF", SAMPLE_RATE, 0, dtmf_init, dtmf_demod
+    "DTMF", SAMPLE_RATE, 0, dtmf_init, dtmf_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */
