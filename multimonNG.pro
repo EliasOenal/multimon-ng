@@ -51,14 +51,14 @@ DEFINES += WINDOWS
 
 unix:linux-g++-32:!symbian:!macx{
 DEFINES += ARCH_I386
-LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib
+LIBS += -lX11
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
 
 unix:linux-g++-64:!symbian:!macx{
 DEFINES += ARCH_X86_64
-LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib
+LIBS += -lX11
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
