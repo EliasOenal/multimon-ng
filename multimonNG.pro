@@ -51,21 +51,23 @@ DEFINES += WINDOWS
 
 unix:linux-g++-32:!symbian:!macx{
 DEFINES += ARCH_I386
-LIBS += -lX11
+DEFINES += PULSE_AUDIO
+LIBS += -lX11 -lpulse-simple
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
 
 unix:linux-g++-64:!symbian:!macx{
 DEFINES += ARCH_X86_64
-LIBS += -lX11
+DEFINES += PULSE_AUDIO
+LIBS += -lX11 -lpulse-simple
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
 
 unix:linux-g++:!symbian:!macx{
-#DEFINES += ARCH_I386
-LIBS += -lX11
+DEFINES += PULSE_AUDIO
+LIBS += -lX11 -lpulse-simple
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
