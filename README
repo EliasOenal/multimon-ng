@@ -15,7 +15,7 @@ The following changes have been made so far:
 -Compiles on Windows (MinGW or Cygwin) without OSS/X11 and format conversion
 -PulseAudio support, contributed by inf_l00p_
 
-In addition to the 'Makefile' there is also a file ('multimonNG.pro') for qmake which is the preferred way of building MultimonNG. I recommend deleting the legacy Makefile and using qmake to generate a new one.
+In addition to the deprecated legacy Makefile there is also a file for qmake which is the preferred way of building MultimonNG. It's recommended to use qmake to generate the Makefile. ('qmake multimonNG.pro && make')
 So far this has only been tested on OS X and Windows, though adding support for new operating systems should be easy.
 
 Files can be easily converted into multimonNGs native raw format using 'sox'.
