@@ -62,3 +62,10 @@ LIBS += -lX11
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
+
+unix:linux-g++:!symbian:!macx{
+#DEFINES += ARCH_I386
+LIBS += -lX11
+SOURCES +=  xdisplay.c \
+            demod_display.c
+}
