@@ -37,7 +37,7 @@ else
 CFLAGS		+=-O3 -falign-loops=2 -falign-jumps=2 \
 		  -falign-functions=2 #-DARCH_I386 -march=i486 
 endif
-LDFLAGSX	= #-lX11 -L/usr/X11R6/lib
+LDFLAGSX	= -lX11 -L/usr/X11R6/lib
 endif
 endif
 
@@ -74,8 +74,8 @@ SRC_L1		=demod_afsk12.c demod_afsk24.c demod_afsk24_2.c demod_afsk24_3.c
 SRC_L1		+=demod_ufsk12.c demod_clipfsk.c
 SRC_L1		+=demod_hapn48.c demod_fsk96.c
 SRC_L1		+=demod_poc5.c demod_poc12.c demod_poc24.c
-SRC_L1		+=demod_dtmf.c demod_zvei.c demod_eas.c #demod_display.c
-SRC_MISC	=unixinput.c costabf.c #xdisplay.c
+SRC_L1		+=demod_dtmf.c demod_zvei.c demod_eas.c demod_display.c
+SRC_MISC	=unixinput.c costabf.c xdisplay.c
 
 SRC_GEN		=gen.c gen_dtmf.c gen_sin.c gen_zvei.c gen_hdlc.c gen_uart.c gen_clipfsk.c costabi.c
 
