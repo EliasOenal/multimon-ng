@@ -39,6 +39,9 @@
 #include <sys/audioio.h>
 #include <stropts.h>
 #include <sys/conf.h>
+#elif PULSE_AUDIO
+#include <pulse/simple.h>
+#include <pulse/error.h>
 #elif DUMMY_AUDIO
 // NO AUDIO FOR OSX :/
 #else /* SUN_AUDIO */
@@ -172,6 +175,59 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
 {
     //printf("DUMMY SOUND IN!");
     //fflush(stdout);
+}
+
+#elif PULSE_AUDIO
+static void input_sound(unsigned int sample_rate, unsigned int overlap,
+                        const char *ifname)
+{
+
+    short buffer[8192];
+    float fbuf[16384];
+    unsigned int fbuf_cnt = 0;
+    int i;
+    int error;
+    short *sp;
+
+    // Init stuff from pa.org
+    pa_simple *s;
+    pa_sample_spec ss;
+
+    ss.format = PA_SAMPLE_S16NE;
+    ss.channels = 1;
+    ss.rate = sample_rate;
+
+
+    /* Create the recording stream */
+    if (!(s = pa_simple_new(NULL, "multimonNG", PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
+        fprintf(stderr, __FILE__": pa_simple_new() failed: %s\n", pa_strerror(error));
+        exit(4); 
+    }
+
+    for (;;) {
+        i = pa_simple_read(s, sp = buffer, sizeof(buffer), &error);
+        if (i < 0 && errno != EAGAIN) {
+            perror("read");
+            fprintf(stderr, "error 1\n");
+            exit(4);
+        }
+        i=sizeof(buffer);
+        if (!i)
+            break;
+
+        if (i > 0) {
+            for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
+                fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
+            if (i)
+                fprintf(stderr, "warning: noninteger number of samples read\n");
+            if (fbuf_cnt > overlap) {
+                process_buffer(fbuf, fbuf_cnt-overlap);
+                memmove(fbuf, fbuf+fbuf_cnt-overlap, overlap*sizeof(fbuf[0]));
+                fbuf_cnt = overlap;
+            }
+        }
+    }
+    pa_simple_free(s);
 }
 
 #else /* SUN_AUDIO */

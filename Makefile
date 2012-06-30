@@ -24,20 +24,20 @@ LDFLAGSX	=-lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib -lsocket -lnsl
 else
 ifeq ($(MACH),x86_64)
 ifeq ($(DEBUG),y)
-CFLAGS          +=-g -O -DARCH_X86_64
+CFLAGS          +=-g -O -DARCH_X86_64 -DPULSE_AUDIO
 else
-CFLAGS          +=-O3 -DARCH_X86_64
+CFLAGS          +=-O3 -DARCH_X86_64 -DPULSE_AUDIO
 endif
-LDFLAGSX        = -lX11 -L/usr/X11R6/lib
+LDFLAGSX        = -lX11 -L/usr/X11R6/lib -lpulse-simple
 else
 ifeq ($(DEBUG),y)
 CFLAGS		+=-g -O -falign-loops=2 -falign-jumps=2 \
-		  -malign-functions=2 #-DARCH_I386 -march=i486
+		  -malign-functions=2 -DPULSE_AUDIO #-DARCH_I386 -march=i486
 else
 CFLAGS		+=-O3 -falign-loops=2 -falign-jumps=2 \
-		  -falign-functions=2 #-DARCH_I386 -march=i486 
+		  -falign-functions=2 -DPULSE_AUDIO #-DARCH_I386 -march=i486 
 endif
-LDFLAGSX	= -lX11 -L/usr/X11R6/lib
+LDFLAGSX	= -lX11 -L/usr/X11R6/lib -lpulse-simple
 endif
 endif
 
