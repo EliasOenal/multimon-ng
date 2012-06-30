@@ -28,7 +28,7 @@ CFLAGS          +=-g -O -DARCH_X86_64
 else
 CFLAGS          +=-O3 -DARCH_X86_64
 endif
-LDFLAGSX        = #-lX11 -L/usr/X11R6/lib
+LDFLAGSX        = -lX11 -L/usr/X11R6/lib
 else
 ifeq ($(DEBUG),y)
 CFLAGS		+=-g -O -falign-loops=2 -falign-jumps=2 \
