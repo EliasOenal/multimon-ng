@@ -70,7 +70,7 @@ int gen_dtmf(signed short *buf, int buflen, struct gen_params *p, struct gen_sta
 			if (!c)
 				return num;
 			s->s.dtmf.ch_idx++;
-			cp = memchr(dtmf_transl, toupper(c), 16);
+			cp = (char*)memchr(dtmf_transl, toupper(c), 16);
 			if (!cp) {
 				s->s.dtmf.time = s->s.dtmf.time2 = 1;
 				fprintf(stderr, "gen: dtmf; invalid char '%c'\n", c);

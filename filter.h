@@ -33,11 +33,21 @@
 /* ---------------------------------------------------------------------- */
 
 extern inline unsigned int hweight32(unsigned int w)
-        __attribute__ ((unused));
+#ifndef _MSC_VER
+        __attribute__ ((unused))
+#endif
+;
 extern inline unsigned int hweight16(unsigned short w)
-        __attribute__ ((unused));
+#ifndef _MSC_VER
+        __attribute__ ((unused))
+#endif
+;
+
 extern inline unsigned int hweight8(unsigned char w)
-        __attribute__ ((unused));
+#ifndef _MSC_VER
+        __attribute__ ((unused))
+#endif
+;
 
 extern inline unsigned int hweight32(unsigned int w) 
 {
@@ -64,9 +74,15 @@ extern inline unsigned int hweight8(unsigned char w)
 }
 
 extern inline unsigned int gcd(unsigned int x, unsigned int y)
-        __attribute__ ((unused));
+#ifndef _MSC_VER
+        __attribute__ ((unused))
+#endif
+;
 extern inline unsigned int lcm(unsigned int x, unsigned int y)
-        __attribute__ ((unused));
+#ifndef _MSC_VER
+        __attribute__ ((unused))
+#endif
+;
 
 extern inline unsigned int gcd(unsigned int x, unsigned int y)
 {
@@ -103,7 +119,7 @@ extern inline float mac(const float *a, const float *b, unsigned int size)
 
 extern inline float fsqr(float f)
 {
-	return f*f;
+        return f*f;
 }
 
 /* ---------------------------------------------------------------------- */

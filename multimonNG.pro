@@ -30,7 +30,6 @@ SOURCES += \
     costabf.c \
     clip.c \
     demod_eas.c
-
 macx{
 DEFINES += DUMMY_AUDIO
 DEFINES += NO_X11
@@ -41,10 +40,13 @@ DEFINES += ARCH_X86_64
 }
 
 win32{
-DEFINES += DUMMY_AUDIO
+#DEFINES += DUMMY_AUDIO
+DEFINES += WIN32_AUDIO
 DEFINES += NO_X11
 DEFINES += ONLY_RAW
 DEFINES += WINDOWS
+SOURCES += win32_soundin.c
+LIBS += -lwinmm
 #DEFINES += ARCH_I386
 }
 

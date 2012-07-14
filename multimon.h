@@ -31,6 +31,10 @@
 
 #include <stdint.h>
 
+#ifdef _MSC_VER
+#include "msvc_support.h"
+#endif
+
 /* ---------------------------------------------------------------------- */
 
 extern const float costabf[0x400];
@@ -47,17 +51,28 @@ enum
     POCSAG_MODE_SKYPER = 3,
 };
 
-struct demod_state {
-    const struct demod_param *dem_par;
-    union {
-        struct l2_state_clipfsk {
+struct l2_state_clipfsk {
             unsigned char rxbuf[512];
             unsigned char *rxptr;
             uint32_t rxstate;
             uint32_t rxbitstream;
             uint32_t rxbitbuf;
-        } clipfsk;
+        };
 
+struct l2_pocsag_rx {
+                unsigned char rx_sync;      // sync status
+                unsigned char rx_word;      // word counter
+                unsigned char rx_bit;       // bit counter, counts 32bits
+                char func;                  // POCSAG function (eg 3 for text)
+                uint32_t adr;               // POCSAG address
+                unsigned char buffer[512];
+                uint32_t numnibbles;
+            } ;
+
+struct demod_state {
+    const struct demod_param *dem_par;
+    union {
+        struct l2_state_clipfsk clipfsk;
         struct l2_state_uart {
             unsigned char rxbuf[512];
             unsigned char *rxptr;
@@ -76,15 +91,7 @@ struct demod_state {
 
         struct l2_state_pocsag {
             uint32_t rx_data;
-            struct l2_pocsag_rx {
-                unsigned char rx_sync;      // sync status
-                unsigned char rx_word;      // word counter
-                unsigned char rx_bit;       // bit counter, counts 32bits
-                char func;                  // POCSAG function (eg 3 for text)
-                uint32_t adr;               // POCSAG address
-                unsigned char buffer[512];
-                uint32_t numnibbles;
-            } rx[2];
+            struct l2_pocsag_rx rx[2];
         } pocsag;
     } l2;
     union {

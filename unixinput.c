@@ -30,7 +30,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
@@ -42,6 +44,8 @@
 #elif PULSE_AUDIO
 #include <pulse/simple.h>
 #include <pulse/error.h>
+#elif WIN32_AUDIO
+//see win32_soundin.c
 #elif DUMMY_AUDIO
 // NO AUDIO FOR OSX :/
 #else /* SUN_AUDIO */
@@ -72,7 +76,7 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 
 /* ---------------------------------------------------------------------- */
 
-static int verbose_level = 0;
+static int verbose_level = -1;
 extern int pocsag_mode;
 void quit(void);
 
@@ -90,7 +94,7 @@ void verbprintf(int verb_level, const char *fmt, ...)
 
 /* ---------------------------------------------------------------------- */
 
-static void process_buffer(float *buf, unsigned int len)
+void process_buffer(float *buf, unsigned int len)
 {
     int i;
 
@@ -176,7 +180,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     //printf("DUMMY SOUND IN!");
     //fflush(stdout);
 }
-
+#elif WIN32_AUDIO
+//Implemented in win32_soundin.c
+void input_sound(unsigned int sample_rate, unsigned int overlap, const char *ifname);
 #elif PULSE_AUDIO
 static void input_sound(unsigned int sample_rate, unsigned int overlap,
                         const char *ifname)
@@ -428,7 +434,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             break;
         if (i > 0) {
             for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
-                fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
+                fbuf[fbuf_cnt++] = (*sp) * (1.0f/32768.0f);
             if (i)
                 fprintf(stderr, "warning: noninteger number of samples read\n");
             if (fbuf_cnt > overlap) {

@@ -12,11 +12,12 @@ The following changes have been made so far:
 -Verbose mode is now listed in '-h'
 -Merged Debian patches for EAS (Emergency Alert System) decoding (untested)
 -Portability is a major goal
--Compiles on Windows (MinGW or Cygwin) without OSS/X11 and format conversion
+-Compiles on Windows (MinGW or Cygwin) without format conversion
 -PulseAudio support, contributed by inf_l00p_
+-Windows native audio and a VisualStudio/MSVC project file, contributed by bzzt_ploink
 
 In addition to the deprecated legacy Makefile there is also a file for qmake which is the preferred way of building MultimonNG. It's recommended to use qmake to generate the Makefile. ('qmake multimonNG.pro && make')
-So far multimonNG has been successfully built on OS X, Debian, Ubuntu and Windows. (On Windows using the Qt-MinGW build environment, as well as Cygwin)
+So far multimonNG has been successfully built on OS X, Debian, Ubuntu and Windows. (On Windows using the Qt-MinGW build environment, as well as Cygwin and VisualStudio/MSVC)
 
 Files can be easily converted into multimonNGs native raw format using 'sox'.
 e.g. "sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw pocsag_short.raw"
