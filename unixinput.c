@@ -76,7 +76,7 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 
 /* ---------------------------------------------------------------------- */
 
-static int verbose_level = -1;
+static int verbose_level = 0;
 extern int pocsag_mode;
 void quit(void);
 
