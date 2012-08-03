@@ -74,7 +74,7 @@ struct demod_state {
     union {
         struct l2_state_clipfsk clipfsk;
         struct l2_state_uart {
-            unsigned char rxbuf[512];
+            unsigned char rxbuf[512*100];
             unsigned char *rxptr;
             uint32_t rxstate;
             uint32_t rxbitstream;
