@@ -19,6 +19,7 @@
  *      Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#ifndef NO_X11
 /* ---------------------------------------------------------------------- */
 
 #include "multimon.h"
@@ -83,4 +84,6 @@ const struct demod_param demod_scope = {
     "SCOPE", SAMPLING_RATE, 0, scope_init, scope_demod, NULL
 };
 
+
 /* ---------------------------------------------------------------------- */
+#endif //NO_X11

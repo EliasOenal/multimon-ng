@@ -19,6 +19,7 @@
  *      Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
+#ifndef NO_X11
 /* ---------------------------------------------------------------------- */
 
 #include "multimon.h"
@@ -443,3 +444,4 @@ int xdisp_update(int cnum, float *f)
 }
 
 /* ---------------------------------------------------------------------- */
+#endif //NO_X11

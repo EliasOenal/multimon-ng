@@ -137,7 +137,7 @@ static void print_msg_numeric(struct l2_pocsag_rx *rx)
     static const char *conv_table = "084 2.6]195-3U7[";
     unsigned char *bp = rx->buffer;
     int len = rx->numnibbles;
-    char buf[256], *cp = buf;
+    char buf[512], *cp = buf;
 
     if (len >= sizeof(buf))
         len = sizeof(buf)-1;
@@ -239,7 +239,7 @@ static void print_msg_alpha(struct l2_pocsag_rx *rx)
     int datalen = 0;
     unsigned char *bp = rx->buffer;
     int len = rx->numnibbles;
-    char buf[256], *cp = buf;
+    char buf[512], *cp = buf;
     int buffree = sizeof(buf)-1;
     unsigned char curchr;
     char *tstr;
@@ -288,7 +288,7 @@ static void print_msg_skyper(struct l2_pocsag_rx *rx)
     int datalen = 0;
     unsigned char *bp = rx->buffer;
     int len = rx->numnibbles;
-    char buf[256], *cp = buf;
+    char buf[512], *cp = buf;
     int buffree = sizeof(buf)-1;
     unsigned char curchr;
     char *tstr;
@@ -599,6 +599,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
             // and we can output now
             if(rx->numnibbles)
             {
+                verbprintf(3, "Printing message, received %u nibbles.\n", rx->numnibbles);
                 pocsag_printmessage(s, rx, add_name);
                 rx->numnibbles = 0;
             }
