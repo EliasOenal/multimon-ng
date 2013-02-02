@@ -33,6 +33,7 @@ SOURCES += \
 macx{
 DEFINES += DUMMY_AUDIO
 DEFINES += NO_X11
+DEFINES += CHARSET_UTF8
 #DEFINES += ARCH_X86_64
 #LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib # If you care you can also compile this on OSX. Though
                                                  # since Apple will remove Xorg from Mountain Lion I feel
@@ -54,6 +55,7 @@ LIBS += -lwinmm
 unix:linux-g++-32:!symbian:!macx{
 #DEFINES += ARCH_I386
 DEFINES += PULSE_AUDIO
+DEFINES += CHARSET_UTF8
 LIBS += -lX11 -lpulse-simple -lpulse
 SOURCES +=  xdisplay.c \
             demod_display.c
@@ -62,6 +64,7 @@ SOURCES +=  xdisplay.c \
 unix:linux-g++-64:!symbian:!macx{
 #DEFINES += ARCH_X86_64
 DEFINES += PULSE_AUDIO
+DEFINES += CHARSET_UTF8
 LIBS += -lX11 -lpulse-simple -lpulse
 SOURCES +=  xdisplay.c \
             demod_display.c
@@ -69,6 +72,7 @@ SOURCES +=  xdisplay.c \
 
 unix:linux-g++:!symbian:!macx{
 DEFINES += PULSE_AUDIO
+DEFINES += CHARSET_UTF8
 LIBS += -lX11 -lpulse-simple
 SOURCES +=  xdisplay.c \
             demod_display.c
