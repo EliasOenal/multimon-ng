@@ -33,7 +33,7 @@ SOURCES += \
 macx{
 DEFINES += DUMMY_AUDIO
 DEFINES += NO_X11
-DEFINES += ARCH_X86_64
+#DEFINES += ARCH_X86_64
 #LIBS += -lX11 -L/usr/X11R6/lib -R/usr/X11R6/lib # If you care you can also compile this on OSX. Though
                                                  # since Apple will remove Xorg from Mountain Lion I feel
                                                  # like we should get rid of this dependency.
