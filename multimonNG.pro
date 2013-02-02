@@ -52,7 +52,7 @@ LIBS += -lwinmm
 
 
 unix:linux-g++-32:!symbian:!macx{
-DEFINES += ARCH_I386
+#DEFINES += ARCH_I386
 DEFINES += PULSE_AUDIO
 LIBS += -lX11 -lpulse-simple -lpulse
 SOURCES +=  xdisplay.c \
@@ -60,7 +60,7 @@ SOURCES +=  xdisplay.c \
 }
 
 unix:linux-g++-64:!symbian:!macx{
-DEFINES += ARCH_X86_64
+#DEFINES += ARCH_X86_64
 DEFINES += PULSE_AUDIO
 LIBS += -lX11 -lpulse-simple -lpulse
 SOURCES +=  xdisplay.c \
