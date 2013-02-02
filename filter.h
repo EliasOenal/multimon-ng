@@ -106,7 +106,7 @@ extern inline unsigned int lcm(unsigned int x, unsigned int y)
 /* ---------------------------------------------------------------------- */
 
 #ifndef __HAVE_ARCH_MAC
-extern inline float mac(const float *a, const float *b, unsigned int size)
+static inline float mac(const float *a, const float *b, unsigned int size)
 {
 	float sum = 0;
 	unsigned int i;
@@ -117,7 +117,7 @@ extern inline float mac(const float *a, const float *b, unsigned int size)
 }
 #endif /* __HAVE_ARCH_MAC */
 
-extern inline float fsqr(float f)
+static inline float fsqr(float f)
 {
         return f*f;
 }
