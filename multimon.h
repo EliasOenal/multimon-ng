@@ -51,6 +51,20 @@ enum
     POCSAG_MODE_SKYPER = 3,
 };
 
+enum EAS_L2_State
+{
+   EAS_L2_IDLE = 0,
+   EAS_L2_HEADER_SEARCH = 1,
+   EAS_L2_READING_MESSAGE = 2,
+   EAS_L2_READING_EOM = 3,
+};
+
+enum EAS_L1_State
+{
+    EAS_L1_IDLE = 0,
+    EAS_L1_SYNC = 1,
+};
+
 struct l2_state_clipfsk {
             unsigned char rxbuf[512];
             unsigned char *rxptr;
@@ -93,6 +107,16 @@ struct demod_state {
             uint32_t rx_data;
             struct l2_pocsag_rx rx[2];
         } pocsag;
+        
+        struct l2_state_eas {
+            char last_message[269];
+            char msg_buf[4][269];
+            char head_buf[4];
+            uint32_t headlen;
+            uint32_t msglen;
+            uint32_t msgno;
+            uint32_t state;
+        } eas;
     } l2;
     union {
         struct l1_state_poc5 {
@@ -115,8 +139,11 @@ struct demod_state {
         struct l1_state_eas {
             unsigned int dcd_shreg;
             unsigned int sphase;
-            unsigned int lasts;
+            unsigned char lasts;
             unsigned int subsamp;
+            unsigned char byte_counter;
+            int dcd_integrator;
+            uint32_t state;
         } eas;
 
         struct l1_state_ufsk12 {
