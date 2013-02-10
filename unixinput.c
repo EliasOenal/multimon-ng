@@ -374,7 +374,13 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
      * if the input type is not raw, sox is started to convert the
      * samples to the requested format
      */
-    if (!type || !strcmp(type, "raw")) {
+    if (!strcmp(fname, "-"))
+    {
+       // read from stdin and force raw input
+       fd = 0;
+       type = "raw";
+    }
+    else if (!type || !strcmp(type, "raw")) {
 #ifdef WINDOWS
         if ((fd = open(fname, O_RDONLY | O_BINARY)) < 0) {
 #else
@@ -471,7 +477,10 @@ void quit(void)
 static const char usage_str[] = "multimonNG\n"
         "Demodulates many different radio transmission formats\n"
         "(C) 1996 by Thomas Sailer HB9JNX/AE4WA\n"
-        "(C) 2012 by Elias Oenal\n"
+        "(C) 2012 by Elias Oenal\n\n"
+        "Usage: %s [file] [file] [file] ...\n"
+        "  If no [file] is given, input will be read from your default sound\n"
+        "  hardware. A filename of \"-\" denotes standard input.\n" 
         "  -t <type>  : input file type (any other type than raw requires sox)\n"
         "  -a <demod> : add demodulator\n"
         "  -s <demod> : subtract demodulator\n"
@@ -479,7 +488,10 @@ static const char usage_str[] = "multimonNG\n"
         "  -q         : quiet\n"
         "  -v <level> : level of verbosity (for example '-v 10')\n"
         "  -f <mode>  : forces POCSAG data decoding as <mode> (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
-        "  -h         : this help\n";
+        "  -h         : this help\n"
+        "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
+        "   samples at the demodulator's input sampling rate, which is\n"
+        "   usually 22050 kHz. Raw input is assumed and required if piped input is used.\n";
 
 int main(int argc, char *argv[])
 {
@@ -581,7 +593,7 @@ intypefound:
         }
     }
     if (errflg) {
-        (void)fprintf(stderr, usage_str);
+        (void)fprintf(stderr, usage_str, argv[0]);
         exit(2);
     }
     if (mask_first)
@@ -613,6 +625,10 @@ intypefound:
     if (!quietflg)
         fprintf(stdout, "\n");
 
+    if (optind < argc && !strcmp(argv[optind], "-"))
+    {
+       input_type = "raw";
+    }
 
     if (!strcmp(input_type, "hw")) {
         if ((argc - optind) >= 1)
