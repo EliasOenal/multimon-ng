@@ -82,7 +82,7 @@ void quit(void);
 
 /* ---------------------------------------------------------------------- */
 
-void verbprintf(int verb_level, const char *fmt, ...)
+void _verbprintf(int verb_level, const char *fmt, ...)
 {
     va_list args;
 
@@ -209,7 +209,7 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     /* Create the recording stream */
     if (!(s = pa_simple_new(NULL, "multimonNG", PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
         fprintf(stderr, __FILE__": pa_simple_new() failed: %s\n", pa_strerror(error));
-        exit(4); 
+        exit(4);
     }
 
     for (;;) {
@@ -480,7 +480,7 @@ static const char usage_str[] = "multimonNG\n"
         "(C) 2012 by Elias Oenal\n\n"
         "Usage: %s [file] [file] [file] ...\n"
         "  If no [file] is given, input will be read from your default sound\n"
-        "  hardware. A filename of \"-\" denotes standard input.\n" 
+        "  hardware. A filename of \"-\" denotes standard input.\n"
         "  -t <type>  : input file type (any other type than raw requires sox)\n"
         "  -a <demod> : add demodulator\n"
         "  -s <demod> : subtract demodulator\n"
