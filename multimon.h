@@ -107,7 +107,7 @@ struct demod_state {
             uint32_t rx_data;
             struct l2_pocsag_rx rx[2];
         } pocsag;
-        
+
         struct l2_state_eas {
             char last_message[269];
             char msg_buf[4][269];
@@ -256,7 +256,12 @@ extern const struct demod_param demod_scope;
 
 /* ---------------------------------------------------------------------- */
 
-void verbprintf(int verb_level, const char *fmt, ...);
+void _verbprintf(int verb_level, const char *fmt, ...);
+#if !defined(MAX_VERBOSE_LEVEL)
+#   define MAX_VERBOSE_LEVEL 0
+#endif
+#define verbprintf(level, ...) \
+    do { if (level <= MAX_VERBOSE_LEVEL) _verbprintf(level, __VA_ARGS__); } while (0)
 
 void hdlc_init(struct demod_state *s);
 void hdlc_rxbit(struct demod_state *s, int bit);
