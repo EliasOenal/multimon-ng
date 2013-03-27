@@ -1,6 +1,7 @@
 TEMPLATE = app
 CONFIG += console
 CONFIG -= qt
+DEFINES += MAX_VERBOSE_LEVEL=1
 
 HEADERS += \
     multimon.h \
