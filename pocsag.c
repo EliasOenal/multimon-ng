@@ -31,6 +31,7 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /* ---------------------------------------------------------------------- */
 
@@ -467,7 +468,7 @@ transpose_clone(uint32_t src, uint32_t *out)
 static void
 bitslice_syndrome(uint32_t *slices)
 {
-    const firstBit = BCH_N - 1;
+    const int firstBit = BCH_N - 1;
     int i, n;
     uint32_t paritymask = slices[0];
 
@@ -655,7 +656,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
     // Search for Sync
     if (!rx->rx_sync)
     {
-        if(pocsag_brute_repair(&rx_data)); // try to repair sync code
+        pocsag_brute_repair(&rx_data); // try to repair sync code
 
         if (rx_data == POCSAG_SYNC) // Sync found!
         {
