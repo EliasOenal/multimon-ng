@@ -10,19 +10,19 @@
  *      POCSAG (Post Office Code Standard Advisory Group)
  *      Radio Paging Decoder
  *
- *	This program is free software; you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation; either version 2 of the License, or
- *	(at your option) any later version.
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
  *
- *	This program is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *	GNU General Public License for more details.
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
  *
- *	You should have received a copy of the GNU General Public License
- *	along with this program; if not, write to the Free Software
- *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *  You should have received a copy of the GNU General Public License
+ *  along with this program; if not, write to the Free Software
+ *  Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 
 /* ---------------------------------------------------------------------- */
@@ -39,19 +39,7 @@
 
 /* ---------------------------------------------------------------------- */
 
-/*
- * the code used by POCSAG is a (n=31,k=21) BCH Code with dmin=5,
- * thus it could correct two bit errors in a 31-Bit codeword.
- * It is a systematic code.
- * The generator polynomial is:
- *   g(x) = x^10+x^9+x^8+x^6+x^5+x^3+1
- * The parity check polynomial is:
- *   h(x) = x^21+x^20+x^18+x^16+x^14+x^13+x^12+x^11+x^8+x^5+x^3+1
- * g(x) * h(x) = x^n+1
- */
-#define BCH_POLY 03551 /* octal */
-#define BCH_N    31
-#define BCH_K    21
+
 
 /*
  * some codewords with special POCSAG meaning
@@ -98,6 +86,20 @@ static inline unsigned char even_parity(uint32_t data)
 
 /* ---------------------------------------------------------------------- */
 
+/*
+ * the code used by POCSAG is a (n=31,k=21) BCH Code with dmin=5,
+ * thus it could correct two bit errors in a 31-Bit codeword.
+ * It is a systematic code.
+ * The generator polynomial is:
+ *   g(x) = x^10+x^9+x^8+x^6+x^5+x^3+1
+ * The parity check polynomial is:
+ *   h(x) = x^21+x^20+x^18+x^16+x^14+x^13+x^12+x^11+x^8+x^5+x^3+1
+ * g(x) * h(x) = x^n+1
+ */
+#define BCH_POLY 03551 /* octal */
+#define BCH_N    31
+#define BCH_K    21
+
 static uint32_t pocsag_code(uint32_t data)
 {
     uint32_t ret = data << (BCH_N-BCH_K), shreg = ret;
@@ -133,7 +135,7 @@ static unsigned int pocsag_syndrome(uint32_t data)
 
 /* ---------------------------------------------------------------------- */
 
-static void print_msg_numeric(struct l2_pocsag_rx *rx) 
+static void print_msg_numeric(struct l2_pocsag_rx *rx)
 {
     static const char *conv_table = "084 2.6]195-3U7[";
     unsigned char *bp = rx->buffer;
@@ -153,7 +155,7 @@ static void print_msg_numeric(struct l2_pocsag_rx *rx)
 
 /* ---------------------------------------------------------------------- */
 
-static char *translate_alpha(unsigned char chr) 
+static char *translate_alpha(unsigned char chr)
 {
     static const struct trtab {
         unsigned char code;
@@ -238,11 +240,11 @@ static char *translate_alpha(unsigned char chr)
                 return NULL;
         }
     }
-}				
+}
 
 /* ---------------------------------------------------------------------- */
 
-static void print_msg_alpha(struct l2_pocsag_rx *rx) 
+static void print_msg_alpha(struct l2_pocsag_rx *rx)
 {
     uint32_t data = 0;
     int datalen = 0;
@@ -291,7 +293,7 @@ static void print_msg_alpha(struct l2_pocsag_rx *rx)
 
 /* ---------------------------------------------------------------------- */
 
-static void print_msg_skyper(struct l2_pocsag_rx *rx) 
+static void print_msg_skyper(struct l2_pocsag_rx *rx)
 {
     uint32_t data = 0;
     int datalen = 0;
@@ -340,7 +342,7 @@ static void print_msg_skyper(struct l2_pocsag_rx *rx)
 
 /* ---------------------------------------------------------------------- */
 
-static void pocsag_printmessage(struct demod_state *s, struct l2_pocsag_rx *rx, 
+static void pocsag_printmessage(struct demod_state *s, struct l2_pocsag_rx *rx,
                                 const char *add_name)
 {
     verbprintf(-2, "%s%s: Address: %7lu  Function: %1u\n",
@@ -404,6 +406,101 @@ void pocsag_de_init(void)
     fflush(stdout);
 }
 
+static inline void
+transpose32(uint32_t *A) {
+    int j, k;
+    uint32_t m, t;
+
+    m = 0x0000FFFF;
+    for (j = 16; j != 0; j = j >> 1, m = m ^ (m << j)) {
+        for (k = 0; k < 32; k = (k + j + 1) & ~j) {
+            t = (A[k] ^ (A[k+j] >> j)) & m;
+            A[k] = A[k] ^ t;
+            A[k+j] = A[k+j] ^ (t << j);
+        }
+    }
+}
+
+static uint32_t *
+transpose(uint32_t *matrix)
+{
+    int i, j;
+    uint32_t *out = malloc(sizeof(uint32_t)*32);
+    memcpy(out, matrix, sizeof(uint32_t)*32);
+    transpose32(out);
+    return out;
+}
+
+static uint32_t
+transpose_n(int n, uint32_t *matrix)
+{
+    uint32_t out = 0;
+    int j;
+
+    for (j = 0; j < 32; ++j) {
+        if (matrix[j] & (1<<n))
+            out |= (1<<j);
+    }
+
+    return out;
+}
+
+#define ONE 0xffffffff
+
+static uint32_t *
+transpose_clone(uint32_t src, uint32_t *out)
+{
+    int i, j;
+    if (!out)
+        out = malloc(sizeof(uint32_t)*32);
+
+    for (i = 0; i < 32; ++i) {
+        if (src & (1<<i))
+            out[i] = ONE;
+        else
+            out[i] = 0;
+    }
+
+    return out;
+}
+
+static void
+bitslice_syndrome(uint32_t *slices)
+{
+    const firstBit = BCH_N - 1;
+    int i, n;
+    uint32_t paritymask = slices[0];
+
+    // do the parity and shift together
+    for (i = 1; i < 32; ++i) {
+        paritymask ^= slices[i];
+        slices[i-1] = slices[i];
+    }
+    slices[31] = 0;
+
+    // BCH_POLY << (BCH_K - 1) is
+    //                                                              20   21 22 23
+    //  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ONE, 0, 0, ONE,
+    //  24 25   26  27  28   29   30   31
+    //  0, ONE, ONE, 0, ONE, ONE, ONE, 0
+
+    for (n = 0; n < BCH_K; ++n) {
+        // one line here for every '1' bit in coeff (above)
+        const int bit = firstBit - n;
+        slices[20 - n] ^= slices[bit];
+        slices[23 - n] ^= slices[bit];
+        slices[25 - n] ^= slices[bit];
+        slices[26 - n] ^= slices[bit];
+        slices[28 - n] ^= slices[bit];
+        slices[29 - n] ^= slices[bit];
+        slices[30 - n] ^= slices[bit];
+        slices[31 - n] ^= slices[bit];
+    }
+
+    // apply the parity mask we built up
+    slices[BCH_N - BCH_K] |= paritymask;
+}
+
 /* ---------------------------------------------------------------------- */
 
 enum{
@@ -425,68 +522,126 @@ enum{
 // Besides that the overhead is neglectable.
 int pocsag_brute_repair(uint32_t* data)
 {
-    if(pocsag_syndrome(*data))
-    {
+    if (pocsag_syndrome(*data)) {
         pocsag_total_error_count++;
         verbprintf(5, "Error in syndrome detected!\n");
-    }
-    else
+    } else {
         return 0;
-
-    //        pocsag_uncorrected_error_count++;
-    //        return 1;
+    }
 
     // check for single bit errors
     {
-        uint32_t mask1 = 1;
-        mask1 <<= 31;
-        uint32_t tempData = 0;
+        int i, n, b1, b2;
+        uint32_t res;
+        uint32_t *xpose = 0, *in = 0;
 
-        while(mask1)
-        {
-            tempData = *data ^ mask1;
-            if(!pocsag_syndrome(tempData))
-            {
-                *data = tempData;
-                verbprintf(5, "Corrected one bit error!\n");
-                pocsag_corrected_error_count++;
-                pocsag_corrected_1bit_error_count++;
-                return 0;
+        xpose = malloc(sizeof(uint32_t)*32);
+        in = malloc(sizeof(uint32_t)*32);
+
+        transpose_clone(*data, xpose);
+        for (i = 0; i < 32; ++i)
+            xpose[i] ^= (1<<i);
+
+        bitslice_syndrome(xpose);
+
+        res = 0;
+        for (i = 0; i < 32; ++i)
+            res |= xpose[i];
+        res = ~res;
+
+        if (res) {
+            int n = 0;
+            while (res) {
+                ++n;
+                res >>= 1;
             }
-            mask1 >>= 1;
+            --n;
+
+            *data ^= (1<<n);
+            pocsag_corrected_error_count++;
+            pocsag_corrected_1bit_error_count++;
+            goto returnfree;
         }
 
         //check for two bit errors
-        mask1 = 1;
-        mask1 <<= 31;
-        uint32_t mask2 = 0;
+        n = 0;
+        transpose_clone(*data, xpose);
 
-        while(mask1)
-        {
-            mask2 = mask1 >> 1;
-            while(mask2)
-            {
-                tempData = *data ^ mask1 ^ mask2;
+        for (b1 = 0; b1 < 32; ++b1) {
+            for (b2 = b1; b2 < 32; ++b2) {
+                xpose[b1] ^= (1<<n);
+                xpose[b2] ^= (1<<n);
 
-                if(!pocsag_syndrome(tempData))
-                {
-                    *data = tempData;
-                    verbprintf(5, "Corrected two bit errors!\n");
-                    pocsag_corrected_error_count++;
-                    pocsag_corrected_2bit_error_count++;
-                    return 0;
+                if (++n == 32) {
+                    memcpy(in, xpose, sizeof(uint32_t)*32);
+
+                    bitslice_syndrome(xpose);
+
+                    res = 0;
+                    for (i = 0; i < 32; ++i)
+                        res |= xpose[i];
+                    res = ~res;
+
+                    if (res) {
+                        int n = 0;
+                        while (res) {
+                            ++n;
+                            res >>= 1;
+                        }
+                        --n;
+
+                        *data = transpose_n(n, in);
+                        pocsag_corrected_error_count++;
+                        pocsag_corrected_2bit_error_count++;
+                        goto returnfree;
+                    }
+
+                    transpose_clone(*data, xpose);
+                    n = 0;
                 }
-
-                mask2 >>= 1;
             }
-            mask1 >>= 1;
         }
 
-    }
+        if (n > 0) {
+            memcpy(in, xpose, sizeof(uint32_t)*32);
 
-    pocsag_uncorrected_error_count++;
-    verbprintf(5, "Couldn't correct error!\n");
-    return 1;
+            bitslice_syndrome(xpose);
+
+            res = 0;
+            for (i = 0; i < 32; ++i)
+                res |= xpose[i];
+            res = ~res;
+
+            if (res) {
+                int n = 0;
+                while (res) {
+                    ++n;
+                    res >>= 1;
+                }
+                --n;
+
+                *data = transpose_n(n, in);
+                pocsag_corrected_error_count++;
+                pocsag_corrected_2bit_error_count++;
+                goto returnfree;
+            }
+        }
+
+        pocsag_uncorrected_error_count++;
+        verbprintf(5, "Couldn't correct error!\n");
+        if (xpose)
+            free(xpose);
+        if (in)
+            free(in);
+        return 1;
+
+returnfree:
+        if (xpose)
+            free(xpose);
+        if (in)
+            free(in);
+        return 0;
+    }
 }
 
 static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
