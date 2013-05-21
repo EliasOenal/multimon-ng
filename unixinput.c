@@ -78,6 +78,7 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 
 static int verbose_level = 0;
 extern int pocsag_mode;
+extern int aprs_mode;
 void quit(void);
 
 /* ---------------------------------------------------------------------- */
@@ -489,6 +490,7 @@ static const char usage_str[] = "multimonNG\n"
         "  -v <level> : level of verbosity (for example '-v 10')\n"
         "  -f <mode>  : forces POCSAG data decoding as <mode> (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
         "  -h         : this help\n"
+        "  -A         : APRS mode (TNC2 text output)\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 kHz. Raw input is assumed and required if piped input is used.\n";
@@ -511,7 +513,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < NUMDEMOD; i++)
         fprintf(stderr, " %s", dem[i]->name);
     fprintf(stderr, "\n");
-    while ((c = getopt(argc, argv, "t:a:s:v:f:cqh")) != EOF) {
+    while ((c = getopt(argc, argv, "t:a:s:v:f:cqhA")) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -520,6 +522,17 @@ int main(int argc, char *argv[])
 
         case 'q':
             quietflg++;
+            break;
+
+        case 'A':
+            aprs_mode = 1;
+	    memset(dem_mask, 0, sizeof(dem_mask));
+            mask_first = 0;
+            for (i = 0; i < NUMDEMOD; i++)
+                if (!strcasecmp("AFSK1200", dem[i]->name)) {
+                    MASK_SET(i);
+                    break;
+                }
             break;
 
         case 'v':

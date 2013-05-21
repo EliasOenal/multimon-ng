@@ -79,6 +79,64 @@ static inline int check_crc_ccitt(const unsigned char *buf, int cnt)
 
 /* ---------------------------------------------------------------------- */
 
+int aprs_mode = 0;
+
+static void aprs_print_ax25call(unsigned char *call, int is_repeater)
+{
+	int i;
+	for (i = 0; i < 6; i++)
+		if ((call[i] &0xfe) != 0x40)
+			verbprintf(0, "%c",call[i] >> 1);
+	int ssid = (call[6] >> 1) & 0xf;
+	if (ssid)
+		verbprintf(0, "-%u",ssid);
+	// hack: only display "*" on the last repeater, as opposed to all that already repeated
+	if (is_repeater && (call[6] & 0x80))
+			verbprintf(0, "*");
+}
+static void aprs_disp_packet(unsigned char *bp, unsigned int len)
+{
+	unsigned char *hdr = bp + 14;
+	unsigned int hlen = len - 14;
+	// skip address fields
+	while ((!(hdr[-1] & 1)) && (hlen >= 7)) {
+		hdr += 7;
+		hlen -= 7;
+	}
+	if (*hdr++ != 0x03) // Ctrl 0x03 = UI frame
+		return;
+	if (*hdr++ != 0xf0) // PID 0xf0 = no layer 3 protocol
+		return;
+
+	verbprintf(0, "APRS: ");
+	// source call
+	aprs_print_ax25call(&bp[7], 0);
+	verbprintf(0, ">");
+	// tocall
+	aprs_print_ax25call(&bp[0], 0);
+	bp += 14;
+	len -= 14;
+	// via callsigns
+	while ((!(bp[-1] & 1)) && (len >= 7)) {
+		if ((!(bp[-1] & 1)) && (len >= 7))
+			verbprintf(0, ",");
+		aprs_print_ax25call(&bp[0], 1);
+		bp += 7;
+		len -= 7;
+	}
+	verbprintf(0, ":");
+	// end of header
+	bp += 2;
+	len -= 2;
+	if(!len)
+		return;
+	while (len) {
+		verbprintf(0, "%c",*bp++);
+		len--;
+	}
+	verbprintf(0, "\n");
+}
+
 static void ax25_disp_packet(struct demod_state *s, unsigned char *bp, unsigned int len)
 {
         unsigned char v1=1,cmd=0;
@@ -125,6 +183,10 @@ static void ax25_disp_packet(struct demod_state *s, unsigned char *bp, unsigned 
                  */
                 if (len < 15) 
 			return;
+		if (aprs_mode) {
+			aprs_disp_packet(bp, len);
+			return;
+		}
                 if ((bp[6] & 0x80) != (bp[13] & 0x80)) {
                         v1 = 0;
                         cmd = (bp[6] & 0x80);
