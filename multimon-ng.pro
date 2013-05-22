@@ -1,7 +1,12 @@
 TEMPLATE = app
 CONFIG += console
 CONFIG -= qt
+CONFIG -= app_bundle
 DEFINES += MAX_VERBOSE_LEVEL=1
+
+TARGET = multimon-ng
+target.path = /usr/local/bin/
+INSTALLS += target
 
 HEADERS += \
     multimon.h \
