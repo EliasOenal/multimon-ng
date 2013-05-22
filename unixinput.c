@@ -416,7 +416,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             close(pipedes[1]); /* close writing pipe end */
             execlp("sox", "sox",
                    "-t", type, fname,
-                   "-t", "raw", "-esigned-integer", "-b16", "-r", srate, "-",
+                   "-t", "raw", "-esigned-integer", "-b16", "-r", srate, "-", "remix", "1",
                    NULL);
             perror("execlp");
             exit(10);

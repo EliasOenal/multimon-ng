@@ -38,7 +38,7 @@ static const unsigned int zvei_freq[16] = {
 	PHINC(2400), PHINC(1060), PHINC(1160), PHINC(1270), 
 	PHINC(1400), PHINC(1530), PHINC(1670), PHINC(1830), 
 	PHINC(2000), PHINC(2200), PHINC(2800), PHINC(810), 
-	PHINC(970), PHINC(886), PHINC(2600), PHINC(0)
+    PHINC(970), PHINC(885), PHINC(2600), PHINC(680)
 };
 
 static const unsigned int zveis_freq[16] = {
