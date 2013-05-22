@@ -77,6 +77,8 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 /* ---------------------------------------------------------------------- */
 
 static int verbose_level = 0;
+static int mute_sox = 0;
+
 extern int pocsag_mode;
 extern int aprs_mode;
 void quit(void);
@@ -208,7 +210,7 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
 
 
     /* Create the recording stream */
-    if (!(s = pa_simple_new(NULL, "multimonNG", PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
+    if (!(s = pa_simple_new(NULL, "multimon-ng", PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
         fprintf(stderr, __FILE__": pa_simple_new() failed: %s\n", pa_strerror(error));
         exit(4);
     }
@@ -414,7 +416,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             if (dup2(pipedes[1], 1) < 0)
                 perror("dup2");
             close(pipedes[1]); /* close writing pipe end */
-            execlp("sox", "sox",
+            execlp("sox", "sox", mute_sox?"-V1":"-V2",
                    "-t", type, fname,
                    "-t", "raw", "-esigned-integer", "-b16", "-r", srate, "-", "remix", "1",
                    NULL);
@@ -475,10 +477,7 @@ void quit(void)
 
 /* ---------------------------------------------------------------------- */
 
-static const char usage_str[] = "multimonNG\n"
-        "Demodulates many different radio transmission formats\n"
-        "(C) 1996 by Thomas Sailer HB9JNX/AE4WA\n"
-        "(C) 2012 by Elias Oenal\n\n"
+static const char usage_str[] = "\n"
         "Usage: %s [file] [file] [file] ...\n"
         "  If no [file] is given, input will be read from your default sound\n"
         "  hardware. A filename of \"-\" denotes standard input.\n"
@@ -491,6 +490,7 @@ static const char usage_str[] = "multimonNG\n"
         "  -f <mode>  : forces POCSAG data decoding as <mode> (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
         "  -h         : this help\n"
         "  -A         : APRS mode (TNC2 text output)\n"
+        "  -m         : mute SoX warnings\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 kHz. Raw input is assumed and required if piped input is used.\n";
@@ -507,13 +507,13 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
 
-    fprintf(stderr, "multimonNG  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-            "            (C) 2012 by Elias Oenal\n"
+    fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+            "             (C) 2012/2013 by Elias Oenal\n"
             "available demodulators:");
     for (i = 0; i < NUMDEMOD; i++)
         fprintf(stderr, " %s", dem[i]->name);
     fprintf(stderr, "\n");
-    while ((c = getopt(argc, argv, "t:a:s:v:f:cqhA")) != EOF) {
+    while ((c = getopt(argc, argv, "t:a:s:v:f:cqhAm")) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -537,6 +537,10 @@ int main(int argc, char *argv[])
 
         case 'v':
             verbose_level = strtoul(optarg, 0, 0);
+            break;
+
+        case 'm':
+            mute_sox = 1;
             break;
 
         case 't':
