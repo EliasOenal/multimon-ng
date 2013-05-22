@@ -17,7 +17,7 @@ The following changes have been made so far:
 -Windows native audio and a VisualStudio/MSVC project file, contributed by bzzt_ploink
 -Now accepts raw samples as piped input
 
-In addition to the deprecated legacy Makefile there is also a file for qmake which is the preferred way of building MultimonNG. It's recommended to use qmake to generate the Makefile. ('qmake multimonNG.pro && make')
+In addition to the deprecated legacy Makefile there is also a file for qmake which is the preferred way of building MultimonNG. It's recommended to use qmake to generate the Makefile. ('mkdir build && cd build && qmake ../multimon-ng.pro && make && sudo make install')
 So far multimonNG has been successfully built on OS X, Debian, Ubuntu and Windows. (On Windows using the Qt-MinGW build environment, as well as Cygwin and VisualStudio/MSVC)
 
 Files can be easily converted into multimonNGs native raw format using 'sox'.
