@@ -380,7 +380,7 @@ void pocsag_init(struct demod_state *s)
     memset(&s->l2.pocsag, 0, sizeof(s->l2.pocsag));
 }
 
-void pocsag_de_init(void)
+void pocsag_deinit(struct demod_state *s)
 {
     if(pocsag_total_error_count)
         verbprintf(1, "\n===POCSAG stats===\n"

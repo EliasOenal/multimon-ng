@@ -85,15 +85,15 @@ static void poc12_demod(struct demod_state *s, float *buffer, int length)
 	s->l1.poc12.subsamp = length;
 }
 
-static void poc12_de_init(void)
+static void poc12_deinit(struct demod_state *s)
 {
-    pocsag_de_init();
+    pocsag_deinit(s);
 }
 
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_poc12 = {
-    "POCSAG1200", FREQ_SAMP, FILTLEN, poc12_init, poc12_demod, poc12_de_init
+    "POCSAG1200", FREQ_SAMP, FILTLEN, poc12_init, poc12_demod, poc12_deinit
 };
 
 /* ---------------------------------------------------------------------- */

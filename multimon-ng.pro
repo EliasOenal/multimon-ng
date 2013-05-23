@@ -18,8 +18,16 @@ SOURCES += \
     unixinput.c \
     uart.c \
     pocsag.c \
+    selcall.c \
     hdlc.c \
-    demod_zvei.c \
+    demod_zvei1.c \
+    demod_zvei2.c \
+    demod_zvei3.c \
+    demod_pzvei.c \
+    demod_dzvei.c \
+    demod_ccir.c \
+    demod_eia.c \
+    demod_eea.c \
     demod_ufsk12.c \
     demod_poc24.c \
     demod_poc12.c \

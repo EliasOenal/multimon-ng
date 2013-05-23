@@ -468,10 +468,8 @@ void quit(void)
     for (i = 0; i < NUMDEMOD; i++)
     {
         if(MASK_ISSET(i))
-            if (dem[i]->de_init)
-            {
-                dem[i]->de_init();
-            }
+            if (dem[i]->deinit)
+                dem[i]->deinit(dem_st+i);
     }
 }
 
