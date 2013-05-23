@@ -4,8 +4,11 @@ CONFIG -= qt
 CONFIG -= app_bundle
 DEFINES += MAX_VERBOSE_LEVEL=1
 
+isEmpty(PREFIX) {
+ PREFIX = /usr/local/bin
+}
 TARGET = multimon-ng
-target.path = /usr/local/bin/
+target.path = $$PREFIX/
 INSTALLS += target
 
 HEADERS += \
