@@ -77,6 +77,7 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 /* ---------------------------------------------------------------------- */
 
 static int verbose_level = 0;
+static int repeatable_sox = 0;
 static int mute_sox = 0;
 
 extern int pocsag_mode;
@@ -416,7 +417,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             if (dup2(pipedes[1], 1) < 0)
                 perror("dup2");
             close(pipedes[1]); /* close writing pipe end */
-            execlp("sox", "sox", mute_sox?"-V1":"-V2",
+            execlp("sox", "sox", repeatable_sox?"-R":"-V2", mute_sox?"-V1":"-V2",
                    "-t", type, fname,
                    "-t", "raw", "-esigned-integer", "-b16", "-r", srate, "-", "remix", "1",
                    NULL);
@@ -489,6 +490,7 @@ static const char usage_str[] = "\n"
         "  -h         : this help\n"
         "  -A         : APRS mode (TNC2 text output)\n"
         "  -m         : mute SoX warnings\n"
+        "  -r         : call SoX in repeatable mode (e.g. random seed for dithering)\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 kHz. Raw input is assumed and required if piped input is used.\n";
@@ -511,7 +513,7 @@ int main(int argc, char *argv[])
     for (i = 0; i < NUMDEMOD; i++)
         fprintf(stderr, " %s", dem[i]->name);
     fprintf(stderr, "\n");
-    while ((c = getopt(argc, argv, "t:a:s:v:f:cqhAm")) != EOF) {
+    while ((c = getopt(argc, argv, "t:a:s:v:f:cqhAmr")) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -539,6 +541,10 @@ int main(int argc, char *argv[])
 
         case 'm':
             mute_sox = 1;
+            break;
+
+        case 'r':
+            repeatable_sox = 1;
             break;
 
         case 't':
