@@ -90,7 +90,7 @@ SOURCES +=  xdisplay.c \
 unix:linux-g++:!symbian:!macx{
 DEFINES += PULSE_AUDIO
 DEFINES += CHARSET_UTF8
-LIBS += -lX11 -lpulse-simple
+LIBS += -lX11 -lpulse-simple -lpulse
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
