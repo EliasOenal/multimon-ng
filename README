@@ -27,3 +27,9 @@ GNURadio can also generate the format using the file sink in input mode 'short'.
 You can also "pipe" raw samples into multimonNG using something like 
 "sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw - | ./multimon-ng -" 
 (note the trailing dash)
+
+Installation:
+
+qmake multimon-ng.pro PREFIX=/usr/local
+make
+make install INSTALL_ROOT=/
