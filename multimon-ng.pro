@@ -5,10 +5,10 @@ CONFIG -= app_bundle
 DEFINES += MAX_VERBOSE_LEVEL=1
 
 isEmpty(PREFIX) {
- PREFIX = /usr/local/bin
+ PREFIX = /usr/local/
 }
 TARGET = multimon-ng
-target.path = $$PREFIX/
+target.path = $$PREFIX/bin
 INSTALLS += target
 
 HEADERS += \
