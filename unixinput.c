@@ -490,7 +490,7 @@ static const char usage_str[] = "\n"
         "  -h         : this help\n"
         "  -A         : APRS mode (TNC2 text output)\n"
         "  -m         : mute SoX warnings\n"
-        "  -r         : call SoX in repeatable mode (e.g. random seed for dithering)\n"
+        "  -r         : call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
