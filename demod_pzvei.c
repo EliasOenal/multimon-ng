@@ -43,13 +43,13 @@ static void pzvei_deinit(struct demod_state *s)
     selcall_deinit(s);
 }
 
-static void pzvei_demod(struct demod_state *s, float *buffer, int length)
+static void pzvei_demod(struct demod_state *s, buffer_t buffer, int length)
 {
-    selcall_demod(s, buffer, length, pzvei_freq, demod_pzvei.name);
+    selcall_demod(s, buffer.fbuffer, length, pzvei_freq, demod_pzvei.name);
 }
 
 const struct demod_param demod_pzvei = {
-    "PZVEI", SAMPLE_RATE, 0, pzvei_init, pzvei_demod, pzvei_deinit
+    "PZVEI", true, SAMPLE_RATE, 0, pzvei_init, pzvei_demod, pzvei_deinit
 };
 
 

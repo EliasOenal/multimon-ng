@@ -4,6 +4,9 @@
  *      Copyright (C) 1997
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
+ *      Copyright (C) 2012/2013
+ *          Elias Oenal    (EliasOenal@gmail.com)
+ *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
  *      the Free Software Foundation; either version 2 of the License, or
@@ -332,7 +335,7 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 				perror("dup2");
 			close(pipedes[0]); /* close reading pipe end */
 			execlp("sox", "sox", 
-			       "-t", "raw",  "-s", "-w", "-r", srate, "-",
+			       "-t", "raw", "-esigned-integer", "-b16", "-r", srate, "-",
 			       "-t", type, fname,
 			       NULL);
 			perror("execlp");
@@ -369,10 +372,8 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 
 /* ---------------------------------------------------------------------- */
 
-static const char usage_str[] = "gen\n"
-"Generates test signals\n"
-"(C) 1997 by Thomas Sailer HB9JNX/AE4WA\n"
-"  -t <type>  : input file type (any other type than raw requires sox)\n"
+static const char usage_str[] = "Generates test signals\n"
+"  -t <type>  : output file type (any other type than raw requires sox)\n"
 "  -a <ampl>  : amplitude\n"
 "  -d <str>   : encode DTMF string\n"
 "  -z <str>   : encode ZVEI string\n"
@@ -390,7 +391,8 @@ int main(int argc, char *argv[])
 	char *output_type = "hw";
 	char *cp;
 
-	fprintf(stdout, "gen - (C) 1997 by Tom Sailer HB9JNX/AE4WA\n");	
+	fprintf(stdout, "gen-ng - (C) 1997 by Tom Sailer HB9JNX/AE4WA\n"
+                    "         (C) 2012/2013 by Elias Oenal\n");	
 	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:h")) != EOF) {
 		switch (c) {
 		case 'h':

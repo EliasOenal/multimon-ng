@@ -43,13 +43,13 @@ static void eia_deinit(struct demod_state *s)
     selcall_deinit(s);
 }
 
-static void eia_demod(struct demod_state *s, float *buffer, int length)
+static void eia_demod(struct demod_state *s, buffer_t buffer, int length)
 {
-    selcall_demod(s, buffer, length, eia_freq, demod_eia.name);
+    selcall_demod(s, buffer.fbuffer, length, eia_freq, demod_eia.name);
 }
 
 const struct demod_param demod_eia = {
-    "EIA", SAMPLE_RATE, 0, eia_init, eia_demod, eia_deinit
+    "EIA", true, SAMPLE_RATE, 0, eia_init, eia_demod, eia_deinit
 };
 
 

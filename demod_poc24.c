@@ -48,11 +48,11 @@ static void poc24_init(struct demod_state *s)
 
 /* ---------------------------------------------------------------------- */
 
-static void poc24_demod(struct demod_state *s, float *buffer, int length)
+static void poc24_demod(struct demod_state *s, buffer_t buffer, int length)
 {
-	for (; length > 0; length--, buffer++) {
+	for (; length > 0; length--, buffer.fbuffer++) {
 		s->l1.poc24.dcd_shreg <<= 1;
-		s->l1.poc24.dcd_shreg |= ((*buffer) > 0);
+		s->l1.poc24.dcd_shreg |= ((*buffer.fbuffer) > 0);
 		verbprintf(10, "%c", '0'+(s->l1.poc24.dcd_shreg & 1));
 		/*
 		 * check if transition
@@ -79,7 +79,7 @@ static void poc24_deinit(struct demod_state *s)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_poc24 = {
-    "POCSAG2400", FREQ_SAMP, FILTLEN, poc24_init, poc24_demod, poc24_deinit
+    "POCSAG2400", true, FREQ_SAMP, FILTLEN, poc24_init, poc24_demod, poc24_deinit
 };
 
 /* ---------------------------------------------------------------------- */

@@ -43,13 +43,13 @@ static void ccir_deinit(struct demod_state *s)
     selcall_deinit(s);
 }
 
-static void ccir_demod(struct demod_state *s, float *buffer, int length)
+static void ccir_demod(struct demod_state *s, buffer_t buffer, int length)
 {
-    selcall_demod(s, buffer, length, ccir_freq, demod_ccir.name);
+    selcall_demod(s, buffer.fbuffer, length, ccir_freq, demod_ccir.name);
 }
 
 const struct demod_param demod_ccir = {
-    "CCIR", SAMPLE_RATE, 0, ccir_init, ccir_demod, ccir_deinit
+    "CCIR", true, SAMPLE_RATE, 0, ccir_init, ccir_demod, ccir_deinit
 };
 
 

@@ -45,27 +45,27 @@ static void hapn48_init(struct demod_state *s)
 
 /* ---------------------------------------------------------------------- */
 
-static void hapn48_demod(struct demod_state *s, float *buffer, int length)
+static void hapn48_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	int cursync;
 	unsigned int curbit;
 
-	for (; length > 0; length--, buffer++) {
+	for (; length > 0; length--, buffer.fbuffer++) {
 		s->l1.hapn48.lvlhi *= 0.999;
 		s->l1.hapn48.lvllo *= 0.999;
-		if (buffer[1] > s->l1.hapn48.lvlhi)
-			s->l1.hapn48.lvlhi = buffer[1];
-		if (buffer[1] < s->l1.hapn48.lvllo)
-			s->l1.hapn48.lvllo = buffer[1];
+		if (buffer.fbuffer[1] > s->l1.hapn48.lvlhi)
+			s->l1.hapn48.lvlhi = buffer.fbuffer[1];
+		if (buffer.fbuffer[1] < s->l1.hapn48.lvllo)
+			s->l1.hapn48.lvllo = buffer.fbuffer[1];
 		cursync = 0;
 		s->l1.hapn48.shreg = (s->l1.hapn48.shreg << 1) | 
 			(s->l1.hapn48.shreg & 1);
-		if (buffer[1] > s->l1.hapn48.lvlhi * 0.5) {
+		if (buffer.fbuffer[1] > s->l1.hapn48.lvlhi * 0.5) {
 			s->l1.hapn48.shreg |= 1;
-			cursync = (buffer[1] > buffer[0] && buffer[1] > buffer[2]);
-		} else if (buffer[1] < s->l1.hapn48.lvllo * 0.5) {
+			cursync = (buffer.fbuffer[1] > buffer.fbuffer[0] && buffer.fbuffer[1] > buffer.fbuffer[2]);
+		} else if (buffer.fbuffer[1] < s->l1.hapn48.lvllo * 0.5) {
 			s->l1.hapn48.shreg &= ~1;
-			cursync = (buffer[1] < buffer[0] && buffer[1] < buffer[2]);
+			cursync = (buffer.fbuffer[1] < buffer.fbuffer[0] && buffer.fbuffer[1] < buffer.fbuffer[2]);
 		}
 		verbprintf(10, "%c", '0' + (s->l1.hapn48.shreg & 1));
 		s->l1.hapn48.sphase += SPHASEINC;
@@ -95,7 +95,7 @@ static void hapn48_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_hapn4800 = {
-    "HAPN4800", FREQ_SAMP, 3, hapn48_init, hapn48_demod, NULL
+    "HAPN4800", true, FREQ_SAMP, 3, hapn48_init, hapn48_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

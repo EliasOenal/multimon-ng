@@ -119,13 +119,13 @@ static inline int process_block(struct demod_state *s)
 
 /* ---------------------------------------------------------------------- */
 
-static void dtmf_demod(struct demod_state *s, float *buffer, int length)
+static void dtmf_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float s_in;
 	int i;
 
-	for (; length > 0; length--, buffer++) {
-		s_in = *buffer;
+	for (; length > 0; length--, buffer.fbuffer++) {
+		s_in = *buffer.fbuffer;
 		s->l1.dtmf.energy[0] += fsqr(s_in);
 		for (i = 0; i < 8; i++) {
 			s->l1.dtmf.tenergy[0][i] += COS(s->l1.dtmf.ph[i]) * s_in;
@@ -145,7 +145,7 @@ static void dtmf_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_dtmf = {
-    "DTMF", SAMPLE_RATE, 0, dtmf_init, dtmf_demod, NULL
+    "DTMF", true, SAMPLE_RATE, 0, dtmf_init, dtmf_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

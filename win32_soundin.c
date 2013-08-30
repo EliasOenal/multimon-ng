@@ -8,7 +8,7 @@ int SAMPLES_PER_BUFFER;
 WAVEFORMATEX g_WavFmt = {0};
 HWAVEIN hWavIn;
 
-void process_buffer(float *buf, unsigned int len);
+void process_buffer(float *float_buf, short *short_buf, unsigned int len);
 int Overlap;
 float *fbuf;
 
@@ -27,7 +27,7 @@ void CALLBACK waveInProc(HWAVEIN hwi,UINT uMsg,DWORD dwInstance,DWORD dwParam1,D
 			fbuf[i+Overlap] = sp[i] /32768.0;
 		}
 		waveInAddBuffer(hwi, pWaveHdr, sizeof(WAVEHDR));
-		process_buffer(fbuf,SAMPLES_PER_BUFFER);
+		process_buffer(fbuf, sp, SAMPLES_PER_BUFFER);
 		memcpy(&fbuf[0],&fbuf[SAMPLES_PER_BUFFER],sizeof(float)*Overlap);
 		break;
 	case MM_WIM_OPEN:

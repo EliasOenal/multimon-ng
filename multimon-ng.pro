@@ -3,6 +3,8 @@ CONFIG += console
 CONFIG -= qt
 CONFIG -= app_bundle
 DEFINES += MAX_VERBOSE_LEVEL=1
+QMAKE_CFLAGS += -std=c99
+QMAKE_CFLAGS += -g # For profiling
 
 isEmpty(PREFIX) {
  PREFIX = /usr/local/
@@ -46,7 +48,9 @@ SOURCES += \
     costabi.c \
     costabf.c \
     clip.c \
-    demod_eas.c
+    demod_eas.c \
+    demod_morse.c
+
 macx{
 DEFINES += DUMMY_AUDIO
 DEFINES += NO_X11

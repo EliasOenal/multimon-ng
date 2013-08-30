@@ -82,16 +82,16 @@ static void fsk96_init(struct demod_state *s)
 
 /* ---------------------------------------------------------------------- */
 
-static void fsk96_demod(struct demod_state *s, float *buffer, int length)
+static void fsk96_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float f;
 	unsigned char curbit;
 	int i;
 	unsigned int descx;
 
-	for (; length > 0; length--, buffer++) {
+	for (; length > 0; length--, buffer.fbuffer++) {
 		for (i = 0; i < UPSAMP; i++) {
-			f = mac(buffer, inp_filt[i], FILTLEN);
+			f = mac(buffer.fbuffer, inp_filt[i], FILTLEN);
 			s->l1.fsk96.dcd_shreg <<= 1;
 			s->l1.fsk96.dcd_shreg |= (f > 0);
 			verbprintf(10, "%c", '0'+(s->l1.fsk96.dcd_shreg & 1));
@@ -122,7 +122,7 @@ static void fsk96_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_fsk9600 = {
-    "FSK9600", FREQ_SAMP, FILTLEN, fsk96_init, fsk96_demod, NULL
+    "FSK9600", true, FREQ_SAMP, FILTLEN, fsk96_init, fsk96_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

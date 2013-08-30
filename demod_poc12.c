@@ -51,7 +51,7 @@ static void poc12_init(struct demod_state *s)
 
 /* ---------------------------------------------------------------------- */
 
-static void poc12_demod(struct demod_state *s, float *buffer, int length)
+static void poc12_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	if (s->l1.poc12.subsamp) {
 		int numfill = SUBSAMP - s->l1.poc12.subsamp;
@@ -59,13 +59,13 @@ static void poc12_demod(struct demod_state *s, float *buffer, int length)
 			s->l1.poc12.subsamp += length;
 			return;
 		}
-		buffer += numfill;
+		buffer.fbuffer += numfill;
 		length -= numfill;
 		s->l1.poc12.subsamp = 0;
 	}
-	for (; length >= SUBSAMP; length -= SUBSAMP, buffer += SUBSAMP) {
+	for (; length >= SUBSAMP; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
 		s->l1.poc12.dcd_shreg <<= 1;
-		s->l1.poc12.dcd_shreg |= ((*buffer) > 0);
+		s->l1.poc12.dcd_shreg |= ((*buffer.fbuffer) > 0);
 		verbprintf(10, "%c", '0'+(s->l1.poc12.dcd_shreg & 1));
 		/*
 		 * check if transition
@@ -93,7 +93,7 @@ static void poc12_deinit(struct demod_state *s)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_poc12 = {
-    "POCSAG1200", FREQ_SAMP, FILTLEN, poc12_init, poc12_demod, poc12_deinit
+    "POCSAG1200", true, FREQ_SAMP, FILTLEN, poc12_init, poc12_demod, poc12_deinit
 };
 
 /* ---------------------------------------------------------------------- */

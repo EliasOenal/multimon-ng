@@ -58,7 +58,7 @@
 
 static const char *allowed_types[] = {
     "raw", "aiff", "au", "hcom", "sf", "voc", "cdr", "dat",
-    "smp", "wav", "maud", "vwe", NULL
+    "smp", "wav", "maud", "vwe", "mp3", "mp4", "ogg", NULL
 };
 
 /* ---------------------------------------------------------------------- */
@@ -79,9 +79,17 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 static int verbose_level = 0;
 static int repeatable_sox = 0;
 static int mute_sox = 0;
+static int integer_only = true;
+static bool dont_flush = false;
 
 extern int pocsag_mode;
 extern int aprs_mode;
+extern int cw_dit_length;
+extern int cw_gap_length;
+extern int cw_threshold;
+extern bool cw_disable_auto_threshold;
+extern bool cw_disable_auto_timing;
+
 void quit(void);
 
 /* ---------------------------------------------------------------------- */
@@ -89,24 +97,26 @@ void quit(void);
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
     va_list args;
-
+    
     va_start(args, fmt);
     if (verb_level <= verbose_level) {
         vfprintf(stdout, fmt, args);
-        fflush(stdout);
+        if(!dont_flush)
+            fflush(stdout);
     }
     va_end(args);
 }
 
 /* ---------------------------------------------------------------------- */
 
-void process_buffer(float *buf, unsigned int len)
+void process_buffer(float *float_buf, short *short_buf, unsigned int len)
 {
-    int i;
-
-    for (i = 0; i <  NUMDEMOD; i++)
+    for (int i = 0; i <  NUMDEMOD; i++)
         if (MASK_ISSET(i) && dem[i]->demod)
-            dem[i]->demod(dem_st+i, buf, len);
+        {
+            buffer_t buffer = {short_buf, float_buf};
+            dem[i]->demod(dem_st+i, buffer, len);
+        }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -124,7 +134,7 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     unsigned int fbuf_cnt = 0;
     int i;
     short *sp;
-
+    
     if ((fd = open(ifname ? ifname : "/dev/audio", O_RDONLY)) < 0) {
         perror("open");
         exit (10);
@@ -165,12 +175,17 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
         if (!i)
             break;
         if (i > 0) {
-            for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
-                fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
-            if (i)
-                fprintf(stderr, "warning: noninteger number of samples read\n");
+            if(integer_only)
+                fbuf_cnt = i/sizeof(buffer[0]);
+            else
+            {
+                for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
+                    fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
+                if (i)
+                    fprintf(stderr, "warning: noninteger number of samples read\n");
+            }
             if (fbuf_cnt > overlap) {
-                process_buffer(fbuf, fbuf_cnt-overlap);
+                process_buffer(fbuf, buffer, fbuf_cnt-overlap);
                 memmove(fbuf, fbuf+fbuf_cnt-overlap, overlap*sizeof(fbuf[0]));
                 fbuf_cnt = overlap;
             }
@@ -193,29 +208,29 @@ void input_sound(unsigned int sample_rate, unsigned int overlap, const char *ifn
 static void input_sound(unsigned int sample_rate, unsigned int overlap,
                         const char *ifname)
 {
-
+    
     short buffer[8192];
     float fbuf[16384];
     unsigned int fbuf_cnt = 0;
     int i;
     int error;
     short *sp;
-
+    
     // Init stuff from pa.org
     pa_simple *s;
     pa_sample_spec ss;
-
+    
     ss.format = PA_SAMPLE_S16NE;
     ss.channels = 1;
     ss.rate = sample_rate;
-
-
+    
+    
     /* Create the recording stream */
     if (!(s = pa_simple_new(NULL, "multimon-ng", PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
         fprintf(stderr, __FILE__": pa_simple_new() failed: %s\n", pa_strerror(error));
         exit(4);
     }
-
+    
     for (;;) {
         i = pa_simple_read(s, sp = buffer, sizeof(buffer), &error);
         if (i < 0 && errno != EAGAIN) {
@@ -226,14 +241,19 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
         i=sizeof(buffer);
         if (!i)
             break;
-
+        
         if (i > 0) {
-            for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
-                fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
-            if (i)
-                fprintf(stderr, "warning: noninteger number of samples read\n");
+            if(integer_only)
+                fbuf_cnt = i/sizeof(buffer[0]);
+            else
+            {
+                for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
+                    fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
+                if (i)
+                    fprintf(stderr, "warning: noninteger number of samples read\n");
+            }
             if (fbuf_cnt > overlap) {
-                process_buffer(fbuf, fbuf_cnt-overlap);
+                process_buffer(fbuf, buffer, fbuf_cnt-overlap);
                 memmove(fbuf, fbuf+fbuf_cnt-overlap, overlap*sizeof(fbuf[0]));
                 fbuf_cnt = overlap;
             }
@@ -260,7 +280,7 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     short *sp;
     unsigned char *bp;
     int fmt = 0;
-
+    
     if ((fd = open(ifname ? ifname : "/dev/dsp", O_RDONLY)) < 0) {
         perror("open");
         exit (10);
@@ -316,24 +336,26 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
 #endif
     for (;;) {
         if (fmt) {
-            i = read(fd, bp = b.b, sizeof(b.b));
-            if (i < 0 && errno != EAGAIN) {
-                perror("read");
-                exit(4);
-            }
-            if (!i)
-                break;
-            if (i > 0) {
-                for (; i >= sizeof(b.b[0]); i -= sizeof(b.b[0]), sp++)
-                    fbuf[fbuf_cnt++] = ((int)(*bp)-0x80) * (1.0/128.0);
-                if (i)
-                    fprintf(stderr, "warning: noninteger number of samples read\n");
-                if (fbuf_cnt > overlap) {
-                    process_buffer(fbuf, fbuf_cnt-overlap);
-                    memmove(fbuf, fbuf+fbuf_cnt-overlap, overlap*sizeof(fbuf[0]));
-                    fbuf_cnt = overlap;
-                }
-            }
+            perror("ioctl: 8BIT SAMPLES NOT SUPPORTED!");
+            exit (10);
+            //            i = read(fd, bp = b.b, sizeof(b.b));
+            //            if (i < 0 && errno != EAGAIN) {
+            //                perror("read");
+            //                exit(4);
+            //            }
+            //            if (!i)
+            //                break;
+            //            if (i > 0) {
+            //                for (; i >= sizeof(b.b[0]); i -= sizeof(b.b[0]), sp++)
+            //                    fbuf[fbuf_cnt++] = ((int)(*bp)-0x80) * (1.0/128.0);
+            //                if (i)
+            //                    fprintf(stderr, "warning: noninteger number of samples read\n");
+            //                if (fbuf_cnt > overlap) {
+            //                    process_buffer(fbuf, fbuf_cnt-overlap);
+            //                    memmove(fbuf, fbuf+fbuf_cnt-overlap, overlap*sizeof(fbuf[0]));
+            //                    fbuf_cnt = overlap;
+            //                }
+            //            }
         } else {
             i = read(fd, sp = b.s, sizeof(b.s));
             if (i < 0 && errno != EAGAIN) {
@@ -343,12 +365,17 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
             if (!i)
                 break;
             if (i > 0) {
-                for (; i >= sizeof(b.s[0]); i -= sizeof(b.s[0]), sp++)
-                    fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
-                if (i)
-                    fprintf(stderr, "warning: noninteger number of samples read\n");
+                if(integer_only)
+                    fbuf_cnt = i/sizeof(buffer[0]);
+                else
+                {
+                    for (; i >= sizeof(b.s[0]); i -= sizeof(b.s[0]), sp++)
+                        fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
+                    if (i)
+                        fprintf(stderr, "warning: noninteger number of samples read\n");
+                }
                 if (fbuf_cnt > overlap) {
-                    process_buffer(fbuf, fbuf_cnt-overlap);
+                    process_buffer(fbuf, b.s, fbuf_cnt-overlap);
                     memmove(fbuf, fbuf+fbuf_cnt-overlap, overlap*sizeof(fbuf[0]));
                     fbuf_cnt = overlap;
                 }
@@ -373,16 +400,16 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
     float fbuf[16384];
     unsigned int fbuf_cnt = 0;
     short *sp;
-
+    
     /*
      * if the input type is not raw, sox is started to convert the
      * samples to the requested format
      */
     if (!strcmp(fname, "-"))
     {
-       // read from stdin and force raw input
-       fd = 0;
-       type = "raw";
+        // read from stdin and force raw input
+        fd = 0;
+        type = "raw";
     }
     else if (!type || !strcmp(type, "raw")) {
 #ifdef WINDOWS
@@ -394,7 +421,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             exit(10);
         }
     }
-
+    
 #ifndef ONLY_RAW
     else {
         if (stat(fname, &statbuf)) {
@@ -432,7 +459,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         fd = pipedes[0];
     }
 #endif
-
+    
     /*
      * demodulate
      */
@@ -445,19 +472,24 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         if (!i)
             break;
         if (i > 0) {
-            for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
-                fbuf[fbuf_cnt++] = (*sp) * (1.0f/32768.0f);
-            if (i)
-                fprintf(stderr, "warning: noninteger number of samples read\n");
+            if(integer_only)
+                fbuf_cnt = i/sizeof(buffer[0]);
+            else
+            {
+                for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
+                    fbuf[fbuf_cnt++] = (*sp) * (1.0f/32768.0f);
+                if (i)
+                    fprintf(stderr, "warning: noninteger number of samples read\n");
+            }
             if (fbuf_cnt > overlap) {
-                process_buffer(fbuf, fbuf_cnt-overlap);
+                process_buffer(fbuf, buffer, fbuf_cnt-overlap);
                 memmove(fbuf, fbuf+fbuf_cnt-overlap, overlap*sizeof(fbuf[0]));
                 fbuf_cnt = overlap;
             }
         }
     }
     close(fd);
-
+    
 #ifndef ONLY_RAW
     waitpid(pid, &soxstat, 0);
 #endif
@@ -491,6 +523,12 @@ static const char usage_str[] = "\n"
         "  -A         : APRS mode (TNC2 text output)\n"
         "  -m         : mute SoX warnings\n"
         "  -r         : call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
+        "  -n         : don't flush stdout, increases performance\n"
+        "  -o         : CW: set threshold for dit detection (default: 500)\n"
+        "  -d         : CW: dit length in ms (default: 50)\n"
+        "  -g         : CW: gap length in ms (default: 50)\n"
+        "  -x         : CW: disable auto treshold detection\n"
+        "  -y         : CW: disable auto timing detection\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
@@ -506,27 +544,27 @@ int main(int argc, char *argv[])
     int sample_rate = -1;
     unsigned int overlap = 0;
     char *input_type = "hw";
-
+    
     fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
             "             (C) 2012/2013 by Elias Oenal\n"
             "available demodulators:");
     for (i = 0; i < NUMDEMOD; i++)
         fprintf(stderr, " %s", dem[i]->name);
     fprintf(stderr, "\n");
-    while ((c = getopt(argc, argv, "t:a:s:v:f:cqhAmr")) != EOF) {
+    while ((c = getopt(argc, argv, "t:a:s:v:f:g:d:o:cqhAmrxyn")) != EOF) {
         switch (c) {
         case 'h':
         case '?':
             errflg++;
             break;
-
+            
         case 'q':
             quietflg++;
             break;
-
+            
         case 'A':
             aprs_mode = 1;
-	    memset(dem_mask, 0, sizeof(dem_mask));
+            memset(dem_mask, 0, sizeof(dem_mask));
             mask_first = 0;
             for (i = 0; i < NUMDEMOD; i++)
                 if (!strcasecmp("AFSK1200", dem[i]->name)) {
@@ -534,19 +572,19 @@ int main(int argc, char *argv[])
                     break;
                 }
             break;
-
+            
         case 'v':
             verbose_level = strtoul(optarg, 0, 0);
             break;
-
+            
         case 'm':
             mute_sox = 1;
             break;
-
+            
         case 'r':
             repeatable_sox = 1;
             break;
-
+            
         case 't':
             for (itype = (char **)allowed_types; *itype; itype++)
                 if (!strcmp(*itype, optarg)) {
@@ -561,7 +599,7 @@ int main(int argc, char *argv[])
             errflg++;
 intypefound:
             break;
-
+            
         case 'a':
             if (mask_first)
                 memset(dem_mask, 0, sizeof(dem_mask));
@@ -576,7 +614,7 @@ intypefound:
                 errflg++;
             }
             break;
-
+            
         case 's':
             if (mask_first)
                 memset(dem_mask, 0xff, sizeof(dem_mask));
@@ -591,7 +629,7 @@ intypefound:
                 errflg++;
             }
             break;
-
+            
         case 'c':
             if (mask_first)
                 memset(dem_mask, 0xff, sizeof(dem_mask));
@@ -599,7 +637,7 @@ intypefound:
             for (i = 0; i < NUMDEMOD; i++)
                 MASK_RESET(i);
             break;
-
+            
         case 'f':
             if(!pocsag_mode)
             {
@@ -611,6 +649,42 @@ intypefound:
                     pocsag_mode = POCSAG_MODE_SKYPER;
             }else fprintf(stderr, "a POCSAG mode has already been selected!\n");
             break;
+            
+        case 'n':
+            dont_flush = true;
+            break;
+            
+        case 'd':
+        {
+            int i = 0;
+            sscanf(optarg, "%d", &i);
+            if(i) cw_dit_length = abs(i);
+            break;
+        }
+            
+        case 'g':
+        {
+            int i = 0;
+            sscanf(optarg, "%d", &i);
+            if(i) cw_gap_length = abs(i);
+            break;
+        }
+            
+        case 'o':
+        {
+            int i = 0;
+            sscanf(optarg, "%d", &i);
+            if(i) cw_threshold = abs(i);
+            break;
+        }
+            
+        case 'x':
+            cw_disable_auto_threshold = true;
+            break;
+            
+        case 'y':
+            cw_disable_auto_timing = true;
+            break;
         }
     }
     if (errflg) {
@@ -619,13 +693,14 @@ intypefound:
     }
     if (mask_first)
         memset(dem_mask, 0xff, sizeof(dem_mask));
-
+    
     if (!quietflg)
         fprintf(stdout, "Enabled demodulators:");
     for (i = 0; i < NUMDEMOD; i++)
         if (MASK_ISSET(i)) {
             if (!quietflg)
-                fprintf(stdout, " %s", dem[i]->name);
+                fprintf(stdout, " %s", dem[i]->name);       //Print demod name
+            if(dem[i]->float_samples) integer_only = false; //Enable float samples on demand
             memset(dem_st+i, 0, sizeof(dem_st[i]));
             dem_st[i].dem_par = dem[i];
             if (dem[i]->init)
@@ -645,12 +720,12 @@ intypefound:
         }
     if (!quietflg)
         fprintf(stdout, "\n");
-
+    
     if (optind < argc && !strcmp(argv[optind], "-"))
     {
-       input_type = "raw";
+        input_type = "raw";
     }
-
+    
     if (!strcmp(input_type, "hw")) {
         if ((argc - optind) >= 1)
             input_sound(sample_rate, overlap, argv[optind]);
@@ -663,10 +738,10 @@ intypefound:
         (void)fprintf(stderr, "no source files specified\n");
         exit(4);
     }
-
+    
     for (i = optind; i < argc; i++)
         input_file(sample_rate, overlap, argv[i], input_type);
-
+    
     quit();
     exit(0);
 }

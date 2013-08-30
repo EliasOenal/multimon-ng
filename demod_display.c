@@ -51,7 +51,7 @@ static void scope_init(struct demod_state *s)
 
 #define MEMSIZE sizeof(s->l1.scope.data)/sizeof(s->l1.scope.data[0])
 
-static void scope_demod(struct demod_state *s, float *buffer, int length)
+static void scope_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float *src, *dst;
 	int i, j;
@@ -59,14 +59,14 @@ static void scope_demod(struct demod_state *s, float *buffer, int length)
 	if (s->l1.scope.dispnum == -1)
 		return;
 	if (length >= MEMSIZE) {
-		src = buffer+length-MEMSIZE;
+		src = buffer.fbuffer+length-MEMSIZE;
 		dst = s->l1.scope.data;
 		i = MEMSIZE;
 	} else {
 		i = MEMSIZE-length;
 		memmove(s->l1.scope.data, s->l1.scope.data+i,
 			i*sizeof(s->l1.scope.data[0]));
-		src = buffer;
+		src = buffer.fbuffer;
 		dst = s->l1.scope.data+i;
 		i = length;
 	}
@@ -81,7 +81,7 @@ static void scope_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_scope = {
-    "SCOPE", SAMPLING_RATE, 0, scope_init, scope_demod, NULL
+    "SCOPE", true, SAMPLING_RATE, 0, scope_init, scope_demod, NULL
 };
 
 

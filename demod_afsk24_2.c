@@ -81,16 +81,16 @@ static void afsk24_2_init(struct demod_state *s)
 
 /* ---------------------------------------------------------------------- */
 
-static void afsk24_2_demod(struct demod_state *s, float *buffer, int length)
+static void afsk24_2_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float f;
 	unsigned char curbit;
 
-	for (; length > 0; length--, buffer++) {
-		f = fsqr(mac(buffer, corr_mark_i, CORRLEN)) +
-			fsqr(mac(buffer, corr_mark_q, CORRLEN)) -
-			fsqr(mac(buffer, corr_space_i, CORRLEN)) -
-			fsqr(mac(buffer, corr_space_q, CORRLEN));
+	for (; length > 0; length--, buffer.fbuffer++) {
+		f = fsqr(mac(buffer.fbuffer, corr_mark_i, CORRLEN)) +
+			fsqr(mac(buffer.fbuffer, corr_mark_q, CORRLEN)) -
+			fsqr(mac(buffer.fbuffer, corr_space_i, CORRLEN)) -
+			fsqr(mac(buffer.fbuffer, corr_space_q, CORRLEN));
 		s->l1.afsk24.dcd_shreg <<= 1;
 		s->l1.afsk24.dcd_shreg |= (f > 0);
 		verbprintf(10, "%c", '0'+(s->l1.afsk24.dcd_shreg & 1));
@@ -119,7 +119,7 @@ static void afsk24_2_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_afsk2400_2 = {
-    "AFSK2400_2", FREQ_SAMP, CORRLEN, afsk24_2_init, afsk24_2_demod, NULL
+    "AFSK2400_2", true, FREQ_SAMP, CORRLEN, afsk24_2_init, afsk24_2_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

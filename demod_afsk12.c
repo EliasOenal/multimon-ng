@@ -73,7 +73,7 @@ static void afsk12_init(struct demod_state *s)
 
 /* ---------------------------------------------------------------------- */
 
-static void afsk12_demod(struct demod_state *s, float *buffer, int length)
+static void afsk12_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float f;
 	unsigned char curbit;
@@ -84,15 +84,15 @@ static void afsk12_demod(struct demod_state *s, float *buffer, int length)
 			s->l1.afsk12.subsamp += length;
 			return;
 		}
-		buffer += numfill;
+		buffer.fbuffer += numfill;
 		length -= numfill;
 		s->l1.afsk12.subsamp = 0;
 	}
-	for (; length >= SUBSAMP; length -= SUBSAMP, buffer += SUBSAMP) {
-		f = fsqr(mac(buffer, corr_mark_i, CORRLEN)) +
-			fsqr(mac(buffer, corr_mark_q, CORRLEN)) -
-			fsqr(mac(buffer, corr_space_i, CORRLEN)) -
-			fsqr(mac(buffer, corr_space_q, CORRLEN));
+	for (; length >= SUBSAMP; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
+		f = fsqr(mac(buffer.fbuffer, corr_mark_i, CORRLEN)) +
+			fsqr(mac(buffer.fbuffer, corr_mark_q, CORRLEN)) -
+			fsqr(mac(buffer.fbuffer, corr_space_i, CORRLEN)) -
+			fsqr(mac(buffer.fbuffer, corr_space_q, CORRLEN));
 		s->l1.afsk12.dcd_shreg <<= 1;
 		s->l1.afsk12.dcd_shreg |= (f > 0);
 		verbprintf(10, "%c", '0'+(s->l1.afsk12.dcd_shreg & 1));
@@ -122,7 +122,7 @@ static void afsk12_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_afsk1200 = {
-    "AFSK1200", FREQ_SAMP, CORRLEN, afsk12_init, afsk12_demod, NULL
+    "AFSK1200", true, FREQ_SAMP, CORRLEN, afsk12_init, afsk12_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */

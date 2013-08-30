@@ -100,7 +100,7 @@ static inline int process_block(struct demod_state *s)
     return i;
 }
 
-void selcall_demod(struct demod_state *s, float *buffer, int length,
+void selcall_demod(struct demod_state *s, const float *buffer, int length,
                    unsigned int *selcall_freq, const char * const name)
 {
     float s_in;

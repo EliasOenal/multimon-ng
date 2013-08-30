@@ -248,7 +248,7 @@ static void eas_frame(struct demod_state *s, char data)
     }
 }
 
-static void eas_demod(struct demod_state *s, float *buffer, int length)
+static void eas_demod(struct demod_state *s, buffer_t buffer, int length)
 {
     float f;
     unsigned char curbit;
@@ -260,17 +260,17 @@ static void eas_demod(struct demod_state *s, float *buffer, int length)
             s->l1.eas.subsamp += length;
             return;
         }
-        buffer += numfill;
+        buffer.fbuffer += numfill;
         length -= numfill;
         s->l1.eas.subsamp = 0;
     }
     // We use a sliding window correlator which advances by SUBSAMP
     // each time. One correlator sample is output for each SUBSAMP symbols
-    for (; length >= SUBSAMP; length -= SUBSAMP, buffer += SUBSAMP) {
-        f = fsqr(mac(buffer, eascorr_mark_i, CORRLEN)) +
-            fsqr(mac(buffer, eascorr_mark_q, CORRLEN)) -
-            fsqr(mac(buffer, eascorr_space_i, CORRLEN)) -
-            fsqr(mac(buffer, eascorr_space_q, CORRLEN));
+    for (; length >= SUBSAMP; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
+        f = fsqr(mac(buffer.fbuffer, eascorr_mark_i, CORRLEN)) +
+            fsqr(mac(buffer.fbuffer, eascorr_mark_q, CORRLEN)) -
+            fsqr(mac(buffer.fbuffer, eascorr_space_i, CORRLEN)) -
+            fsqr(mac(buffer.fbuffer, eascorr_space_q, CORRLEN));
         // f > 0 if a mark (wireline 1) is detected
         // keep the last few correlator samples in s->l1.eas.dcd_shreg
         // when we've synchronized to the bit transitions, the dcd_shreg
@@ -380,7 +380,7 @@ static void eas_demod(struct demod_state *s, float *buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_eas = {
-    "EAS", FREQ_SAMP, CORRLEN, eas_init, eas_demod, NULL
+    "EAS", true, FREQ_SAMP, CORRLEN, eas_init, eas_demod, NULL
 };
 
 /* ---------------------------------------------------------------------- */
