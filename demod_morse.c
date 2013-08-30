@@ -185,12 +185,12 @@ static inline dec_ret_t decode_character(const struct demod_state * restrict con
 // Low pass filter - eats 19.4% of the CPU time according to profiling
 // It's a basic IIR filter optimized for integer operation while
 // minimizing the rounding error.
-static inline int_fast32_t low_pass(const int_fast32_t last_average,
+static inline int_fast32_t low_pass(const int_fast32_t last_filtered,
                                     const int_fast32_t new_sample,
-                                    const int_fast16_t smoothing)
+                                    const int_fast16_t strength)
 {
-    return ((last_average << smoothing) + 
-            new_sample - last_average) >> smoothing;
+    return ((last_filtered << strength) + 
+            new_sample - last_filtered) >> strength;
 }
 
 // Probably a lot room for improvements here
@@ -207,9 +207,9 @@ static inline void auto_threshold(struct demod_state * restrict const s)
     }
     
     // Check for a higher upper limit
-    if(s->l1.morse.average > s->l1.morse.signal_max)
+    if(s->l1.morse.filtered > s->l1.morse.signal_max)
     {
-        s->l1.morse.signal_max = s->l1.morse.average;
+        s->l1.morse.signal_max = s->l1.morse.filtered;
         s->l1.morse.detection_threshold = s->l1.morse.signal_max*AUTO_TRESHOLD_MULT;
     }
     
@@ -245,8 +245,8 @@ static void morse_demod(struct demod_state * restrict const s,
     for(int i = 0; i < length; i++)
     {
         // A low-pass is nice, though we could add a high-pass in order to get a band-pass :)
-        s->l1.morse.average = low_pass(s->l1.morse.average, (int_fast32_t)abs(buffer.sbuffer[i]) * GAIN,
-                                       s->l1.morse.smoothing);
+        s->l1.morse.filtered = low_pass(s->l1.morse.filtered, (int_fast32_t)abs(buffer.sbuffer[i]) * GAIN,
+                                       s->l1.morse.lowpass_strength);
         
         // Don't count too far
         if(s->l1.morse.samples_since_change < INT_FAST32_MAX/1000)
@@ -258,9 +258,9 @@ static void morse_demod(struct demod_state * restrict const s,
         
         // Reject change for holdoff period
         if(s->l1.morse.samples_since_change > s->l1.morse.holdoff_samples)
-            s->l1.morse.current_state = s->l1.morse.average > s->l1.morse.detection_threshold;
+            s->l1.morse.current_state = s->l1.morse.filtered > s->l1.morse.detection_threshold;
         
-        if(SPAM_SAMPLES) verbprintf(0, " %d", s->l1.morse.average);
+        if(SPAM_SAMPLES) verbprintf(0, " %d", s->l1.morse.filtered);
         if(SPAM_STATE) verbprintf(0, " %s", s->l1.morse.current_state?"#":".");
         
         int_fast8_t statechange = oldstate != s->l1.morse.current_state;
@@ -336,7 +336,7 @@ static void morse_init(struct demod_state * restrict s)
     s->l1.morse.time_unit_dit_dah_samples = FREQ_SAMP / (1000 / cw_dit_length);
     s->l1.morse.time_unit_gaps_samples = FREQ_SAMP / (1000 / cw_gap_length);
     s->l1.morse.detection_threshold = cw_threshold;
-    s->l1.morse.smoothing = SMOOTHING_MAGNITUDE;
+    s->l1.morse.lowpass_strength = SMOOTHING_MAGNITUDE;
     if(HOLDOFF_MS) s->l1.morse.holdoff_samples = FREQ_SAMP / (1000 / HOLDOFF_MS);
     
     s->l1.morse.signal_max = SQUELCH;

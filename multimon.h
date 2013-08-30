@@ -205,7 +205,7 @@ struct demod_state {
             uint64_t current_sequence;
             int_fast16_t threshold_ctr;
             int_fast32_t detection_threshold;
-            int_fast32_t average;
+            int_fast32_t filtered;
             int_fast32_t samples_since_change;
             int_fast32_t signal_max;
             int_fast32_t glitches;
@@ -213,7 +213,7 @@ struct demod_state {
             int_fast32_t decoded_chars;
             int_fast16_t time_unit_dit_dah_samples;
             int_fast16_t time_unit_gaps_samples;
-            int_fast16_t smoothing;
+            int_fast16_t lowpass_strength;
             int_fast16_t holdoff_samples;
             int_fast8_t current_state;  // High = 1, Low = 0
         } morse;
