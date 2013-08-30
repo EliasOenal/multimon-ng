@@ -3,7 +3,7 @@ CONFIG += console
 CONFIG -= qt
 CONFIG -= app_bundle
 DEFINES += MAX_VERBOSE_LEVEL=1
-QMAKE_CFLAGS += -std=c99
+QMAKE_CFLAGS += -std=gnu99
 QMAKE_CFLAGS += -g # For profiling
 
 isEmpty(PREFIX) {
