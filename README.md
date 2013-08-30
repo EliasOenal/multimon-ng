@@ -8,6 +8,7 @@ MultimonNG a fork of multimon. It decodes the following digital transmission mod
 - DTMF
 - ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI
 - EEA EIA CCIR
+- MORSE CW
 
 The following changes have been made so far:
 - Fixes for x64
