@@ -54,6 +54,10 @@
 //#include <sys/wait.h>
 #endif /* SUN_AUDIO */
 
+#ifndef ONLY_RAW
+#include <sys/wait.h>
+#endif
+
 /* ---------------------------------------------------------------------- */
 
 static const char *allowed_types[] = {
