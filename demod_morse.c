@@ -18,8 +18,8 @@
 #define GAIN 1
 #define SQUELCH 500
 #define HOLDOFF_MS 10               // Compensate for ringing
-#define AUTO_TRESHOLD_MULT 2/3
-//#define AUTO_TRESHOLD_MULT 1/2
+#define AUTO_THRESHOLD_MULT 2/3
+//#define AUTO_THRESHOLD_MULT 1/2
 
 #define DEBUG 0
 #define SHOW_FAILED_DECODES 1
@@ -204,14 +204,14 @@ static inline void auto_threshold(struct demod_state * restrict const s)
     if(!s->l1.morse.threshold_ctr && s->l1.morse.signal_max > 0)
     {
         s->l1.morse.signal_max = s->l1.morse.signal_max * 999 / 1000;
-        s->l1.morse.detection_threshold = s->l1.morse.signal_max*AUTO_TRESHOLD_MULT;
+        s->l1.morse.detection_threshold = s->l1.morse.signal_max*AUTO_THRESHOLD_MULT;
     }
     
     // Check for a higher upper limit
     if(s->l1.morse.filtered > s->l1.morse.signal_max)
     {
         s->l1.morse.signal_max = s->l1.morse.filtered;
-        s->l1.morse.detection_threshold = s->l1.morse.signal_max*AUTO_TRESHOLD_MULT;
+        s->l1.morse.detection_threshold = s->l1.morse.signal_max*AUTO_THRESHOLD_MULT;
     }
     
     // Prevent threshold from dropping below SQUELCH
