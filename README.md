@@ -1,4 +1,4 @@
-MultimonNG a fork of multimon. It decodes the following digital transmission modes:
+multimon-ng a fork of multimon. It decodes the following digital transmission modes:
 
 - POCSAG512 POCSAG1200 POCSAG2400
 - EAS
@@ -26,7 +26,7 @@ The following changes have been made so far:
 - Windows native audio and a VisualStudio/MSVC project file, contributed by bzzt_ploink
 - Now accepts raw samples as piped input
 
-In addition to the deprecated legacy Makefile there is also a file for qmake which is the preferred way of building multimonNG. It's recommended to use qmake to generate the Makefile.
+In addition to the deprecated legacy Makefile there is also a file for qmake which is the preferred way of building multimon-ng. It's recommended to use qmake to generate the Makefile.
 
 ```
 mkdir build
@@ -39,14 +39,14 @@ sudo make install
 The installation prefix can be set by passing a 'PREFIX' parameter to qmake. e.g:
 ```qmake multimon-ng.pro PREFIX=/usr/local```
 
-So far multimonNG has been successfully built on OS X, Debian, Ubuntu and Windows.
+So far multimon-ng has been successfully built on OS X, Debian, Ubuntu and Windows.
 (On Windows using the Qt-MinGW build environment, as well as Cygwin and VisualStudio/MSVC)
 
-Files can be easily converted into multimonNGs native raw format using *sox*. e.g:
+Files can be easily converted into multimon-ng's native raw format using *sox*. e.g:
 ```sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw pocsag_short.raw```
 GNURadio can also generate the format using the file sink in input mode *short*. 
 
-You can also "pipe" raw samples into multimonNG using something like
+You can also "pipe" raw samples into multimon-ng using something like
 ```sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw - | ./multimon-ng -```
 (note the trailing dash)
 
