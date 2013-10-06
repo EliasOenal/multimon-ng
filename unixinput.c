@@ -560,9 +560,6 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
     
-    fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-            "             (C) 2012/2013 by Elias Oenal\n"
-            "available demodulators:");
     for (i = 0; (u_int) i < NUMDEMOD; i++)
         fprintf(stderr, " %s", dem[i]->name);
     fprintf(stderr, "\n");
@@ -702,6 +699,18 @@ intypefound:
             break;
         }
     }
+
+ 
+    if ( !quietflg ) { // pay heed to the quietflg
+	fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+	    "             (C) 2012/2013 by Elias Oenal\n"
+	    "available demodulators:");
+	for (i = 0; (u_int) i < NUMDEMOD; i++) {
+	    fprintf(stderr, " %s", dem[i]->name);
+	}
+	fprintf(stderr, "\n");
+    }
+
     if (errflg) {
         (void)fprintf(stderr, usage_str, argv[0]);
         exit(2);
