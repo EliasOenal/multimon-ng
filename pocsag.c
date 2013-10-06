@@ -101,6 +101,7 @@ static inline unsigned char even_parity(uint32_t data)
 #define BCH_N    31
 #define BCH_K    21
 
+/* unused 
 static uint32_t pocsag_code(uint32_t data)
 {
     uint32_t ret = data << (BCH_N-BCH_K), shreg = ret;
@@ -116,6 +117,7 @@ static uint32_t pocsag_code(uint32_t data)
                data, shreg, ret);
     return ret;
 }
+*/
 
 /* ---------------------------------------------------------------------- */
 
@@ -143,7 +145,7 @@ static void print_msg_numeric(struct l2_pocsag_rx *rx)
     int len = rx->numnibbles;
     char buf[512], *cp = buf;
 
-    if (len >= sizeof(buf))
+    if ( (u_int) len >= sizeof(buf))
         len = sizeof(buf)-1;
     for (; len > 0; bp++, len -= 2) {
         *cp++ = conv_table[(*bp >> 4) & 0xf];
@@ -382,6 +384,7 @@ void pocsag_init(struct demod_state *s)
 
 void pocsag_deinit(struct demod_state *s)
 {
+    (void) s; // Suppress the warning.
     if(pocsag_total_error_count)
         verbprintf(1, "\n===POCSAG stats===\n"
                    "Words BCH checked: %u\n"
@@ -422,6 +425,7 @@ transpose32(uint32_t *A) {
     }
 }
 
+/* unused
 static uint32_t *
 transpose(uint32_t *matrix)
 {
@@ -431,6 +435,7 @@ transpose(uint32_t *matrix)
     transpose32(out);
     return out;
 }
+*/
 
 static uint32_t
 transpose_n(int n, uint32_t *matrix)
@@ -451,7 +456,7 @@ transpose_n(int n, uint32_t *matrix)
 static uint32_t *
 transpose_clone(uint32_t src, uint32_t *out)
 {
-    int i, j;
+    int i;
     if (!out)
         out = malloc(sizeof(uint32_t)*32);
 
@@ -681,7 +686,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
 
     // Do nothing for 31 bits
     // When the word is complete let the program counter pass
-    if(rx->rx_bit = ++(rx->rx_bit) % 32)
+    if( ( rx->rx_bit = (++(rx->rx_bit) % 32) ) )
         return;
 
 

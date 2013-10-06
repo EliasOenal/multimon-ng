@@ -54,11 +54,11 @@ static void scope_init(struct demod_state *s)
 static void scope_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float *src, *dst;
-	int i, j;
+	int i;
 
 	if (s->l1.scope.dispnum == -1)
 		return;
-	if (length >= MEMSIZE) {
+	if ( (u_int) length >= MEMSIZE) {
 		src = buffer.fbuffer+length-MEMSIZE;
 		dst = s->l1.scope.data;
 		i = MEMSIZE;
@@ -72,7 +72,7 @@ static void scope_demod(struct demod_state *s, buffer_t buffer, int length)
 	}
 	s->l1.scope.datalen += i;
 	memcpy(dst, src, i*sizeof(s->l1.scope.data[0]));
-	if (s->l1.scope.datalen < MEMSIZE) 
+	if ( (u_int) s->l1.scope.datalen < MEMSIZE) 
 		return;
 	if (xdisp_update(s->l1.scope.dispnum, s->l1.scope.data))
 		s->l1.scope.datalen = 0;
