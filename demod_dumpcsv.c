@@ -74,7 +74,7 @@ static void dumpcsv_demod(struct demod_state *s, buffer_t buffer, int length)
 /* ---------------------------------------------------------------------- */
 
 const struct demod_param demod_dumpcsv = {
-    "DUMP", false, SAMPLING_RATE, 0, dumpcsv_init, dumpcsv_demod, NULL
+    "DUMPCSV", false, SAMPLING_RATE, 0, dumpcsv_init, dumpcsv_demod, NULL
 };
 
 
