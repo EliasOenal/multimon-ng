@@ -1,4 +1,4 @@
-﻿/*
+/*
  *      pocsag.c -- POCSAG protocol decoder
  *
  *      Copyright (C) 1996
@@ -145,7 +145,7 @@ static void print_msg_numeric(struct l2_pocsag_rx *rx)
     int len = rx->numnibbles;
     char buf[512], *cp = buf;
 
-    if ( (u_int) len >= sizeof(buf))
+    if ( (unsigned int) len >= sizeof(buf))
         len = sizeof(buf)-1;
     for (; len > 0; bp++, len -= 2) {
         *cp++ = conv_table[(*bp >> 4) & 0xf];
