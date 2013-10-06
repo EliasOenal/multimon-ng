@@ -218,6 +218,21 @@ struct demod_state {
             int_fast8_t current_state;  // High = 1, Low = 0
         } morse;
         
+        struct l1_state_dumpcsv {
+            uint32_t current_sequence;
+	} dumpcsv;
+
+        struct l1_state_x10 {
+            uint32_t current_sequence;
+	    uint32_t last_rise;
+	    short current_state;
+	    short current_phase;
+	    char b[4];
+	    char bi;
+	    char bstring[42];
+	} x10;
+
+		
 #ifndef NO_X11
         struct l1_state_scope {
             int datalen;
@@ -276,6 +291,7 @@ extern const struct demod_param demod_ccir;
 
 extern const struct demod_param demod_morse;
 
+extern const struct demod_param demod_dumpcsv;
 
 #ifndef NO_X11
 extern const struct demod_param demod_scope;
@@ -290,7 +306,7 @@ extern const struct demod_param demod_scope;
 #define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_eas, &demod_ufsk1200, &demod_clipfsk, \
     &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
     &demod_fsk9600, &demod_dtmf, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
-    &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse SCOPE_DEMOD
+    &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD
 
 
 /* ---------------------------------------------------------------------- */
