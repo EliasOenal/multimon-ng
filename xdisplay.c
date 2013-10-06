@@ -81,7 +81,7 @@ struct xdisp {
 
 #define NUMCLI 16
 
-static struct xdisp cli[NUMCLI] = { { 0, }, };
+static struct xdisp cli[NUMCLI] = { { 0, 0, 0, 0}, };
 
 /* ---------------------------------------------------------------------- */
 
@@ -317,6 +317,8 @@ static void sigchld_handler(int sig)
 	pid_t pid;
 	int st;
 	unsigned int cnum;
+
+	(void) sig;  // Suppress the warning.
 
 	while ((pid = wait4(0, &st, WNOHANG, NULL)) != (pid_t)-1) {
 		for (cnum = 0; cnum < NUMCLI; cnum++)
