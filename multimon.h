@@ -316,7 +316,7 @@ void pocsag_deinit(struct demod_state *s);
 
 void selcall_init(struct demod_state *s);
 void selcall_demod(struct demod_state *s, const float *buffer, int length,
-                   unsigned int *selcall_freq, const char *const name);
+                   const unsigned int *selcall_freq, const char *const name);
 void selcall_deinit(struct demod_state *s);
 
 void xdisp_terminate(int cnum);

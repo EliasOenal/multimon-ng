@@ -115,7 +115,7 @@ void _verbprintf(int verb_level, const char *fmt, ...)
 
 void process_buffer(float *float_buf, short *short_buf, unsigned int len)
 {
-    for (int i = 0; i <  NUMDEMOD; i++)
+    for (int i = 0; (u_int) i <  NUMDEMOD; i++)
         if (MASK_ISSET(i) && dem[i]->demod)
         {
             buffer_t buffer = {short_buf, float_buf};
@@ -180,7 +180,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
             break;
         if (i > 0) {
             if(integer_only)
+	    {
                 fbuf_cnt = i/sizeof(buffer[0]);
+	    }
             else
             {
                 for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
@@ -219,6 +221,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     int i;
     int error;
     short *sp;
+
+    (void) ifname;  // Suppress the warning.
+
     
     // Init stuff from pa.org
     pa_simple *s;
@@ -248,10 +253,12 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
         
         if (i > 0) {
             if(integer_only)
+	    {
                 fbuf_cnt = i/sizeof(buffer[0]);
+	    }
             else
             {
-                for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
+                for (; (u_int) i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
                     fbuf[fbuf_cnt++] = (*sp) * (1.0/32768.0);
                 if (i)
                     fprintf(stderr, "warning: noninteger number of samples read\n");
@@ -370,7 +377,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
                 break;
             if (i > 0) {
                 if(integer_only)
+		{
                     fbuf_cnt = i/sizeof(buffer[0]);
+		}
                 else
                 {
                     for (; i >= sizeof(b.s[0]); i -= sizeof(b.s[0]), sp++)
@@ -477,10 +486,12 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             break;
         if (i > 0) {
             if(integer_only)
+	    {
                 fbuf_cnt = i/sizeof(buffer[0]);
+	    }
             else
             {
-                for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
+                for (; (u_int) i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
                     fbuf[fbuf_cnt++] = (*sp) * (1.0f/32768.0f);
                 if (i)
                     fprintf(stderr, "warning: noninteger number of samples read\n");
@@ -502,7 +513,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
 void quit(void)
 {
     int i = 0;
-    for (i = 0; i < NUMDEMOD; i++)
+    for (i = 0; (u_int) i < NUMDEMOD; i++)
     {
         if(MASK_ISSET(i))
             if (dem[i]->deinit)
@@ -549,10 +560,7 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
     
-    fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-            "             (C) 2012/2013 by Elias Oenal\n"
-            "available demodulators:");
-    for (i = 0; i < NUMDEMOD; i++)
+    for (i = 0; (u_int) i < NUMDEMOD; i++)
         fprintf(stderr, " %s", dem[i]->name);
     fprintf(stderr, "\n");
     while ((c = getopt(argc, argv, "t:a:s:v:f:g:d:o:cqhAmrxyn")) != EOF) {
@@ -570,7 +578,7 @@ int main(int argc, char *argv[])
             aprs_mode = 1;
             memset(dem_mask, 0, sizeof(dem_mask));
             mask_first = 0;
-            for (i = 0; i < NUMDEMOD; i++)
+            for (i = 0; (u_int) i < NUMDEMOD; i++)
                 if (!strcasecmp("AFSK1200", dem[i]->name)) {
                     MASK_SET(i);
                     break;
@@ -608,12 +616,12 @@ intypefound:
             if (mask_first)
                 memset(dem_mask, 0, sizeof(dem_mask));
             mask_first = 0;
-            for (i = 0; i < NUMDEMOD; i++)
+            for (i = 0; (u_int) i < NUMDEMOD; i++)
                 if (!strcasecmp(optarg, dem[i]->name)) {
                     MASK_SET(i);
                     break;
                 }
-            if (i >= NUMDEMOD) {
+            if ((u_int) i >= NUMDEMOD) {
                 fprintf(stderr, "invalid mode \"%s\"\n", optarg);
                 errflg++;
             }
@@ -623,12 +631,12 @@ intypefound:
             if (mask_first)
                 memset(dem_mask, 0xff, sizeof(dem_mask));
             mask_first = 0;
-            for (i = 0; i < NUMDEMOD; i++)
+            for (i = 0; (u_int) i < NUMDEMOD; i++)
                 if (!strcasecmp(optarg, dem[i]->name)) {
                     MASK_RESET(i);
                     break;
                 }
-            if (i >= NUMDEMOD) {
+            if ((u_int) i >= NUMDEMOD) {
                 fprintf(stderr, "invalid mode \"%s\"\n", optarg);
                 errflg++;
             }
@@ -638,7 +646,7 @@ intypefound:
             if (mask_first)
                 memset(dem_mask, 0xff, sizeof(dem_mask));
             mask_first = 0;
-            for (i = 0; i < NUMDEMOD; i++)
+            for (i = 0; (u_int) i < NUMDEMOD; i++)
                 MASK_RESET(i);
             break;
             
@@ -691,6 +699,18 @@ intypefound:
             break;
         }
     }
+
+ 
+    if ( !quietflg ) { // pay heed to the quietflg
+	fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+	    "             (C) 2012/2013 by Elias Oenal\n"
+	    "available demodulators:");
+	for (i = 0; (u_int) i < NUMDEMOD; i++) {
+	    fprintf(stderr, " %s", dem[i]->name);
+	}
+	fprintf(stderr, "\n");
+    }
+
     if (errflg) {
         (void)fprintf(stderr, usage_str, argv[0]);
         exit(2);
@@ -700,7 +720,7 @@ intypefound:
     
     if (!quietflg)
         fprintf(stdout, "Enabled demodulators:");
-    for (i = 0; i < NUMDEMOD; i++)
+    for (i = 0; (u_int) i < NUMDEMOD; i++)
         if (MASK_ISSET(i)) {
             if (!quietflg)
                 fprintf(stdout, " %s", dem[i]->name);       //Print demod name
@@ -711,7 +731,7 @@ intypefound:
                 dem[i]->init(dem_st+i);
             if (sample_rate == -1)
                 sample_rate = dem[i]->samplerate;
-            else if (sample_rate != dem[i]->samplerate) {
+            else if ( (u_int) sample_rate != dem[i]->samplerate) {
                 if (!quietflg)
                     fprintf(stdout, "\n");
                 fprintf(stderr, "Error: Current sampling rate %d, "

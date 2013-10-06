@@ -28,6 +28,7 @@
 static void disp_packet(struct demod_state *s, unsigned char *bp, unsigned int len)
 {
         unsigned char i,j;
+	(void) s;  // Suppress the warning.
 
         if (!bp)
 		return;
