@@ -49,7 +49,8 @@ SOURCES += \
     costabf.c \
     clip.c \
     demod_eas.c \
-    demod_morse.c
+    demod_morse.c \
+    demod_x10.c
 
 macx{
 DEFINES += DUMMY_AUDIO
