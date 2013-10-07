@@ -1,4 +1,4 @@
-﻿/*
+/*
  *      pocsag.c -- POCSAG protocol decoder
  *
  *      Copyright (C) 1996
