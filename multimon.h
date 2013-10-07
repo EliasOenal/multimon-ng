@@ -222,7 +222,7 @@ struct demod_state {
 	    uint32_t current_sequence;
 	    uint32_t last_rise;
 	    short current_state;
-	    short current_phase;
+	    short current_stage;
 	    char b[4];
 	    char bi;
 	    char bstring[42];

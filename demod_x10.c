@@ -36,10 +36,15 @@ static const char housecode[] = "MECKOGAINFDLPHBJ";
 /* ---------------------------------------------------------------------- */
 
 #define SAMPLING_RATE 22050
+
+/* Samples in a MS */
 #define SAMPLE_MS     22.050f
 
 #define SAMPLING_THRESHOLD_HIGH 13000
 #define SAMPLING_THRESHOLD_LOW 9000
+#define SAMPLING_THRESHOLD_PULSE_WIDTH 40
+
+#define SAMPLING_TIMEOUT 220
 
 /* ---------------------------------------------------------------------- */
 
@@ -56,25 +61,17 @@ static void x10_init(struct demod_state *s)
 	uint32_t current_sequence;
 	uint32_t last_rise;
 	short current_state;
-	short current_phase;
+	short current_stage;
     } x10;
 
 current_state indicates if the last sample was "high" or "low"
-current_phase phase indicator :
+current_stage stage indicator :
 	0 = waiting for sync header
 	1 = sync part 1
 	2 = sync part 2
 	3 = reading data
 
 */
-
-
-char b0;
-char b1;
-char b2;
-char b3;
-char bi;
-char bstring[42];
 
 
 void printbits(unsigned char v) {
@@ -149,16 +146,16 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 	float ptopf;
 
 	// Start of 9ms high preable (part 1)
-	if ( s->l1.x10.current_phase == 0 ) {
+	if ( s->l1.x10.current_stage == 0 ) {
 	    if ( *src >=  SAMPLING_THRESHOLD_HIGH ) {
 		s->l1.x10.last_rise = i + s->l1.x10.current_sequence;
 		s->l1.x10.current_state = 1;
-		s->l1.x10.current_phase = 1;
+		s->l1.x10.current_stage = 1;
 	    }
 	    continue;
 
 	// Start of 4.5ms low preable (part 2)
-	} else if ( s->l1.x10.current_phase == 1 ) {
+	} else if ( s->l1.x10.current_stage == 1 ) {
 
 	    if ( *src <=  SAMPLING_THRESHOLD_LOW ) {
 		int j;
@@ -167,16 +164,16 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 
 		j = i + s->l1.x10.current_sequence - s->l1.x10.last_rise;
 		/*
-		fprintf(stderr, "phase 1->2 drop (%d) %0.4f ms\n",
+		fprintf(stderr, "stage 1->2 drop (%d) %0.4f ms\n",
 			j, (float) (j / SAMPLE_MS) );
 		*/
 
 		if (  j >= 176 && j <= 210 ) {
-		    s->l1.x10.current_phase = 2;
+		    s->l1.x10.current_stage = 2;
 		    s->l1.x10.last_rise = i + s->l1.x10.current_sequence;
 		} else {
-		    fprintf(stderr, "phase 1 fail1\n");
-		    s->l1.x10.current_phase = 0;
+		    fprintf(stderr, "stage 1 fail1\n");
+		    s->l1.x10.current_stage = 0;
 		}
 		continue;
 
@@ -186,7 +183,7 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 
 		
 	// End of preable? start of data
-	} else if ( s->l1.x10.current_phase == 2 ) {
+	} else if ( s->l1.x10.current_stage == 2 ) {
 	    if ( *src >=  SAMPLING_THRESHOLD_HIGH ) {
 		int j;
 
@@ -194,24 +191,25 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 
 		j = i + s->l1.x10.current_sequence -  s->l1.x10.last_rise;
 		/*
-		fprintf(stderr, "phase 2->3 drop (%d) %0.4f ms\n",
+		fprintf(stderr, "stage 2->3 drop (%d) %0.4f ms\n",
 			j, (float) (j / SAMPLE_MS) );
 		*/
 
+		// End of 4.5ms low preable 
 		if (  j >= 90 && j <= 104 ) {
-		    // fprintf(stderr, "phase 3 drop\n");
-		    s->l1.x10.current_phase = 3;
+		    // fprintf(stderr, "stage 3 drop\n");
+		    s->l1.x10.current_stage = 3;
 		    s->l1.x10.last_rise = i + s->l1.x10.current_sequence;
 		} else {
-		    fprintf(stderr, "phase 2 fail1\n");
-		    s->l1.x10.current_phase = 0;
+		    verbprintf(2, "preamble 2nd stage fail\n");
+		    s->l1.x10.current_stage = 0;
 		}
 
 	    } 
 	    continue;
 
-	// Data phase
-	} else if ( s->l1.x10.current_phase == 3 ) {
+	// Data stage
+	} else if ( s->l1.x10.current_stage == 3 ) {
 
 	    if ( s->l1.x10.current_state == 0 ) {
 		int j;
@@ -222,14 +220,14 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 
 		    s->l1.x10.current_state = 1;
 		    bits++;
-		    // fprintf(stderr, "phase 3 rise (%d) %0.4f ms\n", j, (float) (j / SAMPLE_MS) );
+		    verbprintf(3, "stage 3 rise (%d) %0.4f ms\n", j, (float) (j / SAMPLE_MS) );
 
-		    // fprintf(stderr, "phase 3 b %d %d %x\n", ( s->l1.x10.bi / 8 ), ( s->l1.x10.bi % 8 ), ( 1<< ( s->l1.x10.bi % 8 )  ) );
+		    // fprintf(stderr, "stage 3 b %d %d %x\n", ( s->l1.x10.bi / 8 ), ( s->l1.x10.bi % 8 ), ( 1<< ( s->l1.x10.bi % 8 )  ) );
 
 
 		    s->l1.x10.last_rise = i + s->l1.x10.current_sequence;
 
-	           if ( j > 40 ) {
+	           if ( j > SAMPLING_THRESHOLD_PULSE_WIDTH ) {
 		       s->l1.x10.bstring[(int)s->l1.x10.bi] = '1';
 		       s->l1.x10.b[ ( s->l1.x10.bi / 8 ) ] |= ( 1<< ( s->l1.x10.bi % 8 ) );
 		   } else {
@@ -239,10 +237,10 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 
 
 		} else {
-		    if ( j > 220 ) {  // if low for more then 10ms (appox)
-			fprintf(stderr, "phase 3 end ( timeout )\n");
-			s->l1.x10.current_phase = 0;
-			fprintf(stderr, "bits = %d\n", bits);
+		    if ( j > SAMPLING_TIMEOUT ) {  // if low for more then 10ms (appox)
+			verbprintf(2, "Data stage end ( timeout )\n");
+			s->l1.x10.current_stage = 0;
+			// fprintf(stderr, "bits = %d\n", bits);
 		        x10_report(s, 1);
 		    }
 		}
@@ -255,7 +253,7 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 
 	    } else {
 		fprintf(stderr, "bad state = %d\n", s->l1.x10.current_state );
-		 s->l1.x10.current_phase = 0;
+		 s->l1.x10.current_stage = 0;
 		continue;
 	    }
 
