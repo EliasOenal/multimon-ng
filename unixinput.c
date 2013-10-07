@@ -378,7 +378,7 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
             if (i > 0) {
                 if(integer_only)
 		{
-                    fbuf_cnt = i/sizeof(buffer[0]);
+                    fbuf_cnt = i/sizeof(b.s[0]);
 		}
                 else
                 {
