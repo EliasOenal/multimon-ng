@@ -69,10 +69,24 @@ uint32_t pocsag_bits_processed_while_not_synced = 0;
 
 /* ---------------------------------------------------------------------- */
 
-void lost_sync(struct l2_pocsag_rx *rx);
+void lost_sync(struct demod_state *s, struct l2_pocsag_rx *rx);
 
 /* ---------------------------------------------------------------------- */
 
+enum{
+    NO_SYNC = 0,
+    GOT_SYNC = 1,
+};
+
+enum{
+    MESSAGE_CLASS_INVALID = -1,
+    MESSAGE_CLASS_NUMERIC = 0,
+    MESSAGE_CLASS_TEXT = 3,
+};
+
+enum{
+    ADDRESS_INVALID = 0xFFFFFFFFUL, // Valid addresses are at most 21 bits
+};
 
 static inline unsigned char even_parity(uint32_t data)
 {
@@ -101,23 +115,7 @@ static inline unsigned char even_parity(uint32_t data)
 #define BCH_N    31
 #define BCH_K    21
 
-/* unused 
-static uint32_t pocsag_code(uint32_t data)
-{
-    uint32_t ret = data << (BCH_N-BCH_K), shreg = ret;
-    uint32_t mask = 1L << (BCH_N-1), coeff = BCH_POLY << (BCH_K-1);
-    int n = BCH_K;
 
-    for(; n > 0; mask >>= 1, coeff >>= 1, n--)
-        if (shreg & mask)
-            shreg ^= coeff;
-    ret ^= shreg;
-    ret = (ret << 1) | even_parity(ret);
-    verbprintf(9, "BCH coder: data: %08lx shreg: %08lx ret: %08lx\n",
-               data, shreg, ret);
-    return ret;
-}
-*/
 
 /* ---------------------------------------------------------------------- */
 
@@ -153,7 +151,7 @@ static void print_msg_numeric(struct l2_pocsag_rx *rx)
             *cp++ = conv_table[*bp & 0xf];
     }
     *cp = '\0';
-    verbprintf(-3, "%s\n", buf);
+    verbprintf(-3, "%s", buf);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -195,7 +193,7 @@ static char *translate_alpha(unsigned char chr)
                  { 29, "<GS>" },
                  { 30, "<RS>" },
                  { 31, "<US>" },
-#ifdef CHARSET_LATIN1
+             #ifdef CHARSET_LATIN1
                  { 0x5b, "\304" }, /* upper case A dieresis */
                  { 0x5c, "\326" }, /* upper case O dieresis */
                  { 0x5d, "\334" }, /* upper case U dieresis */
@@ -291,7 +289,7 @@ static void print_msg_alpha(struct l2_pocsag_rx *rx)
         }
     }
     *cp = '\0';
-    verbprintf(-3, "%s\n", buf);
+    verbprintf(-3, "%s", buf);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -340,22 +338,30 @@ static void print_msg_skyper(struct l2_pocsag_rx *rx)
         }
     }
     *cp = '\0';
-    verbprintf(-3, "%s\n", buf);
+    verbprintf(-3, "%s", buf);
 }
 
 /* ---------------------------------------------------------------------- */
 
-static void pocsag_printmessage(struct demod_state *s, struct l2_pocsag_rx *rx,
-                                const char *add_name)
+static void pocsag_printmessage(struct demod_state *s, struct l2_pocsag_rx *rx)
 {
-    verbprintf(-2, "%s%s: Address: %7lu  Function: %1u\n",
-               s->dem_par->name, add_name, rx->adr, rx->func);
+    if((rx->func == MESSAGE_CLASS_INVALID) && rx->message_corrupt) // is there anything worth showing?
+        return;
+
+    if(rx->func == MESSAGE_CLASS_INVALID || rx->adr == ADDRESS_INVALID)
+        verbprintf(-2, "%s: Address: <CORRUPT>  Function: <CORRUPT>\n",
+                   s->dem_par->name);
+    else
+        verbprintf(-2, "%s: Address: %7lu  Function: %1hhi\n",
+                   s->dem_par->name, rx->adr, rx->func);
+
     if (!rx->numnibbles)
         return;
 
     if (((service_mask & (0x01 << rx->func)) || (pocsag_mode == POCSAG_MODE_NUMERIC))) {
-        verbprintf(-1, "%s%s: Numeric: ", s->dem_par->name, add_name);
+        verbprintf(-1, "%s: Numeric: ", s->dem_par->name);
         print_msg_numeric(rx);
+        verbprintf(-1, "%s\n", rx->message_corrupt?"<CORRUPT>":"");
     }
 
     if ((service_mask & (0x10 << rx->func)) || (pocsag_mode == POCSAG_MODE_ALPHA) || (pocsag_mode == POCSAG_MODE_SKYPER))
@@ -363,14 +369,16 @@ static void pocsag_printmessage(struct demod_state *s, struct l2_pocsag_rx *rx,
         if (((rx->func == 3) && (rx->adr >= 4000) && (rx->adr <= 5000))
                 || (pocsag_mode == POCSAG_MODE_SKYPER))
         {
-            verbprintf(-1, "%s%s: Alpha (SKYPER): ", s->dem_par->name, add_name);
+            verbprintf(-1, "%s: Alpha (SKYPER): ", s->dem_par->name);
             print_msg_skyper(rx);
+            verbprintf(-1, "%s\n", rx->message_corrupt?"<CORRUPT>":"");
         }
 
         if (!((rx->func == 3) && (rx->adr >= 4000) && (rx->adr <= 5000)) || (pocsag_mode == POCSAG_MODE_ALPHA))
         {
-            verbprintf(-1, "%s%s: Alpha: ", s->dem_par->name, add_name);
+            verbprintf(-1, "%s: Alpha: ", s->dem_par->name);
             print_msg_alpha(rx);
+            verbprintf(-1, "%s\n", rx->message_corrupt?"<CORRUPT>":"");
         }
     }
 }
@@ -509,16 +517,7 @@ bitslice_syndrome(uint32_t *slices)
 
 /* ---------------------------------------------------------------------- */
 
-enum{
-    NO_SYNC = 0,
-    GOT_SYNC = 1,
-};
 
-enum{
-    MESSAGE_CLASS_INVALID = -1,
-    MESSAGE_CLASS_NUMERIC = 0,
-    MESSAGE_CLASS_TEXT = 3,
-};
 
 // This might not be elegant, yet effective!
 // Error correction via bruteforce ;)
@@ -656,7 +655,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
     pocsag_total_bits_received++;
 
     if(!(pocsag_total_bits_received % 10000))
-        verbprintf(2, "Bits received: %u\n", pocsag_total_bits_received);
+        verbprintf(3, "Bits received: %u\n", pocsag_total_bits_received);
 
     // Search for Sync
     if (!rx->rx_sync)
@@ -669,7 +668,9 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
             rx->rx_sync = GOT_SYNC;
             rx->rx_bit = 0;
             rx->rx_word = 0;
+            rx->numnibbles = 0;
             rx->func = MESSAGE_CLASS_INVALID;
+            rx->adr = ADDRESS_INVALID;
             pocsag_bits_processed_while_synced++;
         }
         else
@@ -695,12 +696,12 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
     {
         // Invalid data, we lost sync
         verbprintf(2, "Lost sync due to corrupted data!\n");
-        lost_sync(rx);
+        lost_sync(s, rx);
         return;
     }
 
     // it is always 17 words
-    unsigned char rxword = rx->rx_word; // for address calculation, looks fishy
+    unsigned char rxword = rx->rx_word; // for address calculation
     rx->rx_word = ++(rx->rx_word) % 17;
 
     if(!rx->rx_word)
@@ -712,7 +713,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         else
         {
             verbprintf(2, "Lost sync, this (0x%x) should have been a re-sync, but wasn't!\n", rx_data);
-            lost_sync(rx);
+            lost_sync(s, rx);
             return;
         }
         return;
@@ -726,14 +727,16 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
 
         if(rx->func == MESSAGE_CLASS_INVALID)
         {
-            verbprintf(2, "We didn't get the header for this message and thus drop it!\n");
+            verbprintf(2, "We didn't get the header for this message!\n");
         }
 
         if (rx->numnibbles > sizeof(rx->buffer)*2 - 5) {
             verbprintf(-1, "%s%s: Warning: Message too long\n",
                        s->dem_par->name, add_name);
-            pocsag_printmessage(s, rx, add_name);
+            pocsag_printmessage(s, rx);
             rx->func = MESSAGE_CLASS_INVALID;
+            rx->adr = ADDRESS_INVALID;
+            rx->numnibbles = 0;
             return;
         }
 
@@ -754,10 +757,8 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         verbprintf(3, "We received something!\n");
         return;
     }
-    else
+    else // first bit is a zero (address)
     {
-        // It's an address
-
         // Idle messages are a special case since they
         // reside inside the address prefix
         // Idle on idle message :D
@@ -770,7 +771,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
             if(rx->numnibbles)
             {
                 verbprintf(3, "Printing message, received %u nibbles.\n", rx->numnibbles);
-                pocsag_printmessage(s, rx, add_name);
+                pocsag_printmessage(s, rx);
                 rx->numnibbles = 0;
             }
             return;
@@ -784,6 +785,7 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
             rx->rx_bit = 0;
             rx->rx_word = 0;
             rx->func = MESSAGE_CLASS_INVALID;
+            rx->adr = ADDRESS_INVALID;
             // We're already in sync O.o
             return;
         }
@@ -794,162 +796,34 @@ static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
         // new message incoming, output the old one first
         if(rx->numnibbles)
         {
-            pocsag_printmessage(s, rx, add_name);
+            pocsag_printmessage(s, rx);
             rx->numnibbles = 0;
         }
+
         rx->func = (rx_data >> 11) & 3;
-        rx->adr = ((rx_data >> 10) & 0x1ffff8) | ((rxword >> 1) & 7); // no idea what this does
+        rx->adr = ((rx_data >> 10) & 0x1ffff8) | ((rxword >> 1) & 7);
         rx->numnibbles = 0;
         verbprintf(3, "Message class: %u Address: %u\n", rx->func, rx->adr);
     }
 }
 
-void lost_sync(struct l2_pocsag_rx *rx)
+void lost_sync(struct demod_state *s, struct l2_pocsag_rx *rx)
 {
+    rx->message_corrupt = 1;
+    pocsag_printmessage(s, rx);
+
     rx->rx_sync = NO_SYNC;
     rx->rx_bit = 0;
     rx->rx_word = 0;
     rx->numnibbles = 0;
     rx->func = MESSAGE_CLASS_INVALID;
+    rx->adr = ADDRESS_INVALID;
+    rx->message_corrupt = 0;
     memset(rx->buffer, 0, sizeof(rx->buffer));
     return;
 }
 
 
-//static void do_one_bit(struct demod_state *s, struct l2_pocsag_rx *rx,
-//                       uint32_t rx_data, const char *add_name)
-//{
-//    unsigned char rxword;
-
-//    if (!rx->rx_sync)
-//    {
-//        if (rx_data == POCSAG_SYNC || rx_data == POCSAG_SYNCINFO)
-//        {
-//            rx->rx_sync = 2;
-//            rx->rx_bit = rx->rx_word = 0;
-//            rx->func = -1;
-//            return;
-//        }
-//        return;
-//    }
-
-
-
-//    if (rx_data == POCSAG_IDLE) {
-//        /*
-//         * it seems that we can output the message right here
-//         */
-//        if (!(rx->func & (~3)))
-//            pocsag_printmessage(s, rx, add_name);
-//        rx->func = -1; /* invalidate message */
-//        return;
-//    }
-
-//    /*
-//     * one complete word received
-//     */
-//    if ((++(rx->rx_bit)) < 32)
-//        return;
-
-//    rx->rx_bit = 0;
-
-
-//    /*
-//     * check codeword
-//     */
-//    if (pocsag_syndrome(rx_data))
-//    {
-//        /*
-//         * codeword not valid
-//         */
-//        rx->rx_sync--;
-//        verbprintf(7, "%s: Bad codeword: %08lx%s\n",
-//                   s->dem_par->name, rx_data,
-//                   rx->rx_sync ? "" : "sync lost");
-//        if (!(rx->func & (~3))) {
-//            verbprintf(0, "%s%s: Warning: message garbled\n",
-//                       s->dem_par->name, add_name);
-//            pocsag_printmessage(s, rx, add_name);
-//        }
-//        rx->func = -1; /* invalidate message */
-//        return;
-//    }
-
-//    /* do something with the data */
-//    verbprintf(8, "%s%s: Codeword: %08lx\n", s->dem_par->name, add_name, rx_data);
-//    rxword = rx->rx_word++;
-//    if (rxword >= 16) {
-//        /*
-//         * received word shoud be a
-//         * frame synch
-//         */
-//        rx->rx_word = 0;
-//        if ((rx_data == POCSAG_SYNC) ||
-//                (rx_data == POCSAG_SYNCINFO))
-//            rx->rx_sync = 10;
-//        else
-//            rx->rx_sync -= 2;
-//        return;
-//    }
-
-//    if (rx_data & 0x80000000) {
-//        /*
-//         * this is a data word
-//         */
-//        uint32_t data;
-//        unsigned char *bp;
-
-//        if (rx->func & (~3)) {
-//            /*
-//             * no message being received
-//             */
-//            verbprintf(7, "%s%s: Lonesome data codeword: %08lx\n",
-//                       s->dem_par->name, add_name, rx_data);
-//            return;
-//        }
-//        if (rx->numnibbles > sizeof(rx->buffer)*2 - 5) {
-//            verbprintf(0, "%s%s: Warning: Message too long\n",
-//                       s->dem_par->name, add_name);
-//            pocsag_printmessage(s, rx, add_name);
-//            rx->func = -1;
-//            return;
-//        }
-//        bp = rx->buffer + (rx->numnibbles >> 1);
-//        data = rx_data >> 11;
-//        if (rx->numnibbles & 1) {
-//            bp[0] = (bp[0] & 0xf0) | ((data >> 16) & 0xf);
-//            bp[1] = data >> 8;
-//            bp[2] = data;
-//        } else {
-//            bp[0] = data >> 12;
-//            bp[1] = data >> 4;
-//            bp[2] = data << 4;
-//        }
-//        rx->numnibbles += 5;
-//        return;
-//    }
-
-//    /*
-//     * process address codeword
-//     */
-//    if (rx_data >= POCSAG_SYNC_WORDS)
-//    {
-//        unsigned char func = (rx_data >> 11) & 3;
-//        uint32_t adr = ((rx_data >> 10) & 0x1ffff8) |
-//                ((rxword >> 1) & 7);
-
-//        verbprintf(0, "%s%s: Nonstandard address codeword: %08lx "
-//                   "func %1u adr %08lx\n", s->dem_par->name, add_name, rx_data,
-//                   func, adr);
-//        return;
-//    }
-
-//    if (!(rx->func & (~3)))
-//        pocsag_printmessage(s, rx, add_name);
-//    rx->func = (rx_data >> 11) & 3;
-//    rx->adr = ((rx_data >> 10) & 0x1ffff8) | ((rxword >> 1) & 7);
-//    rx->numnibbles = 0;
-//}
 
 /* ---------------------------------------------------------------------- */
 
@@ -958,9 +832,8 @@ void pocsag_rxbit(struct demod_state *s, int32_t bit)
     s->l2.pocsag.rx_data <<= 1;
     s->l2.pocsag.rx_data |= !bit;
     verbprintf(9, " %c ", '1'-(s->l2.pocsag.rx_data & 1));
-    do_one_bit(s, s->l2.pocsag.rx, ~(s->l2.pocsag.rx_data), "+"); // this seems to feed an inverted signal
-    // just to be sure I guess :/
-    do_one_bit(s, s->l2.pocsag.rx+1, s->l2.pocsag.rx_data, "-");
+    do_one_bit(s, s->l2.pocsag.rx, ~(s->l2.pocsag.rx_data), ""); // this also tries the inverted signal
+    do_one_bit(s, s->l2.pocsag.rx+1, s->l2.pocsag.rx_data, "");
 }
 
 /* ---------------------------------------------------------------------- */

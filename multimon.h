@@ -82,7 +82,8 @@ struct l2_pocsag_rx {
     uint32_t adr;               // POCSAG address
     unsigned char buffer[512];
     uint32_t numnibbles;
-} ;
+    char message_corrupt;
+};
 
 struct demod_state {
     const struct demod_param *dem_par;
