@@ -6,8 +6,8 @@
  *
  *      Added eas parts - A. Maitland Bottoms 27 June 2000
  *
- *      Copyright (C) 2012/2013
- *          Elias Oenal    (EliasOenal@gmail.com)
+ *      Copyright (C) 2012-2014
+ *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
@@ -74,17 +74,6 @@ struct l2_state_clipfsk {
     uint32_t rxbitbuf;
 };
 
-struct l2_pocsag_rx {
-    unsigned char rx_sync;      // sync status
-    unsigned char rx_word;      // word counter
-    unsigned char rx_bit;       // bit counter, counts 32bits
-    char func;                  // POCSAG function (eg 3 for text)
-    uint32_t adr;               // POCSAG address
-    unsigned char buffer[512];
-    uint32_t numnibbles;
-    char message_corrupt;
-};
-
 struct demod_state {
     const struct demod_param *dem_par;
     union {
@@ -105,11 +94,6 @@ struct demod_state {
             uint32_t rxbitbuf;
         } hdlc;
         
-        struct l2_state_pocsag {
-            uint32_t rx_data;
-            struct l2_pocsag_rx rx[2];
-        } pocsag;
-        
         struct l2_state_eas {
             char last_message[269];
             char msg_buf[4][269];
@@ -119,6 +103,25 @@ struct demod_state {
             uint32_t msgno;
             uint32_t state;
         } eas;
+
+        struct l2_state_pocsag {
+            uint32_t rx_data;
+            unsigned char state;        // state machine
+            unsigned char rx_bit;       // bit counter, counts 32bits
+            unsigned char rx_word;
+            int32_t function;          // POCSAG function
+            int32_t address;           // POCSAG address
+            unsigned char buffer[512];
+            uint32_t numnibbles;
+            uint32_t pocsag_total_error_count;
+            uint32_t pocsag_corrected_error_count;
+            uint32_t pocsag_corrected_1bit_error_count;
+            uint32_t pocsag_corrected_2bit_error_count;
+            uint32_t pocsag_uncorrected_error_count;
+            uint32_t pocsag_total_bits_received;
+            uint32_t pocsag_bits_processed_while_synced;
+            uint32_t pocsag_bits_processed_while_not_synced;
+        } pocsag;
     } l2;
     union {
         struct l1_state_poc5 {
@@ -201,7 +204,7 @@ struct demod_state {
             int lastch;
             int timeout;
         } selcall;
-        
+
         struct l1_state_morse {
             uint64_t current_sequence;
             int_fast16_t threshold_ctr;

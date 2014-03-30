@@ -4,8 +4,8 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012
- *          Elias Oenal    (EliasOenal@gmail.com)
+ *      Copyright (C) 2012-2014
+ *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
@@ -62,7 +62,7 @@
 
 static const char *allowed_types[] = {
     "raw", "aiff", "au", "hcom", "sf", "voc", "cdr", "dat",
-    "smp", "wav", "maud", "vwe", "mp3", "mp4", "ogg", NULL
+    "smp", "wav", "maud", "vwe", "mp3", "mp4", "ogg", "flac", NULL
 };
 
 /* ---------------------------------------------------------------------- */
@@ -87,6 +87,8 @@ static int integer_only = true;
 static bool dont_flush = false;
 
 extern int pocsag_mode;
+extern int pocsag_invert_input;
+extern int pocsag_error_correction;
 extern int aprs_mode;
 extern int cw_dit_length;
 extern int cw_gap_length;
@@ -180,9 +182,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
             break;
         if (i > 0) {
             if(integer_only)
-	    {
+        {
                 fbuf_cnt = i/sizeof(buffer[0]);
-	    }
+        }
             else
             {
                 for (; i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
@@ -253,9 +255,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
         
         if (i > 0) {
             if(integer_only)
-	    {
+        {
                 fbuf_cnt = i/sizeof(buffer[0]);
-	    }
+        }
             else
             {
                 for (; (unsigned int) i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
@@ -377,9 +379,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
                 break;
             if (i > 0) {
                 if(integer_only)
-		{
+        {
                     fbuf_cnt = i/sizeof(b.s[0]);
-		}
+        }
                 else
                 {
                     for (; i >= sizeof(b.s[0]); i -= sizeof(b.s[0]), sp++)
@@ -486,9 +488,9 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             break;
         if (i > 0) {
             if(integer_only)
-	    {
+        {
                 fbuf_cnt = i/sizeof(buffer[0]);
-	    }
+        }
             else
             {
                 for (; (unsigned int) i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
@@ -534,6 +536,8 @@ static const char usage_str[] = "\n"
         "  -q         : quiet\n"
         "  -v <level> : level of verbosity (for example '-v 10')\n"
         "  -f <mode>  : forces POCSAG data decoding as <mode> (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
+        "  -i         : inverts the input samples when decoding POCSAG\n"
+        "  -b <level> : POCSAG BCH bit error correction level. Set 0 to disable, default is 2."
         "  -h         : this help\n"
         "  -A         : APRS mode (TNC2 text output)\n"
         "  -m         : mute SoX warnings\n"
@@ -559,11 +563,8 @@ int main(int argc, char *argv[])
     int sample_rate = -1;
     unsigned int overlap = 0;
     char *input_type = "hw";
-    
-    for (i = 0; (unsigned int) i < NUMDEMOD; i++)
-        fprintf(stderr, " %s", dem[i]->name);
-    fprintf(stderr, "\n");
-    while ((c = getopt(argc, argv, "t:a:s:v:f:g:d:o:cqhAmrxyn")) != EOF) {
+
+    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxyni")) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -587,6 +588,15 @@ int main(int argc, char *argv[])
             
         case 'v':
             verbose_level = strtoul(optarg, 0, 0);
+            break;
+
+        case 'b':
+            pocsag_error_correction = strtoul(optarg, 0, 0);
+            if(pocsag_error_correction > 2 || pocsag_error_correction < 0)
+            {
+                fprintf(stderr, "Invalid error correction value!\n");
+                pocsag_error_correction = 2;
+            }
             break;
             
         case 'm':
@@ -665,6 +675,10 @@ intypefound:
         case 'n':
             dont_flush = true;
             break;
+
+        case 'i':
+            pocsag_invert_input = true;
+            break;
             
         case 'd':
         {
@@ -700,15 +714,16 @@ intypefound:
         }
     }
 
- 
-    if ( !quietflg ) { // pay heed to the quietflg
-	fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-	    "             (C) 2012/2013 by Elias Oenal\n"
-	    "available demodulators:");
-	for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
-	    fprintf(stderr, " %s", dem[i]->name);
-	}
-	fprintf(stderr, "\n");
+
+    if ( !quietflg )
+    { // pay heed to the quietflg
+    fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+        "             (C) 2012-2014 by Elias Oenal\n"
+        "available demodulators:");
+    for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
+        fprintf(stderr, " %s", dem[i]->name);
+    }
+    fprintf(stderr, "\n");
     }
 
     if (errflg) {
