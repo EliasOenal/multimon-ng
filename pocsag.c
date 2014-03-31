@@ -61,6 +61,8 @@ int pocsag_mode = 0;
 int pocsag_invert_input = 0;
 int pocsag_error_correction = 2;
 int pocsag_show_partial_decodes = 0;
+int pocsag_heuristic_pruning = 0;
+int pocsag_prune_empty = 0;
 
 /* ---------------------------------------------------------------------- */
 
@@ -378,6 +380,8 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
 {
     if(!pocsag_show_partial_decodes && ((s->l2.pocsag.address == -2) || (s->l2.pocsag.function == -2) || !sync))
         return; // Hide partial decodes
+    if(pocsag_prune_empty && (s->l2.pocsag.numnibbles == 0))
+        return;
 
     if((s->l2.pocsag.address != -1) || (s->l2.pocsag.function != -1))
     {
@@ -403,7 +407,11 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
             guess_skyper = print_msg_skyper(&s->l2.pocsag, skyper_string, sizeof(skyper_string));
 
             if(guess_num < 20 && guess_alpha < 20 && guess_skyper < 20)
+            {
+                if(pocsag_heuristic_pruning)
+                    return;
                 unsure = 1;
+            }
 
 
             if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_num >= 20 || unsure)))

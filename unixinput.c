@@ -90,6 +90,8 @@ extern int pocsag_mode;
 extern int pocsag_invert_input;
 extern int pocsag_error_correction;
 extern int pocsag_show_partial_decodes;
+extern int pocsag_heuristic_pruning;
+extern int pocsag_prune_empty;
 
 extern int aprs_mode;
 extern int cw_dit_length;
@@ -543,7 +545,9 @@ static const char usage_str[] = "\n"
         "  -A         : APRS mode (TNC2 text output)\n"
         "  -m         : Mute SoX warnings\n"
         "  -r         : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
-        "  -n         : Don't flush stdout, increases performance\n"
+        "  -n         : Don't flush stdout, increases performance.\n"
+        "  -e         : POCSAG: Hide empty messages.\n"
+        "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
         "  -p         : POCSAG: Show partially received messages.\n"
         "  -f <mode>  : POCSAG: Disables auto-detection and forces decoding of data as <mode>\n"
@@ -571,7 +575,7 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
 
-    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynip")) != EOF) {
+    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu")) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -608,6 +612,14 @@ int main(int argc, char *argv[])
 
         case'p':
             pocsag_show_partial_decodes = 1;
+            break;
+
+        case'u':
+            pocsag_heuristic_pruning = 1;
+            break;
+
+        case'e':
+            pocsag_prune_empty = 1;
             break;
             
         case 'm':
