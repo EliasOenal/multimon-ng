@@ -89,6 +89,8 @@ static bool dont_flush = false;
 extern int pocsag_mode;
 extern int pocsag_invert_input;
 extern int pocsag_error_correction;
+extern int pocsag_show_partial_decodes;
+
 extern int aprs_mode;
 extern int cw_dit_length;
 extern int cw_gap_length;
@@ -102,10 +104,11 @@ void quit(void);
 
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
+    if (verb_level > verbose_level)
+        return;
     va_list args;
-    
     va_start(args, fmt);
-    if (verb_level <= verbose_level) {
+    {
         vfprintf(stdout, fmt, args);
         if(!dont_flush)
             fflush(stdout);
@@ -529,25 +532,29 @@ static const char usage_str[] = "\n"
         "Usage: %s [file] [file] [file] ...\n"
         "  If no [file] is given, input will be read from your default sound\n"
         "  hardware. A filename of \"-\" denotes standard input.\n"
-        "  -t <type>  : input file type (any other type than raw requires sox)\n"
-        "  -a <demod> : add demodulator\n"
-        "  -s <demod> : subtract demodulator\n"
-        "  -c         : remove all demodulators (must be added with -a <demod>)\n"
-        "  -q         : quiet\n"
-        "  -v <level> : level of verbosity (for example '-v 10')\n"
-        "  -f <mode>  : forces POCSAG data decoding as <mode> (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
-        "  -i         : inverts the input samples when decoding POCSAG\n"
-        "  -b <level> : POCSAG BCH bit error correction level. Set 0 to disable, default is 2."
-        "  -h         : this help\n"
+        "  -t <type>  : Input file type (any other type than raw requires sox)\n"
+        "  -a <demod> : Add demodulator\n"
+        "  -s <demod> : Subtract demodulator\n"
+        "  -c         : Remove all demodulators (must be added with -a <demod>)\n"
+        "  -q         : Quiet\n"
+        "  -v <level> : Level of verbosity (e.g. '-v 3')\n"
+        "               For POCSAG and MORSE_CW '-v1' prints decoding statistics.\n"
+        "  -h         : This help\n"
         "  -A         : APRS mode (TNC2 text output)\n"
-        "  -m         : mute SoX warnings\n"
-        "  -r         : call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
-        "  -n         : don't flush stdout, increases performance\n"
-        "  -o         : CW: set threshold for dit detection (default: 500)\n"
-        "  -d         : CW: dit length in ms (default: 50)\n"
-        "  -g         : CW: gap length in ms (default: 50)\n"
-        "  -x         : CW: disable auto threshold detection\n"
-        "  -y         : CW: disable auto timing detection\n"
+        "  -m         : Mute SoX warnings\n"
+        "  -r         : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
+        "  -n         : Don't flush stdout, increases performance\n"
+        "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
+        "  -p         : POCSAG: Show partially received messages.\n"
+        "  -f <mode>  : POCSAG: Disables auto-detection and forces decoding of data as <mode>\n"
+        "                       (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
+        "  -b <level> : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
+        "                       Lower levels increase performance and lower false positives.\n"
+        "  -o         : CW: Set threshold for dit detection (default: 500)\n"
+        "  -d         : CW: Dit length in ms (default: 50)\n"
+        "  -g         : CW: Gap length in ms (default: 50)\n"
+        "  -x         : CW: Disable auto threshold detection\n"
+        "  -y         : CW: Disable auto timing detection\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
@@ -564,7 +571,7 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
 
-    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxyni")) != EOF) {
+    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynip")) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -597,6 +604,10 @@ int main(int argc, char *argv[])
                 fprintf(stderr, "Invalid error correction value!\n");
                 pocsag_error_correction = 2;
             }
+            break;
+
+        case'p':
+            pocsag_show_partial_decodes = 1;
             break;
             
         case 'm':

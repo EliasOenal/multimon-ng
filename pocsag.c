@@ -60,12 +60,7 @@
 int pocsag_mode = 0;
 int pocsag_invert_input = 0;
 int pocsag_error_correction = 2;
-
-static const char* modes[] = {
-    "Numeric",
-    "Alpha",
-    "Skyper"
-};
+int pocsag_show_partial_decodes = 0;
 
 /* ---------------------------------------------------------------------- */
 
@@ -129,31 +124,6 @@ static unsigned int pocsag_syndrome(uint32_t data)
 
 /* ---------------------------------------------------------------------- */
 
-static unsigned int print_msg_numeric(struct l2_state_pocsag *rx, char* buff, unsigned int size)
-{
-    static const char *conv_table = "084 2.6]195-3U7[";
-    unsigned char *bp = rx->buffer;
-    int len = rx->numnibbles;
-    char* cp = buff;
-    unsigned int guesstimate = 0;
-
-    if ( (unsigned int) len >= size)
-        len = size-1;
-    for (; len > 0; bp++, len -= 2) {
-        *cp++ = conv_table[(*bp >> 4) & 0xf];
-        if (len > 1)
-            *cp++ = conv_table[*bp & 0xf];
-    }
-    *cp = '\0';
-
-    for(cp = buff; *cp; cp++)
-        if((*cp == '[') || (*cp == ']') || (*cp == 'U'))
-            guesstimate++;
-    return guesstimate;
-}
-
-/* ---------------------------------------------------------------------- */
-
 static char *translate_alpha(unsigned char chr)
 {
     static const struct trtab {
@@ -198,24 +168,26 @@ static char *translate_alpha(unsigned char chr)
                  { 0x7b, "\344" }, /* lower case a dieresis */
                  { 0x7c, "\366" }, /* lower case o dieresis */
                  { 0x7d, "\374" }, /* lower case u dieresis */
-                 { 0x7e, "\337" }}; /* sharp s */
-#elif defined CHARSET_UTF8
+                 { 0x7e, "\337" }, /* sharp s */
+             #elif defined CHARSET_UTF8
                  { 0x5b, "Ä" }, /* upper case A dieresis */
                  { 0x5c, "Ö" }, /* upper case O dieresis */
                  { 0x5d, "Ü" }, /* upper case U dieresis */
                  { 0x7b, "ä" }, /* lower case a dieresis */
                  { 0x7c, "ö" }, /* lower case o dieresis */
                  { 0x7d, "ü" }, /* lower case u dieresis */
-                 { 0x7e, "ß" }}; /* sharp s */
-#else
+                 { 0x7e, "ß" }, /* sharp s */
+             #else
                  { 0x5b, "AE" }, /* upper case A dieresis */
                  { 0x5c, "OE" }, /* upper case O dieresis */
                  { 0x5d, "UE" }, /* upper case U dieresis */
                  { 0x7b, "ae" }, /* lower case a dieresis */
                  { 0x7c, "oe" }, /* lower case o dieresis */
                  { 0x7d, "ue" }, /* lower case u dieresis */
-                 { 0x7e, "ss" }}; /* sharp s */
-#endif
+                 { 0x7e, "ss" }, /* sharp s */
+             #endif
+                 { 127, "<DEL>" }};
+
     int min = 0, max = (sizeof(trtab) / sizeof(trtab[0])) - 1;
 
     /*
@@ -242,8 +214,57 @@ static char *translate_alpha(unsigned char chr)
 }
 
 /* ---------------------------------------------------------------------- */
+static int guesstimate_alpha(const unsigned char cp)
+{
+    if(cp < 32 || cp == 127)
+        return -5; // Non printable characters are uncommon
+    else if((cp > 32 && cp < 48)
+            || (cp > 57 && cp < 65)
+            || (cp > 90 && cp < 97)
+            || (cp > 122 && cp < 127))
+        return -2; // Penalize special characters
+    else
+        return 1;
+}
 
-static unsigned int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int size)
+static int guesstimate_numeric(const unsigned char cp, int pos)
+{
+    if(cp == 'U')
+        return -10;
+    else if(cp == '[' || cp == ']')
+        return -5;
+    else if(cp == ' ' || cp == '.' || cp == '-')
+        return -2;
+    else if(pos < 10) // Penalize long messages
+        return 5;
+    else
+        return 0;
+}
+
+static unsigned int print_msg_numeric(struct l2_state_pocsag *rx, char* buff, unsigned int size)
+{
+    static const char *conv_table = "084 2.6]195-3U7[";
+    unsigned char *bp = rx->buffer;
+    int len = rx->numnibbles;
+    char* cp = buff;
+    unsigned int guesstimate = 0;
+
+    if ( (unsigned int) len >= size)
+        len = size-1;
+    for (; len > 0; bp++, len -= 2) {
+        *cp++ = conv_table[(*bp >> 4) & 0xf];
+        if (len > 1)
+            *cp++ = conv_table[*bp & 0xf];
+    }
+    *cp = '\0';
+
+    cp = buff;
+    for(int i = 0; *(cp+i); i++)
+        guesstimate += guesstimate_numeric(*(cp+i), i);
+    return guesstimate;
+}
+
+static int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int size)
 {
     uint32_t data = 0;
     int datalen = 0;
@@ -253,7 +274,7 @@ static unsigned int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsi
     int buffree = size-1;
     unsigned char curchr;
     char *tstr;
-    unsigned int guesstimate = 0;
+    int guesstimate = 0;
 
     while (len > 0)
     {
@@ -275,7 +296,9 @@ static unsigned int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsi
         curchr = ((curchr & 0xf0) >> 4) | ((curchr & 0x0f) << 4);
         curchr = ((curchr & 0xcc) >> 2) | ((curchr & 0x33) << 2);
         curchr = ((curchr & 0xaa) >> 1) | ((curchr & 0x55) << 1);
-        if(*((unsigned char*)&curchr) < 32) guesstimate++;
+
+        guesstimate += guesstimate_alpha(curchr);
+
         tstr = translate_alpha(curchr);
         if (tstr)
         {
@@ -298,7 +321,7 @@ static unsigned int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsi
 
 /* ---------------------------------------------------------------------- */
 
-static void print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned int size)
+static int print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned int size)
 {
     uint32_t data = 0;
     int datalen = 0;
@@ -308,6 +331,7 @@ static void print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned in
     int buffree = size-1;
     unsigned char curchr;
     char *tstr;
+    unsigned int guesstimate = 0;
 
     while (len > 0) {
         while (datalen < 7 && len > 0) {
@@ -328,6 +352,9 @@ static void print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned in
         curchr = ((curchr & 0xf0) >> 4) | ((curchr & 0x0f) << 4);
         curchr = ((curchr & 0xcc) >> 2) | ((curchr & 0x33) << 2);
         curchr = ((curchr & 0xaa) >> 1) | ((curchr & 0x55) << 1);
+
+        guesstimate += guesstimate_alpha(curchr-1);
+
         tstr = translate_alpha(curchr-1);
         if (tstr) {
             int tlen = strlen(tstr);
@@ -342,59 +369,85 @@ static void print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned in
         }
     }
     *cp = '\0';
+    return guesstimate;
 }
 
 /* ---------------------------------------------------------------------- */
 
 static void pocsag_printmessage(struct demod_state *s, bool sync)
 {
+    if(!pocsag_show_partial_decodes && ((s->l2.pocsag.address == -2) || (s->l2.pocsag.function == -2) || !sync))
+        return; // Hide partial decodes
+
     if((s->l2.pocsag.address != -1) || (s->l2.pocsag.function != -1))
     {
-        verbprintf(0, "%s: Address: %7lu  Function: %1hhi ", s->dem_par->name,
-                   s->l2.pocsag.address, s->l2.pocsag.function);
-
-        if(s->l2.pocsag.numnibbles)
+        if(s->l2.pocsag.numnibbles == 0)
         {
-            switch(pocsag_mode)
-            {
-            case POCSAG_MODE_AUTO:
-            {
-                char alpha_string[1024];
-                char num_string[1024];
-                int guess = print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string))
-                        < print_msg_numeric(&s->l2.pocsag, num_string, sizeof(num_string));
-                verbprintf(0, "%s: %s", modes[guess], guess?alpha_string:num_string);
-                break;
-            }
-
-            case POCSAG_MODE_NUMERIC:
-            {
-                char num_string[1024];
-                print_msg_numeric(&s->l2.pocsag, num_string, sizeof(num_string));
-                verbprintf(0, "%s: %s", modes[0], num_string);
-                break;
-            }
-
-            case POCSAG_MODE_ALPHA:
-            {
-                char alpha_string[1024];
-                print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string));
-                verbprintf(0, "%s: %s", modes[1], alpha_string);
-                break;
-            }
-
-            case POCSAG_MODE_SKYPER:
-            {
-                char alpha_string[1024];
-                print_msg_skyper(&s->l2.pocsag, alpha_string, sizeof(alpha_string));
-                verbprintf(0, "%s: %s", modes[2], alpha_string);
-                break;
-            }
-            }
-            if(!sync)
-                verbprintf(2,"<LOST SYNC>");
+            verbprintf(0, "%s: Address: %7lu  Function: %1hhi ",s->dem_par->name,
+                       s->l2.pocsag.address, s->l2.pocsag.function);
+            if(!sync) verbprintf(2,"<LOST SYNC>");
+            verbprintf(0,"\n");
         }
-        verbprintf(0, "\n");
+        else
+        {
+            char num_string[1024];
+            char alpha_string[1024];
+            char skyper_string[1024];
+            int guess_num = 0;
+            int guess_alpha = 0;
+            int guess_skyper = 0;
+            int unsure = 0;
+
+            guess_num = print_msg_numeric(&s->l2.pocsag, num_string, sizeof(num_string));
+            guess_alpha = print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string));
+            guess_skyper = print_msg_skyper(&s->l2.pocsag, skyper_string, sizeof(skyper_string));
+
+            if(guess_num < 20 && guess_alpha < 20 && guess_skyper < 20)
+                unsure = 1;
+
+
+            if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_num >= 20 || unsure)))
+            {
+                if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
+                    verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
+                           s->l2.pocsag.address, s->l2.pocsag.function);
+                else
+                    verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
+                if(pocsag_mode == POCSAG_MODE_AUTO)
+                    verbprintf(3, "Certainty: %5i  ", guess_num);
+                verbprintf(0, "Numeric: %s", num_string);
+                if(!sync) verbprintf(2,"<LOST SYNC>");
+                verbprintf(0,"\n");
+            }
+
+            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_alpha >= 20 || unsure)))
+            {
+                if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
+                    verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
+                           s->l2.pocsag.address, s->l2.pocsag.function);
+                else
+                    verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
+                if(pocsag_mode == POCSAG_MODE_AUTO)
+                    verbprintf(3, "Certainty: %5i  ", guess_alpha);
+                verbprintf(0, "Alpha:   %s", alpha_string);
+                if(!sync) verbprintf(2,"<LOST SYNC>");
+                verbprintf(0,"\n");
+            }
+
+            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_skyper >= 20 || unsure)))
+            {
+                if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
+                    verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
+                           s->l2.pocsag.address, s->l2.pocsag.function);
+                else
+                    verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
+                if(pocsag_mode == POCSAG_MODE_AUTO)
+                    verbprintf(3, "Certainty: %5i  ", guess_skyper);
+                verbprintf(0, "Skyper:  %s", skyper_string);
+                if(!sync) verbprintf(2,"<LOST SYNC>");
+                verbprintf(0,"\n");
+            }
+        }
     }
 }
 
@@ -713,6 +766,7 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
 
         if(pocsag_brute_repair(&s->l2.pocsag, &rx_data))
         {
+            // Arbitration lost
             if(s->l2.pocsag.state != LOST_SYNC)
                 s->l2.pocsag.state = LOSING_SYNC;
         }
@@ -725,9 +779,8 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
             }
         }
 
-        if(is_sync(&rx_data) || is_idle(&rx_data))
+        if(is_sync(&rx_data))
             return; // Already sync'ed.
-
 
         while(true)
             switch(s->l2.pocsag.state)
@@ -754,14 +807,19 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
 
             case ADDRESS:
             {
+                if(is_idle(&rx_data)) // Idle codewords have a magic address
+                    return;
+
                 if(rx_data & POCSAG_MESSAGE_DETECTION)
                 {
-                    verbprintf(4, "Got an invalid address: %u\n", rx_data);
-                    //                    return;
+                    verbprintf(4, "Got a message: %u\n", rx_data);
+                    s->l2.pocsag.function = -2;
+                    s->l2.pocsag.address  = -2;
+                    s->l2.pocsag.state = MESSAGE;
+                    break; // Performing partial decode
                 }
-                else
-                    verbprintf(4, "Got a valid address: %u\n", rx_data);
 
+                verbprintf(4, "Got an address: %u\n", rx_data);
                 s->l2.pocsag.function = (rx_data >> 11) & 3;
                 s->l2.pocsag.address  = ((rx_data >> 10) & 0x1ffff8) | ((rxword >> 1) & 7);
                 s->l2.pocsag.state = MESSAGE;
@@ -771,9 +829,10 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
             case MESSAGE:
             {
                 if(rx_data & POCSAG_MESSAGE_DETECTION)
-                    verbprintf(4, "Got a valid message: %u\n", rx_data);
+                    verbprintf(4, "Got a message: %u\n", rx_data);
                 else
                 {
+                    // Address/idle signals end of message
                     verbprintf(4, "Got an address: %u\n", rx_data);
                     s->l2.pocsag.state = END_OF_MESSAGE;
                     break;
