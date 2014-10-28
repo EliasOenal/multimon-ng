@@ -83,11 +83,11 @@ typedef void (*t_init_procs)(struct gen_params *, struct gen_state *);
 typedef int (*t_gen_procs)(signed short *, int, struct gen_params *, struct gen_state *);
 
 static const t_init_procs init_procs[] = {
-	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk
+	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk, gen_init_fmsfsk
 };
 
 static const t_gen_procs gen_procs[] = {
-	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk
+	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk, gen_fmsfsk
 };
 
 /* ---------------------------------------------------------------------- */
@@ -381,6 +381,7 @@ static const char usage_str[] = "Generates test signals\n"
 "  -u <text>  : encode uart string\n"
 "  -p <text>  : encode hdlc packet\n"
 "  -c <str>   : encode CLIP FSK string\n"
+"  -f <str>   : encode FMS FSK string\n"
 "  -h         : this help\n";
 
 int main(int argc, char *argv[])
@@ -498,6 +499,20 @@ int main(int argc, char *argv[])
 			strncpy(params[num_gen-1].p.clipfsk.pkt, optarg, sizeof(params[num_gen-1].p.clipfsk.pkt));
 			params[num_gen-1].p.clipfsk.pktlen = strlen(params[num_gen-1].p.clipfsk.pkt);
 			break;
+
+                case 'f':
+                        num_gen++;
+                        if (num_gen > MAX_GEN) {
+                                fprintf(stderr, "too many generators\n");
+                                errflg++;
+                                break;
+                        }
+                        params[num_gen-1].type = gentype_fmsfsk;
+                        params[num_gen-1].ampl = 16384;
+                        params[num_gen-1].p.fmsfsk.txdelay = 2;
+                        strncpy(params[num_gen-1].p.fmsfsk.pkt, optarg, sizeof(params[num_gen-1].p.fmsfsk.pkt));
+                        params[num_gen-1].p.fmsfsk.pktlen = strlen(params[num_gen-1].p.fmsfsk.pkt);
+                        break;
 
 		case 'p':
 			num_gen++;

@@ -23,6 +23,7 @@ SOURCES += \
 	gen_hdlc.c \
 	gen_uart.c \
 	gen_clipfsk.c \
+        gen_fmsfsk.c \
 	costabi.c
 
 macx{
