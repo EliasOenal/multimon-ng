@@ -25,7 +25,7 @@
 
 /* ---------------------------------------------------------------------- */
 
-static inline int check_sum256(const unsigned char *buf, int cnt)
+static inline int fms_check_sum256(const unsigned char *buf, int cnt)
 {
         unsigned int sum = 0;
 
@@ -36,7 +36,7 @@ static inline int check_sum256(const unsigned char *buf, int cnt)
 
 /* ---------------------------------------------------------------------- */
 
-unsigned char disp_parm(unsigned char *bp, unsigned char param_len)
+unsigned char fms_disp_parm(unsigned char *bp, unsigned char param_len)
 {
         unsigned char i, len;
 
@@ -390,7 +390,7 @@ static void fms_disp_packet(struct demod_state *s, unsigned char *bp, unsigned i
 
 /* ---------------------------------------------------------------------- */
 
-static void disp_packet(struct demod_state *s, unsigned char *bp, unsigned int len)
+static void fms_disp_packet(struct demod_state *s, unsigned char *bp, unsigned int len)
 {
         unsigned char i,j;
 	(void) s;  // Suppress the warning.
