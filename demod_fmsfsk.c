@@ -45,8 +45,8 @@
 #define SPHASEINC (0x10000u*BAUD*SUBSAMP/FREQ_SAMP)
 
 static float corr_1_i[CORRLEN];
-static float corr_0_q[CORRLEN];
-static float corr_1_i[CORRLEN];
+static float corr_1_q[CORRLEN];
+static float corr_0_i[CORRLEN];
 static float corr_0_q[CORRLEN];
 
 /* ---------------------------------------------------------------------- */
