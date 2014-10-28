@@ -67,7 +67,7 @@ static void fms_disp_packet(struct demod_state *s, unsigned char *bp, unsigned i
         if (!bp || len < 5) 
 		return;
 #if 1
-	i=check_sum256(bp, len);
+	i=fms_check_sum256(bp, len);
 //	if (i != 0 && i != 0xf6) {
 	if (i != 0) {
 //		verbprintf(0, " CHKSUM=0x%02X SUM=0x%02X PLEN=%d\n", i, *(bp+len-1), len);
