@@ -77,9 +77,9 @@ struct l2_state_clipfsk {
 struct l2_state_fmsfsk {
     unsigned char rxbuf[512];
     unsigned char *rxptr;
-    uint32_t rxstate;
-    uint32_t rxbitstream;
-    uint32_t rxbitbuf;
+    uint32_t rxstate; // used to track the SYNC pattern
+    uint64_t rxbitstream; // holds RXed bits
+    uint32_t rxbitcount; // counts RXed bits
 };
 
 struct demod_state {
@@ -91,7 +91,7 @@ struct demod_state {
             unsigned char rxbuf[8192];
             unsigned char *rxptr;
             uint32_t rxstate;
-            uint32_t rxbitstream;
+            uint64_t rxbitstream;
             uint32_t rxbitbuf;
         } uart;
         
