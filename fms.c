@@ -187,8 +187,10 @@ static void fms_disp_packet(uint64_t message)
     uint8_t short_info;  // taktische Kurzinformation
     uint8_t crc;         // Redundanz
 
-    verbprintf(0, "FMS MESSAGE HIGH: %08x\n", message >> 32);
-    verbprintf(0, "FMS MESSAGE  LOW: %08x\n", message);
+    verbprintf(2, "FMS MESSAGE HIGH: %08x\n", message >> 32);
+    verbprintf(2, "FMS MESSAGE  LOW: %08x\n", message);
+
+    verbprintf(0, "FMS: %08x%04x (", message >> 32, ((uint32_t)message >> 16));
 
     service_id = (message >> 16) & 0xF;
     fms_disp_service_id(service_id);
@@ -214,7 +216,7 @@ static void fms_disp_packet(uint64_t message)
 
     crc = (message >> 54) & 0x3F;
 
-    verbprintf(0, "\n\n");
+    verbprintf(0, ")\n");
 }
 
 /* ---------------------------------------------------------------------- */
@@ -242,7 +244,7 @@ void fms_rxbit(struct demod_state *s, int bit)
     // Check if the sync pattern is in the buffer
     if ((s->l2.fmsfsk.rxstate & 0x0007FFFF) == 0x7FF1A)
     {
-        verbprintf(0, "FMS ->SYNC<-\n");
+        verbprintf(1, "FMS ->SYNC<-\n");
         s->l2.fmsfsk.rxbitstream = 0; // reset RX buffer
         s->l2.fmsfsk.rxbitcount = 1;  // > 1 means we have a valid SYNC
     }
