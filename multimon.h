@@ -94,7 +94,7 @@ struct demod_state {
             uint32_t rxbitstream;
             uint32_t rxbitbuf;
         } uart;
-
+        
         struct l2_state_hdlc {
             unsigned char rxbuf[512];
             unsigned char *rxptr;
@@ -102,7 +102,7 @@ struct demod_state {
             uint32_t rxbitstream;
             uint32_t rxbitbuf;
         } hdlc;
-
+        
         struct l2_state_eas {
             char last_message[269];
             char msg_buf[4][269];
@@ -138,18 +138,18 @@ struct demod_state {
             uint32_t sphase;
             uint32_t subsamp;
         } poc5;
-
+        
         struct l1_state_poc12 {
             uint32_t dcd_shreg;
             uint32_t sphase;
             uint32_t subsamp;
         } poc12;
-
+        
         struct l1_state_poc24 {
             uint32_t dcd_shreg;
             uint32_t sphase;
         } poc24;
-
+        
         struct l1_state_eas {
             unsigned int dcd_shreg;
             unsigned int sphase;
@@ -159,50 +159,50 @@ struct demod_state {
             int dcd_integrator;
             uint32_t state;
         } eas;
-
+        
         struct l1_state_ufsk12 {
             unsigned int dcd_shreg;
             unsigned int sphase;
             unsigned int subsamp;
         } ufsk12;
-
-        struct l1_state_fmsfsk {
-            unsigned int dcd_shreg;
-            unsigned int sphase;
-            uint32_t subsamp;
-        } fmsfsk;
-
+        
         struct l1_state_clipfsk {
             unsigned int dcd_shreg;
             unsigned int sphase;
             uint32_t subsamp;
         } clipfsk;
-
+        
+        struct l1_state_fmsfsk {
+            unsigned int dcd_shreg;
+            unsigned int sphase;
+            uint32_t subsamp;
+        } fmsfsk;
+        
         struct l1_state_afsk12 {
             uint32_t dcd_shreg;
             uint32_t sphase;
             uint32_t lasts;
             uint32_t subsamp;
         } afsk12;
-
+        
         struct l1_state_afsk24 {
             unsigned int dcd_shreg;
             unsigned int sphase;
             unsigned int lasts;
         } afsk24;
-
+        
         struct l1_state_hapn48 {
             unsigned int shreg;
             unsigned int sphase;
             float lvllo, lvlhi;
         } hapn48;
-
+        
         struct l1_state_fsk96 {
             unsigned int dcd_shreg;
             unsigned int sphase;
             unsigned int descram;
         } fsk96;
-
+        
         struct l1_state_dtmf {
             unsigned int ph[8];
             float energy[4];
@@ -210,7 +210,7 @@ struct demod_state {
             int blkcount;
             int lastch;
         } dtmf;
-
+        
         struct l1_state_selcall {
             unsigned int ph[16];
             float energy[4];
@@ -236,13 +236,13 @@ struct demod_state {
             int_fast16_t holdoff_samples;
             int_fast8_t current_state;  // High = 1, Low = 0
         } morse;
-
+        
         struct l1_state_dumpcsv {
             uint32_t current_sequence;
-    } dumpcsv;
+	} dumpcsv;
 
 
-
+		
 #ifndef NO_X11
         struct l1_state_scope {
             int datalen;
@@ -314,7 +314,7 @@ extern const struct demod_param demod_scope;
 #define SCOPE_DEMOD
 #endif
 
-#define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
+#define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk \
     &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
     &demod_fsk9600, &demod_dtmf, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
     &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv SCOPE_DEMOD
@@ -336,9 +336,9 @@ void uart_init(struct demod_state *s);
 void uart_rxbit(struct demod_state *s, int bit);
 void clip_init(struct demod_state *s);
 void clip_rxbit(struct demod_state *s, int bit);
+
 void fms_init(struct demod_state *s);
 void fms_rxbit(struct demod_state *s, int bit);
-
 
 void pocsag_init(struct demod_state *s);
 void pocsag_rxbit(struct demod_state *s, int32_t bit);
