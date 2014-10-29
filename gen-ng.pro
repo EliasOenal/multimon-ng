@@ -12,19 +12,18 @@ target.path = $$PREFIX/bin
 INSTALLS += target
 
 HEADERS += \
-	gen.h
+        gen.h
 
 
 SOURCES += \
-	gen.c \
-	gen_dtmf.c \
-	gen_sin.c \
-	gen_zvei.c \
-	gen_hdlc.c \
-	gen_uart.c \
-	gen_clipfsk.c \
-        gen_fmsfsk.c \
-	costabi.c
+        gen.c \
+        gen_dtmf.c \
+        gen_sin.c \
+        gen_zvei.c \
+        gen_hdlc.c \
+        gen_uart.c \
+        gen_clipfsk.c \
+        costabi.c
 
 macx{
 DEFINES += DUMMY_AUDIO
