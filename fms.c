@@ -37,22 +37,22 @@ static void fms_disp_service_id(uint8_t service_id)
     verbprintf(0, "%1x=", service_id);
     switch (service_id)
     {
-        case 0x0: verbprintf(0, "UNKNOWN  \t"); break;
-        case 0x1: verbprintf(0, "ASB      \t"); break;
-        case 0x2: verbprintf(0, "KatS     \t"); break;
-        case 0x3: verbprintf(0, "DLRG     \t"); break;
-        case 0x4: verbprintf(0, "BGS      \t"); break;
-        case 0x5: verbprintf(0, "JOHANNIER\t"); break;
-        case 0x6: verbprintf(0, "FeuerWehr\t"); break;
-        case 0x7: verbprintf(0, "ZIVILSCH \t"); break;
-        case 0x8: verbprintf(0, "POLIZEI  \t"); break;
-        case 0x9: verbprintf(0, "ROTKREUZ \t"); break;
-        case 0xa: verbprintf(0, "ZOLL     \t"); break;
-        case 0xb: verbprintf(0, "RETTUNGSD\t"); break;
-        case 0xc: verbprintf(0, "BKA      \t"); break;
-        case 0xd: verbprintf(0, "MALTESER \t"); break;
-        case 0xe: verbprintf(0, "THW      \t"); break;
-        case 0xf: verbprintf(0, "FernWirk \t"); break;
+        case 0x0: verbprintf(0, "UNKNOWN       \t"); break;
+        case 0x1: verbprintf(0, "POLIZEI       \t"); break;
+        case 0x2: verbprintf(0, "BGS           \t"); break;
+        case 0x3: verbprintf(0, "BKA           \t"); break;
+        case 0x4: verbprintf(0, "KatS          \t"); break;
+        case 0x5: verbprintf(0, "ZOLL          \t"); break;
+        case 0x6: verbprintf(0, "Feuerwehr     \t"); break;
+        case 0x7: verbprintf(0, "THW           \t"); break;
+        case 0x8: verbprintf(0, "ASB           \t"); break;
+        case 0x9: verbprintf(0, "Rotkreuz      \t"); break;
+        case 0xa: verbprintf(0, "Johanniter    \t"); break;
+        case 0xb: verbprintf(0, "Malteser      \t"); break;
+        case 0xc: verbprintf(0, "DLRG          \t"); break;
+        case 0xd: verbprintf(0, "Rettungsdienst\t"); break;
+        case 0xe: verbprintf(0, "ZivilSchutz   \t"); break;
+        case 0xf: verbprintf(0, "FernWirk      \t"); break;
     }
 }
 
@@ -61,94 +61,65 @@ static void fms_disp_state_id(uint8_t state_id, uint8_t loc_id)
     verbprintf(0, "%1x=", state_id);
     switch (state_id)
     {
-        case 0x0: verbprintf(0, "Sachsen  \t"); break;
-        case 0x1: verbprintf(0, "NiederSac\t"); break;
-        case 0x2: verbprintf(0, "Berlin   \t"); break;
-        case 0x3: verbprintf(0, "Saarland \t"); break;
-        case 0x4: verbprintf(0, "Baden-Wür\t"); break;
-        case 0x5: verbprintf(0, "Rheinl-Pf\t"); break;
-        case 0x6: verbprintf(0, "Hamburg  \t"); break;
-        case 0x7: if (loc_id < 50) verbprintf(0, "Meck-Vorp\t"); else verbprintf(0, "Sach-Anha\t"); break;
-        case 0x8: verbprintf(0, "Bund     \t"); break;
-        case 0x9: verbprintf(0, "Nordr-Wes\t"); break;
-        case 0xa: verbprintf(0, "Bremen   \t"); break;
-        case 0xb: verbprintf(0, "Bayern 2 \t"); break;
-        case 0xc: verbprintf(0, "Bayern 1 \t"); break;
-        case 0xd: verbprintf(0, "Schles-Ho\t"); break;
-        case 0xe: verbprintf(0, "Hessen   \t"); break;
-        case 0xf: if (loc_id < 50) verbprintf(0, "Brandenbu\t"); else verbprintf(0, "Thüringen\t"); break;
+        case 0x0: verbprintf(0, "Sachsen         \t"); break;
+        case 0x1: verbprintf(0, "Bund            \t"); break;
+        case 0x2: verbprintf(0, "Baden-Würtemberg\t"); break;
+        case 0x3: verbprintf(0, "Bayern 1        \t"); break;
+        case 0x4: verbprintf(0, "Berlin          \t"); break;
+        case 0x5: verbprintf(0, "Bremen          \t"); break;
+        case 0x6: verbprintf(0, "Hamburg         \t"); break;
+        case 0x7: verbprintf(0, "Hessen          \t"); break;
+        case 0x8: verbprintf(0, "Niedersachsen   \t"); break;
+        case 0x9: verbprintf(0, "Nordrhein-Wesfal\t"); break;
+        case 0xa: verbprintf(0, "Rheinland-Pfalz \t"); break;
+        case 0xb: verbprintf(0, "Schleswig-Holste\t"); break;
+        case 0xc: verbprintf(0, "Saarland        \t"); break;
+        case 0xd: verbprintf(0, "Bayern 2        \t"); break;
+        case 0xe: if (loc_id < 50) verbprintf(0, "Meckl-Vorpommern\t"); else verbprintf(0, "Sachsen-Anhalt  \t"); break;
+        case 0xf: if (loc_id < 50) verbprintf(0, "Brandenburg     \t"); else verbprintf(0, "Thüringen       \t"); break;
     }
 }
 
 static void fms_disp_loc_id(uint8_t loc_id)
 {
-    verbprintf(0, "%03d\t", loc_id);
-}
-
-static void fms_disp_vehicle_id_decimal(uint8_t nibble)
-{
-    switch (nibble)
-    {
-        case 0x0: verbprintf(0, "0"); break;
-        case 0x1: verbprintf(0, "8"); break;
-        case 0x2: verbprintf(0, "4"); break;
-        case 0x3: verbprintf(0, "C"); break;
-        case 0x4: verbprintf(0, "2"); break;
-        case 0x5: verbprintf(0, "A"); break;
-        case 0x6: verbprintf(0, "6"); break;
-        case 0x7: verbprintf(0, "E"); break;
-        case 0x8: verbprintf(0, "1"); break;
-        case 0x9: verbprintf(0, "9"); break;
-        case 0xa: verbprintf(0, "5"); break;
-        case 0xb: verbprintf(0, "D"); break;
-        case 0xc: verbprintf(0, "3"); break;
-        case 0xd: verbprintf(0, "B"); break;
-        case 0xe: verbprintf(0, "7"); break;
-        case 0xf: verbprintf(0, "F"); break;
-    }
+    verbprintf(0, "Ort 0x%2x=%03d\t", loc_id, loc_id);
 }
 
 static void fms_disp_vehicle_id(uint16_t vehicle_id)
 {
-    verbprintf(0, "%04x=", vehicle_id, vehicle_id);
+    uint8_t nib0 = (vehicle_id) & 0xF;
+    uint8_t nib1 = (vehicle_id >> 4) & 0xF;
+    uint8_t nib2 = (vehicle_id >> 8) & 0xF;
+    uint8_t nib3 = (vehicle_id >> 12) & 0xF;
 
-    // Maybe we need to switch/reverse nibbles as well?
-    uint8_t nib0 = (vehicle_id >> 12) & 0xF;
-    uint8_t nib1 = (vehicle_id >> 8) & 0xF;
-    uint8_t nib2 = (vehicle_id >> 4) & 0xF;
-    uint8_t nib3 = (vehicle_id) & 0xF;
-
-    fms_disp_vehicle_id_decimal(nib0);
-    fms_disp_vehicle_id_decimal(nib1);
-    fms_disp_vehicle_id_decimal(nib2);
-    fms_disp_vehicle_id_decimal(nib3);
-
-    verbprintf(0, "\t");
+    verbprintf(0, "FZG %1d%1d%1d%1d\t", nib0, nib1, nib2, nib3);
 }
 
 static void fms_disp_state(uint8_t state, uint8_t service_id, uint8_t direction)
 {
+    verbprintf(0, "Status %1x=", state);
+
     // TODO: Other services?
     if (direction == 0){
         // FZG -> LST
         switch (state)
         {
-            case 0x0: verbprintf(0, "EMERGENCY\t"); break;
-            case 0x1: verbprintf(0, "Am TZiel \t"); break;
-            case 0x2: verbprintf(0, "Am EZiel \t"); break;
-            case 0x3: verbprintf(0, "Sonder 1 \t"); break;
-            case 0x4: verbprintf(0, "Brt Wache\t"); break;
-            case 0x5: verbprintf(0, "Vrbrt Flg\t"); break; // Vorbereitung Folgetelegram
-            case 0x6: verbprintf(0, "Nicht Brt\t"); break;
-            case 0x7: verbprintf(0, "AutomQuit\t"); break; // Automatische Quittung
-            case 0x8: verbprintf(0, "Einbuchen\t"); break;
-            case 0x9: verbprintf(0, "Arzt Aufg\t"); break; // Arzt aufgenommen / Handquittung / Anmeldung im Fremdkreis / Dringender Sprechwunsch
-            case 0xa: verbprintf(0, "Sprechwun\t"); break;
-            case 0xb: verbprintf(0, "Sonder 2 \t"); break;
-            case 0xc: verbprintf(0, "Estz AB  \t"); break; // Einsatz übernommen, "Ab"
-            case 0xd: verbprintf(0, "Bendg Flg\t"); break; // Beendigung Folgetelegram
-            case 0xe: verbprintf(0, "Pat aufge\t"); break; // Patient aufgenommen
-            case 0xf: verbprintf(0, "Sprechtas\t"); break;
+            case 0x0: verbprintf(0, "Notfall       \t"); break;
+            case 0x1: verbprintf(0, "Einbuchen     \t"); break;
+            case 0x2: verbprintf(0, "Bereit Wache  \t"); break;
+            case 0x3: verbprintf(0, "Einsatz Ab    \t"); break; // Einsatz übernommen, "Ab"
+            case 0x4: verbprintf(0, "Am EinsatzZiel\t"); break; // "AN"
+            case 0x5: verbprintf(0, "Sprechwunsch  \t"); break;
+            case 0x6: verbprintf(0, "Nicht Bereit  \t"); break;
+            case 0x7: verbprintf(0, "Patient aufgen\t"); break; // Patient aufgenommen
+            case 0x8: verbprintf(0, "Am TranspZiel \t"); break;
+            case 0x9: verbprintf(0, "Arzt Aufgenomm\t"); break; // Arzt aufgenommen / Handquittung / Anmeldung im Fremdkreis / Dringender Sprechwunsch
+            case 0xa: verbprintf(0, "Vorbertg Folge\t"); break; // Vorbereitung Folgetelegram
+            case 0xb: verbprintf(0, "Beendig  Folge\t"); break; // Beendigung Folgetelegram
+            case 0xc: verbprintf(0, "Sonder 1      \t"); break;
+            case 0xd: verbprintf(0, "Sonder 2      \t"); break;
+            case 0xe: verbprintf(0, "AutomatQuittun\t"); break; // Automatische Quittung
+            case 0xf: verbprintf(0, "Sprechtaste   \t"); break;
         }
     }
     else
@@ -156,22 +127,22 @@ static void fms_disp_state(uint8_t state, uint8_t service_id, uint8_t direction)
         // LST -> FZG
         switch (state)
         {
-            case 0x0: verbprintf(0, "StatusAbf\t"); break;
-            case 0x1: verbprintf(0, "FernWrk 1\t"); break;
-            case 0x2: verbprintf(0, "Spezifi 4\t"); break;
-            case 0x3: verbprintf(0, "KurzTXT C\t"); break;
-            case 0x4: verbprintf(0, "Spezifi 2\t"); break;
-            case 0x5: verbprintf(0, "Vrbrt TXT\t"); break;
-            case 0x6: verbprintf(0, "Spezifi 6\t"); break;
-            case 0x7: verbprintf(0, "KurzTXT E\t"); break;
-            case 0x8: verbprintf(0, "SammelRuf\t"); break;
-            case 0x9: verbprintf(0, "FernWrk 2\t"); break;
-            case 0xa: verbprintf(0, "Sprechwun\t"); break;
-            case 0xb: verbprintf(0, "Spezifi 5\t"); break;
-            case 0xc: verbprintf(0, "Spezifi 3\t"); break;
-            case 0xd: verbprintf(0, "Bendg TXT\t"); break;
-            case 0xe: verbprintf(0, "Spezifi 7\t"); break;
-            case 0xf: verbprintf(0, "AutomQuit\t"); break; // Automatische Quittung
+            case 0x0: verbprintf(0, "StatusAbfrage \t"); break;
+            case 0x1: verbprintf(0, "SammelRuf     \t"); break;
+            case 0x2: verbprintf(0, "Einrücken/Abbr\t"); break; // Einrücken / Einsatz abgebrochen
+            case 0x3: verbprintf(0, "Übernahme     \t"); break; // Melden für Einsatzübernahme
+            case 0x4: verbprintf(0, "Kommen Draht  \t"); break; // "Kommen Sie über Draht"
+            case 0x5: verbprintf(0, "Fahre Wache   \t"); break; // "Fahren Sie Wache an"
+            case 0x6: verbprintf(0, "Sprechaufford \t"); break; // Sprechaufforderung
+            case 0x7: verbprintf(0, "Lagemeldung   \t"); break; // "Geben Sie Lagemeldung"
+            case 0x8: verbprintf(0, "FernWirk 1    \t"); break;
+            case 0x9: verbprintf(0, "FernWirk 2    \t"); break;
+            case 0xa: verbprintf(0, "Vorbertg TXT  \t"); break;
+            case 0xb: verbprintf(0, "Beendig  TXT  \t"); break;
+            case 0xc: verbprintf(0, "KurzTXT C     \t"); break;
+            case 0xd: verbprintf(0, "KurzTXT D     \t"); break;
+            case 0xe: verbprintf(0, "KurzTXT E     \t"); break;
+            case 0xf: verbprintf(0, "AutomatQuittun\t"); break; // Automatische Quittung
         }
     }
 }
@@ -186,6 +157,19 @@ static void fms_disp_direction(uint8_t direction)
     {
         verbprintf(0, "0=FZG->LST\t");
     }
+}
+
+static void fms_disp_shortinfo(uint8_t short_info)
+{
+    verbprintf(0, "%1x=", short_info);
+
+    switch (short_info)
+    {
+        case 0x0: verbprintf(0, "I  (ohneNA,ohneSIGNAL)\t"); break;
+        case 0x1: verbprintf(0, "II (ohneNA,mit SIGNAL)\t"); break;
+        case 0x2: verbprintf(0, "III(mit NA,ohneSIGNAL)\t"); break;
+        case 0x3: verbprintf(0, "IV (mit NA,mit SIGNAL)\t"); break;
+        }
 }
 
 /*
@@ -206,28 +190,29 @@ static void fms_disp_packet(uint64_t message)
     verbprintf(0, "FMS MESSAGE HIGH: %08x\n", message >> 32);
     verbprintf(0, "FMS MESSAGE  LOW: %08x\n", message);
 
-    service_id = (message >> 44) & 0xF;
+    service_id = (message >> 16) & 0xF;
     fms_disp_service_id(service_id);
 
-    state_id = (message >> 40) & 0xF;
-    loc_id = (message >> 32) & 0xFF;
+    state_id = (message >> 20) & 0xF;
+    loc_id = (message >> 24) & 0xFF;
     fms_disp_state_id(state_id, loc_id);
     fms_disp_loc_id(loc_id);
 
-    vehicle_id = (message >> 16) & 0xFFFF;
+    vehicle_id = (message >> 32) & 0xFFFF;
     fms_disp_vehicle_id(vehicle_id);
 
-    state = (message >> 12) & 0xF;
+    state = (message >> 48) & 0xF;
 
-    model = (message >> 11) & 0x1;
-    direction = (message >> 10) & 0x1;
+    model = (message >> 49) & 0x1;
+    direction = (message >> 50) & 0x1;
     fms_disp_state(state, service_id, direction);
 
     fms_disp_direction(direction);
 
-    short_info = (message >> 8) & 0x3;
+    short_info = (message >> 51) & 0x3;
+    fms_disp_shortinfo(short_info);
 
-    crc = (message >> 2) & 0x3F;
+    crc = (message >> 54) & 0x3F;
 
     verbprintf(0, "\n\n");
 }
@@ -246,30 +231,35 @@ void fms_init(struct demod_state *s)
 
 void fms_rxbit(struct demod_state *s, int bit)
 {
-  // Append the bit to our "state machine tracker" so we can properly detect sync bits
-  s->l2.fmsfsk.rxstate = ((s->l2.fmsfsk.rxstate << 1) & 0x000FFFFE) | bit;
+    // General note on performance and logic: For the generation of the
+    // variable that tracks if a SYNC-frame has been received, we use
+    // a << since it is significantly faster (5s vs. 16s on a 20m test wave file)
+    // For the message itself, we use a >> since that makes the message easier to decode
 
-  // Check if the sync pattern is in the buffer
-  if ((s->l2.fmsfsk.rxstate & 0x0007FFFF) == 0x7FF1A)
-  {
-       verbprintf(0, "FMS ->SYNC<-\n");
-       s->l2.fmsfsk.rxbitstream = 0; // reset RX buffer
-       s->l2.fmsfsk.rxbitcount = 1;  // > 1 means we have a valid SYNC
-  }
+    // Append the bit to our "state machine tracker" so we can properly detect sync bits
+    s->l2.fmsfsk.rxstate = ((s->l2.fmsfsk.rxstate << 1) & 0x000FFFFE) | bit;
 
-  // If we have a valid SYNC, record the message by appending it to the RX buffer
-  else if (s->l2.fmsfsk.rxbitcount >= 1) {
-    s->l2.fmsfsk.rxbitstream = (s->l2.fmsfsk.rxbitstream << 1) | bit;
-    s->l2.fmsfsk.rxbitcount++;
-
-    // Wait until message has been completely received
-    if (s->l2.fmsfsk.rxbitcount == 49)
+    // Check if the sync pattern is in the buffer
+    if ((s->l2.fmsfsk.rxstate & 0x0007FFFF) == 0x7FF1A)
     {
-      fms_disp_packet(s->l2.fmsfsk.rxbitstream);
-      s->l2.fmsfsk.rxbitcount = 0; // Reset counter, meaning "no valid SYNC yet"
-      s->l2.fmsfsk.rxstate = 0;    // Reset message input buffer
+        verbprintf(0, "FMS ->SYNC<-\n");
+        s->l2.fmsfsk.rxbitstream = 0; // reset RX buffer
+        s->l2.fmsfsk.rxbitcount = 1;  // > 1 means we have a valid SYNC
     }
-  }
+
+    // If we have a valid SYNC, record the message by appending it (from the left) to the RX buffer
+    else if (s->l2.fmsfsk.rxbitcount >= 1) {
+        s->l2.fmsfsk.rxbitstream = (s->l2.fmsfsk.rxbitstream >> 1) | ((uint64_t) bit << 63);
+        s->l2.fmsfsk.rxbitcount++;
+
+        // Wait until message has been completely received. If so, decode and display it and reset
+        if (s->l2.fmsfsk.rxbitcount == 49)
+        {
+            fms_disp_packet(s->l2.fmsfsk.rxbitstream);
+            s->l2.fmsfsk.rxbitcount = 0; // Reset counter, meaning "no valid SYNC yet"
+            s->l2.fmsfsk.rxstate = 0;    // Reset message input buffer
+        }
+    }
 }
 
 /* ---------------------------------------------------------------------- */
