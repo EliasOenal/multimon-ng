@@ -246,8 +246,6 @@ void fms_init(struct demod_state *s)
 
 void fms_rxbit(struct demod_state *s, int bit)
 {
-  bit = !bit; // TODO: Why are the bits inverted? We need to revisit our variable names ...
-
   // Append the bit to our "state machine tracker" so we can properly detect sync bits
   s->l2.fmsfsk.rxstate = ((s->l2.fmsfsk.rxstate << 1) & 0x000FFFFE) | bit;
 
