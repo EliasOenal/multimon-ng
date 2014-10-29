@@ -250,12 +250,13 @@ void fms_rxbit(struct demod_state *s, int bit)
   s->l2.fmsfsk.rxstate = ((s->l2.fmsfsk.rxstate << 1) & 0x000FFFFE) | bit;
 
   // Check if the sync pattern is in the buffer
-  if ((s->l2.fmsfsk.rxstate & 0x000FFFFF) == 0xFFF1A)
+  if ((s->l2.fmsfsk.rxstate & 0x0007FFFF) == 0x7FF1A)
   {
        verbprintf(0, "FMS ->SYNC<-\n");
        s->l2.fmsfsk.rxbitstream = 0; // reset RX buffer
        s->l2.fmsfsk.rxbitcount = 1;  // > 1 means we have a valid SYNC
   }
+
   // If we have a valid SYNC, record the message by appending it to the RX buffer
   else if (s->l2.fmsfsk.rxbitcount >= 1) {
     s->l2.fmsfsk.rxbitstream = (s->l2.fmsfsk.rxbitstream << 1) | bit;
