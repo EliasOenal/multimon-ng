@@ -246,6 +246,7 @@ static void morse_demod(struct demod_state * restrict const s,
     for(int i = 0; i < length; i++)
     {
         // A low-pass is nice, though we could add a high-pass in order to get a band-pass :)
+        // abs() when combined with the low-pass works as a peak detector
         s->l1.morse.filtered = low_pass(s->l1.morse.filtered, (int_fast32_t)abs(buffer.sbuffer[i]) * GAIN,
                                        s->l1.morse.lowpass_strength);
         
