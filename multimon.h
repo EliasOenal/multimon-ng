@@ -80,6 +80,7 @@ struct l2_state_fmsfsk {
     uint32_t rxstate; // used to track the SYNC pattern
     uint64_t rxbitstream; // holds RXed bits
     uint32_t rxbitcount; // counts RXed bits
+    char crc[7];
 };
 
 struct demod_state {
