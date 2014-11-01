@@ -234,7 +234,7 @@ static char fms_is_crc_correct(uint64_t message)
 /*
  *  As specified in http://www.lfs-bw.de/Fachthemen/Digitalfunk-Funk/Documents/Pruefstelle/TRBOS-FMS.pdf
  */
-static void fms_disp_packet(uint64_t message, char calculated_crc[7])
+static void fms_disp_packet(uint64_t message)
 {
     uint8_t service_id;  // BOS-Kennung
     uint8_t state_id;    // Landeskennung
@@ -327,7 +327,7 @@ void fms_rxbit(struct demod_state *s, int bit)
         // Wait until message has been completely received. If so, decode and display it and reset
         if (s->l2.fmsfsk.rxbitcount == 49)
         {
-            fms_disp_packet(s->l2.fmsfsk.rxbitstream, s->l2.fmsfsk.crc);
+            fms_disp_packet(s->l2.fmsfsk.rxbitstream);
             s->l2.fmsfsk.rxbitcount = 0; // Reset counter, meaning "no valid SYNC yet"
             s->l2.fmsfsk.rxstate = 0;    // Reset message input buffer
         }
