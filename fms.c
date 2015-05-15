@@ -56,7 +56,7 @@ static void fms_disp_state_id(uint8_t state_id, uint8_t loc_id)
     {
         case 0x0: verbprintf(0, "Sachsen         \t"); break;
         case 0x1: verbprintf(0, "Bund            \t"); break;
-        case 0x2: verbprintf(0, "Baden-Würtemberg\t"); break;
+        case 0x2: verbprintf(0, "Baden-Wurtemberg\t"); break;
         case 0x3: verbprintf(0, "Bayern 1        \t"); break;
         case 0x4: verbprintf(0, "Berlin          \t"); break;
         case 0x5: verbprintf(0, "Bremen          \t"); break;
@@ -69,7 +69,7 @@ static void fms_disp_state_id(uint8_t state_id, uint8_t loc_id)
         case 0xc: verbprintf(0, "Saarland        \t"); break;
         case 0xd: verbprintf(0, "Bayern 2        \t"); break;
         case 0xe: if (loc_id < 50) verbprintf(0, "Meckl-Vorpommern\t"); else verbprintf(0, "Sachsen-Anhalt  \t"); break;
-        case 0xf: if (loc_id < 50) verbprintf(0, "Brandenburg     \t"); else verbprintf(0, "Thüringen       \t"); break;
+        case 0xf: if (loc_id < 50) verbprintf(0, "Brandenburg     \t"); else verbprintf(0, "Thuringen       \t"); break;
     }
 }
 
@@ -122,8 +122,8 @@ static void fms_disp_state(uint8_t state, uint8_t service_id, uint8_t direction)
         {
             case 0x0: verbprintf(0, "StatusAbfrage \t"); break;
             case 0x1: verbprintf(0, "SammelRuf     \t"); break;
-            case 0x2: verbprintf(0, "Einrücken/Abbr\t"); break; // Einrücken / Einsatz abgebrochen
-            case 0x3: verbprintf(0, "Übernahme     \t"); break; // Melden für Einsatzübernahme
+            case 0x2: verbprintf(0, "Einrucken/Abbr\t"); break; // Einrücken / Einsatz abgebrochen
+            case 0x3: verbprintf(0, "Ubernahme     \t"); break; // Melden für Einsatzübernahme
             case 0x4: verbprintf(0, "Kommen Draht  \t"); break; // "Kommen Sie über Draht"
             case 0x5: verbprintf(0, "Fahre Wache   \t"); break; // "Fahren Sie Wache an"
             case 0x6: verbprintf(0, "Sprechaufford \t"); break; // Sprechaufforderung
