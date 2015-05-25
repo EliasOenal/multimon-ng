@@ -241,6 +241,7 @@ struct demod_state {
             uint32_t current_sequence;
 	} dumpcsv;
 
+	struct Flex * flex;
 
 		
 #ifndef NO_X11
@@ -274,6 +275,7 @@ struct demod_param {
 extern const struct demod_param demod_poc5;
 extern const struct demod_param demod_poc12;
 extern const struct demod_param demod_poc24;
+extern const struct demod_param demod_flex;
 
 extern const struct demod_param demod_eas;
 
@@ -314,7 +316,7 @@ extern const struct demod_param demod_scope;
 #define SCOPE_DEMOD
 #endif
 
-#define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
+#define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_flex, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
     &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
     &demod_fsk9600, &demod_dtmf, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
     &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv SCOPE_DEMOD
