@@ -39,9 +39,9 @@
 #define FLEX_SYNC_MARKER     0xA6C6AAAA    // Synchronisation code marker for FLEX
 #define SLICE_THRESHOLD      0.667         // For 4 level code, levels 0 and 3 have 3 times the amplitude of levels 1 and 2, so quantise at 2/3
 #define DC_OFFSET_FILTER     0.010         // DC Offset removal IIR filter response (seconds)
-#define PHASE_LOCKED_RATE    0.030         // Correction factor for locked state
-#define PHASE_UNLOCKED_RATE  0.400         // Correction factor for unlocked state
-#define LOCK_LEN             16            // Number of symbols to check for phase locking (max 32)
+#define PHASE_LOCKED_RATE    0.010         // Correction factor for locked state
+#define PHASE_UNLOCKED_RATE  0.050         // Correction factor for unlocked state
+#define LOCK_LEN             24            // Number of symbols to check for phase locking (max 32)
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 
 
