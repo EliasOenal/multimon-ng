@@ -865,14 +865,14 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
 		/*Count the number of occurrences of each symbol value for analysis at end of symbol period*/
 		if (sample > 0) {
 			if (sample > flex->Modulation.envelope*SLICE_THRESHOLD)
-				flex->Demodulator.symcount[0]++;
-			else
-				flex->Demodulator.symcount[1]++;
-		} else {
-			if (sample < -flex->Modulation.envelope*SLICE_THRESHOLD)
 				flex->Demodulator.symcount[3]++;
 			else
 				flex->Demodulator.symcount[2]++;
+		} else {
+			if (sample < -flex->Modulation.envelope*SLICE_THRESHOLD)
+				flex->Demodulator.symcount[0]++;
+			else
+				flex->Demodulator.symcount[1]++;
 		}
 	}
 
