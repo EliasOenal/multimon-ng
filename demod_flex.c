@@ -74,7 +74,7 @@ struct Flex_Demodulator {
 	unsigned int                symbol_count;
 	double                      envelope_sum;
 	int                         envelope_count;
-	unsigned long               lock_buf;
+	unsigned long long          lock_buf;
 	int                         symcount[4];
 	int                         timeout;
 	int                         nonconsec;
@@ -102,7 +102,7 @@ struct Flex_Sync {
 	unsigned int                baud;          // Baudrate of SYNC2 and DATA
 	unsigned int                levels;        // FSK encoding of SYNC2 and DATA
 	unsigned int                polarity;      // 0=Positive (Normal) 1=Negative (Inverted)
-	unsigned long               syncbuf;
+	unsigned long long          syncbuf;
 };
 
 
@@ -223,7 +223,7 @@ static int bch3121_fix_errors(struct Flex * flex, unsigned int * data_to_fix, ch
 	return decode_error;
 }
 
-static unsigned int flex_sync_check(struct Flex * flex, unsigned long buf) {
+static unsigned int flex_sync_check(struct Flex * flex, unsigned long long buf) {
 	if (flex==NULL) return 0;
 	// 64-bit FLEX sync code:
 	// AAAA:BBBBBBBB:CCCC
@@ -369,7 +369,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
 
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09i] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
 	for (i = mw1; i <= mw2; i++) {
@@ -403,7 +403,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09i] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
 	// Get first dataword from message field or from second
@@ -451,7 +451,7 @@ static void parse_tone_only(struct Flex * flex, char PhaseNo) {
 	if (flex==NULL) return;
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09i] TON\n", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] TON\n", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 }
 
@@ -460,7 +460,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
 	if (flex==NULL) return;
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09i] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
 	int i;
@@ -553,7 +553,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		int mw2 = mw1+len;
 
 		if (mw1 == 0 && mw2 == 0){
-			verbprintf(3, "FLEX: Invalid VIW\n", flex->Decode.capcode);
+			verbprintf(3, "FLEX: Invalid VIW\n");
 			continue;				// Invalid VIW
 		}
 
@@ -561,7 +561,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 			mw1 = mw2 = 0;
 
 		if (mw1 > 87 || mw2 > 87){
-			verbprintf(3, "FLEX: Invalid Offsets\n", flex->Decode.capcode);
+			verbprintf(3, "FLEX: Invalid Offsets\n");
 			continue;				// Invalid offsets
 		}
 
@@ -938,8 +938,8 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
 			/*Check for lock pattern*/
 			/*Shift symbols into buffer, symbols are converted so that the max and min symbols map to 1 and 2 i.e each contain a single 1 */
 			flex->Demodulator.lock_buf=(flex->Demodulator.lock_buf<<2) | (modal_symbol ^ 0x1);
-			unsigned long lock_pattern = flex->Demodulator.lock_buf ^ 0x6666666666666666;
-			unsigned long lock_mask = (1L<<(2*LOCK_LEN))-1;
+			unsigned long long lock_pattern = flex->Demodulator.lock_buf ^ 0x6666666666666666;
+			unsigned long long lock_mask = (1LL<<(2*LOCK_LEN))-1;
 			if ((lock_pattern&lock_mask) == 0 || ((~lock_pattern)&lock_mask)==0) {
 				verbprintf(1, "FLEX: Locked\n");
 				flex->Demodulator.locked=1;
