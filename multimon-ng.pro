@@ -82,7 +82,7 @@ unix:freebsd-g++:!symbian:!macx{
 #DEFINES += ARCH_I386
 DEFINES += PULSE_AUDIO
 DEFINES += CHARSET_UTF8
-LIBS += -L/usr/local/lib -LX11 -lpulse-simple -lpulse
+LIBS += -L/usr/local/lib -lX11 -lpulse-simple -lpulse
 SOURCES +=  xdisplay.c \
             demod_display.c
 }
