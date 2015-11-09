@@ -1,6 +1,7 @@
 multimon-ng a fork of multimon. It decodes the following digital transmission modes:
 
 - POCSAG512 POCSAG1200 POCSAG2400
+- FLEX
 - EAS
 - UFSK1200 CLIPFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3
 - HAPN4800
