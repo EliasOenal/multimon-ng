@@ -18,15 +18,8 @@
 /* ---------------------------------------------------------------------- */
 
 #include "multimon.h"
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <signal.h>
-#include <math.h>
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
 
 /* ---------------------------------------------------------------------- */
 
@@ -46,7 +39,7 @@ static void dumpcsv_init(struct demod_state *s)
 static void dumpcsv_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	short p;
-	short *src;
+	const short *src;
 	float f;
 	int i;
 
