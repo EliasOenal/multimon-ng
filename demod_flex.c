@@ -78,6 +78,7 @@ struct Flex_Demodulator {
 	int                         symcount[4];
 	int                         timeout;
 	int                         nonconsec;
+	unsigned int                baud;          // Current baud rate
 };
 
 
@@ -309,40 +310,44 @@ static void read_2fsk(struct Flex * flex, unsigned int sym, unsigned int * dat) 
 static int decode_fiw(struct Flex * flex) {
 	if (flex==NULL) return -1;
 	unsigned int fiw = flex->FIW.rawdata;
-	int decode_error=bch3121_fix_errors(flex, &fiw, 'F');
+	int decode_error = bch3121_fix_errors(flex, &fiw, 'F');
 
 	if (decode_error) {
 		verbprintf(3, "FLEX: Unable to decode FIW, too much data corruption\n");
 		return 1;
 	}
 
-	/*Extract just the message bits*/
-	fiw &= 0x001FFFFF;
+	// The only relevant bits in the FIW word for the purpose of this function
+	// are those masked by 0x001FFFFF.
+	flex->FIW.checksum = fiw & 0xF;
+	flex->FIW.cycleno = (fiw >> 4) & 0xF;
+	flex->FIW.frameno = (fiw >> 8) & 0x7F;
+	flex->FIW.fix3 = (fiw >> 15) & 0x3F;
 
-	flex->FIW.checksum=   fiw & 0xF;        fiw>>=4;
-	flex->FIW.cycleno=    fiw & 0xF;        fiw>>=4;
-	flex->FIW.frameno=    fiw & 0x7F;       fiw>>=7;
-	flex->FIW.fix3=       fiw & 0x3F;       fiw>>=6;
+	unsigned int checksum = (fiw & 0xF);
+	checksum += ((fiw >> 4) & 0xF);
+	checksum += ((fiw >> 8) & 0xF);
+	checksum += ((fiw >> 12) & 0xF);
+	checksum += ((fiw >> 16) & 0xF);
+	checksum += ((fiw >> 20) & 0x01);
 
-	unsigned int checksum= ((flex->FIW.frameno&0xF) +((flex->FIW.frameno>>4)&0xF) + flex->FIW.cycleno +  (flex->FIW.fix3&0xF) +((flex->FIW.fix3>>4)&0xF)  + flex->FIW.checksum) & 0xF;
-
-	int retval=1;
+	checksum &= 0xF;
 
 	if (checksum == 0xF) {
-		int timeseconds=flex->FIW.cycleno*4*60 + flex->FIW.frameno*4*60/128;
+		int timeseconds = flex->FIW.cycleno*4*60 + flex->FIW.frameno*4*60/128;
+		verbprintf(1, "FLEX: FrameInfoWord: cycleno=%02i frameno=%03i fix3=0x%02x time=%02i:%02i\n",
+				flex->FIW.cycleno,
+				flex->FIW.frameno,
+				flex->FIW.fix3,
+				timeseconds/60,
+				timeseconds%60);
 
-
-		verbprintf(1, "FLEX: FrameInfoWord: cycleno=%02i frameno=%03i fix3=0x%02x time=%02i:%02i\n", flex->FIW.cycleno, flex->FIW.frameno, flex->FIW.fix3, timeseconds/60, timeseconds%60);
-		retval=0;
-
+		return 0;
 	} else {
 		verbprintf(3, "FLEX: Bad Checksum 0x%x\n", checksum);
-		retval=1;
+
+		return 1;
 	}
-
-	return retval;
-
-
 }
 
 
@@ -655,11 +660,12 @@ static int read_data(struct Flex * flex, unsigned char sym) {
 	int bit_a=0; //Received data bit for Phase A
 	int bit_b=0; //Received data bit for Phase B
 
-	if (flex->Sync.baud == 1600) {
-		bit_a = (sym > 1);
-		if (flex->Sync.levels == 4)
-			bit_b = (sym == 1) || (sym == 2);
+	bit_a = (sym > 1);
+	if (flex->Sync.levels == 4) {
+		bit_b = (sym == 1) || (sym == 2);
+	}
 
+	if (flex->Sync.baud == 1600) {
 		flex->Data.phase_toggle=0;
 	}
 
@@ -682,8 +688,8 @@ static int read_data(struct Flex * flex, unsigned char sym) {
 		flex->Data.phase_toggle=0;
 
 		if ((flex->Data.data_bit_counter & 0xFF) == 0xFF) {
-			if (flex->Data.PhaseC.buf[idx] == 0x00000000 || flex->Data.PhaseA.buf[idx] == 0xffffffff) flex->Data.PhaseC.idle_count++;
-			if (flex->Data.PhaseD.buf[idx] == 0x00000000 || flex->Data.PhaseB.buf[idx] == 0xffffffff) flex->Data.PhaseD.idle_count++;
+			if (flex->Data.PhaseC.buf[idx] == 0x00000000 || flex->Data.PhaseC.buf[idx] == 0xffffffff) flex->Data.PhaseC.idle_count++;
+			if (flex->Data.PhaseD.buf[idx] == 0x00000000 || flex->Data.PhaseD.buf[idx] == 0xffffffff) flex->Data.PhaseD.idle_count++;
 		}
 	}
 
@@ -788,6 +794,7 @@ static void flex_sym(struct Flex * flex, unsigned char sym) {
 				if (flex->State.fiwcount==48) {
 					if (decode_fiw(flex)==0) {
 						flex->State.sync2_count=0;
+						flex->Demodulator.baud = flex->Sync.baud;
 						flex->State.Current=FLEX_STATE_SYNC2;
 					} else {
 						flex->State.Current=FLEX_STATE_SYNC1;
@@ -802,7 +809,7 @@ static void flex_sym(struct Flex * flex, unsigned char sym) {
 				// FLEX sync word. The second SYNC header is 25ms of idle bits
 				// at either speed.
 				// Skip 25 ms = 40 bits @ 1600 bps, 80 @ 3200 bps
-				if (++flex->State.sync2_count == flex->Sync.baud/40) {
+				if (++flex->State.sync2_count == flex->Sync.baud*25/1000) {
 					flex->State.data_count=0;
 					clear_phase_data(flex);
 					flex->State.Current=FLEX_STATE_DATA;
@@ -819,6 +826,7 @@ static void flex_sym(struct Flex * flex, unsigned char sym) {
 				int idle=read_data(flex, sym_rectified);
 				if (++flex->State.data_count == flex->Sync.baud*1760/1000 || idle) {
 					decode_data(flex);
+					flex->Demodulator.baud = 1600;
 					flex->State.Current=FLEX_STATE_SYNC1;
 					flex->State.data_count=0;
 				}
@@ -829,8 +837,8 @@ static void flex_sym(struct Flex * flex, unsigned char sym) {
 
 void Flex_Demodulate(struct Flex * flex, double sample) {
 	if (flex==NULL) return;
-	const int phase_max=100 * flex->Demodulator.sample_freq;                           // Maximum value for phase (calculated to divide by sample frequency without remainder)
-	const int phase_rate=phase_max*flex->Sync.baud/flex->Demodulator.sample_freq;      // Increment per baseband sample
+	const long int phase_max=100 * flex->Demodulator.sample_freq;                           // Maximum value for phase (calculated to divide by sample frequency without remainder)
+	const long int phase_rate=phase_max*flex->Demodulator.baud/flex->Demodulator.sample_freq;      // Increment per baseband sample
 	const double phasepercent = 100.0 *  flex->Demodulator.phase/phase_max;
 
 	/*Update the sample counter*/
@@ -854,7 +862,7 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
 		flex->Modulation.envelope=0;
 		flex->Demodulator.envelope_sum=0;
 		flex->Demodulator.envelope_count=0;
-		flex->Sync.baud=1600;
+		flex->Demodulator.baud=1600;
 		flex->Demodulator.timeout=0;
 		flex->Demodulator.nonconsec=0;
 		flex->State.Current=FLEX_STATE_SYNC1;
@@ -980,6 +988,9 @@ struct Flex * Flex_New(unsigned int SampleFrequency) {
 		memset(flex, 0, sizeof(struct Flex));
 
 		flex->Demodulator.sample_freq=SampleFrequency;
+		// The baud rate of first syncword and FIW is always 1600, so set that
+		// rate to start.
+		flex->Demodulator.baud = 1600;
 
 		/*Generator polynomial for BCH3121 Code*/
 		int p[6];
