@@ -15,6 +15,7 @@ set( VERSION "1.0.0" )
 set( MAJOR "1" )
 set( MINOR "0" )
 set( PATCH "0" )
+set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra" )
 
 if( WIN32 )
 	add_definitions( "-DWIN32_AUDIO" "-DONLY_RAW" "-DWINDOWS" )

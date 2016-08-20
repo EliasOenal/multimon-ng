@@ -36,7 +36,7 @@
 #define FILTLEN              1
 
 
-#define FLEX_SYNC_MARKER     0xA6C6AAAA    // Synchronisation code marker for FLEX
+#define FLEX_SYNC_MARKER     0xA6C6AAAAul  // Synchronisation code marker for FLEX
 #define SLICE_THRESHOLD      0.667         // For 4 level code, levels 0 and 3 have 3 times the amplitude of levels 1 and 2, so quantise at 2/3
 #define DC_OFFSET_FILTER     0.010         // DC Offset removal IIR filter response (seconds)
 #define PHASE_LOCKED_RATE    0.010         // Correction factor for locked state
@@ -74,7 +74,7 @@ struct Flex_Demodulator {
 	unsigned int                symbol_count;
 	double                      envelope_sum;
 	int                         envelope_count;
-	unsigned long long          lock_buf;
+	uint64_t                    lock_buf;
 	int                         symcount[4];
 	int                         timeout;
 	int                         nonconsec;
@@ -103,7 +103,7 @@ struct Flex_Sync {
 	unsigned int                baud;          // Baudrate of SYNC2 and DATA
 	unsigned int                levels;        // FSK encoding of SYNC2 and DATA
 	unsigned int                polarity;      // 0=Positive (Normal) 1=Negative (Inverted)
-	unsigned long long          syncbuf;
+	uint64_t                    syncbuf;
 };
 
 
@@ -135,7 +135,7 @@ struct Flex_Data {
 struct Flex_Decode {
 	enum Flex_PageTypeEnum      type;
 	int                         long_address;
-	long int                    capcode;
+	int32_t                     capcode;
 	struct BCHCode *            BCHCode;
 };
 
@@ -174,15 +174,7 @@ inline int is_tone_page(struct Flex * flex) {
 
 unsigned int count_bits(struct Flex * flex, unsigned int data) {
 	if (flex==NULL) return 0;
-	int i;
-
-	unsigned int retval=0;
-	for (i=0; i<32; i++) {
-		retval+=data&1;
-		data>>=1;
-	}
-
-	return retval;
+    return __builtin_popcount(data);
 }
 
 static int bch3121_fix_errors(struct Flex * flex, unsigned int * data_to_fix, char PhaseNo) {
@@ -224,7 +216,7 @@ static int bch3121_fix_errors(struct Flex * flex, unsigned int * data_to_fix, ch
 	return decode_error;
 }
 
-static unsigned int flex_sync_check(struct Flex * flex, unsigned long long buf) {
+static unsigned int flex_sync_check(struct Flex * flex, uint64_t buf) {
 	if (flex==NULL) return 0;
 	// 64-bit FLEX sync code:
 	// AAAA:BBBBBBBB:CCCC
@@ -837,8 +829,8 @@ static void flex_sym(struct Flex * flex, unsigned char sym) {
 
 void Flex_Demodulate(struct Flex * flex, double sample) {
 	if (flex==NULL) return;
-	const long int phase_max=100 * flex->Demodulator.sample_freq;                           // Maximum value for phase (calculated to divide by sample frequency without remainder)
-	const long int phase_rate=phase_max*flex->Demodulator.baud/flex->Demodulator.sample_freq;      // Increment per baseband sample
+	const int64_t phase_max=100 * flex->Demodulator.sample_freq;                           // Maximum value for phase (calculated to divide by sample frequency without remainder)
+	const int64_t phase_rate=phase_max*flex->Demodulator.baud/flex->Demodulator.sample_freq;      // Increment per baseband sample
 	const double phasepercent = 100.0 *  flex->Demodulator.phase/phase_max;
 
 	/*Update the sample counter*/
@@ -887,7 +879,7 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
 	/* ZERO CROSSING */
 	if ((flex->Demodulator.sample_last<0 && sample>=0) || (flex->Demodulator.sample_last>=0 && sample<0)){
 		/*The phase error has a direction towards the closest symbol boundary*/
-		double phase_error;
+		double phase_error = 0.0;
 		if (phasepercent<50) {
 			phase_error=flex->Demodulator.phase;
 		} else {
@@ -946,8 +938,8 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
 			/*Check for lock pattern*/
 			/*Shift symbols into buffer, symbols are converted so that the max and min symbols map to 1 and 2 i.e each contain a single 1 */
 			flex->Demodulator.lock_buf=(flex->Demodulator.lock_buf<<2) | (modal_symbol ^ 0x1);
-			unsigned long long lock_pattern = flex->Demodulator.lock_buf ^ 0x6666666666666666;
-			unsigned long long lock_mask = (1LL<<(2*LOCK_LEN))-1;
+			uint64_t lock_pattern = flex->Demodulator.lock_buf ^ 0x6666666666666666ull;
+			uint64_t lock_mask = (1ull<<(2*LOCK_LEN))-1;
 			if ((lock_pattern&lock_mask) == 0 || ((~lock_pattern)&lock_mask)==0) {
 				verbprintf(1, "FLEX: Locked\n");
 				flex->Demodulator.locked=1;
