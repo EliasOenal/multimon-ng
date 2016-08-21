@@ -151,14 +151,14 @@ struct Flex {
 };
 
 
-inline int is_alphanumeric_page(struct Flex * flex) {
+int is_alphanumeric_page(struct Flex * flex) {
 	if (flex==NULL) return 0;
 	return (flex->Decode.type == FLEX_PAGETYPE_ALPHANUMERIC ||
 			flex->Decode.type == FLEX_PAGETYPE_SECURE);
 }
 
 
-inline int is_numeric_page(struct Flex * flex) {
+int is_numeric_page(struct Flex * flex) {
 	if (flex==NULL) return 0;
 	return (flex->Decode.type == FLEX_PAGETYPE_STANDARD_NUMERIC ||
 			flex->Decode.type == FLEX_PAGETYPE_SPECIAL_NUMERIC  ||
@@ -166,7 +166,7 @@ inline int is_numeric_page(struct Flex * flex) {
 }
 
 
-inline int is_tone_page(struct Flex * flex) {
+int is_tone_page(struct Flex * flex) {
 	if (flex==NULL) return 0;
 	return (flex->Decode.type == FLEX_PAGETYPE_TONE);
 }
