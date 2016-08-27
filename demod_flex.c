@@ -174,7 +174,19 @@ int is_tone_page(struct Flex * flex) {
 
 unsigned int count_bits(struct Flex * flex, unsigned int data) {
 	if (flex==NULL) return 0;
+#ifdef USE_BUILTIN_POPCOUNT
     return __builtin_popcount(data);
+#else
+    unsigned int n = (data >> 1) & 0x77777777;
+    data = data - n;
+    n = (n >> 1) & 0x77777777;
+    data = data - n;
+    n = (n >> 1) & 0x77777777;
+    data = data - n;
+    data = (data + (data >> 4)) & 0x0f0f0f0f;
+    data = data * 0x01010101;
+    return data >> 24;
+#endif
 }
 
 static int bch3121_fix_errors(struct Flex * flex, unsigned int * data_to_fix, char PhaseNo) {

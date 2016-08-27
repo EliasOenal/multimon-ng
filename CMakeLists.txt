@@ -34,6 +34,12 @@ elseif( UNIX )
 		option( PULSE_AUDIO_SUPPORT "Enable pulse audio support" ${PULSEAUDIO_FOUND} )
 		mark_as_advanced( PULSE_AUDIO_SUPPORT )
 	endif( PULSEAUDIO_FOUND )
+
+	# Check if we can use the GCC/llvm __builtin_popcount
+	include( CheckCSourceCompiles )
+	check_c_source_compiles(
+		"int main() { __builtin_popcount(42); return 0; }" USE_BUILTIN_POPCOUNT )
+
 endif( WIN32 )
 
 if( X11_SUPPORT )
