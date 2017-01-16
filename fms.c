@@ -75,6 +75,14 @@ static void fms_disp_state_id(uint8_t state_id, uint8_t loc_id)
 
 static void fms_disp_loc_id(uint8_t loc_id)
 {
+    //fix due to wrong location id
+    //now we are according to TR-BOS
+    uint8_t tmp = 0;
+    tmp = loc_id;
+    loc_id <<= 4;
+    tmp >>= 4;
+    loc_id = loc_id^tmp;
+    
     verbprintf(0, "Ort 0x%2x=%03d\t", loc_id, loc_id);
 }
 
