@@ -135,7 +135,7 @@ struct Flex_Data {
 struct Flex_Decode {
 	enum Flex_PageTypeEnum      type;
 	int                         long_address;
-	int32_t                     capcode;
+	int64_t                     capcode;
 	struct BCHCode *            BCHCode;
 };
 
@@ -189,7 +189,7 @@ unsigned int count_bits(struct Flex * flex, unsigned int data) {
 #endif
 }
 
-static int bch3121_fix_errors(struct Flex * flex, unsigned int * data_to_fix, char PhaseNo) {
+static int bch3121_fix_errors(struct Flex * flex, uint32_t * data_to_fix, char PhaseNo) {
 	if (flex==NULL) return -1;
 	int i=0;
 	int recd[31];
@@ -378,7 +378,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
 
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
 	for (i = mw1; i <= mw2; i++) {
@@ -412,7 +412,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
 	// Get first dataword from message field or from second
@@ -460,7 +460,7 @@ static void parse_tone_only(struct Flex * flex, char PhaseNo) {
 	if (flex==NULL) return;
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] TON\n", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON\n", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 }
 
@@ -469,7 +469,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
 	if (flex==NULL) return;
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09li] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
 	int i;
@@ -480,14 +480,15 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
 }
 
 
-static void parse_capcode(struct Flex * flex, unsigned int aw1, unsigned int aw2) {
+static void parse_capcode(struct Flex * flex, uint32_t aw1, uint32_t aw2) {
 	if (flex==NULL) return;
+
 	flex->Decode.long_address = (aw1 < 0x008001L) ||
 		(aw1 > 0x1E0000L) ||
 		(aw1 > 0x1E7FFEL);
 
 	if (flex->Decode.long_address)
-		flex->Decode.capcode = aw1+((aw2^0x001FFFFF)<<15)+0x1F9000;  // Don't ask
+		flex->Decode.capcode = (int64_t)aw1+((int64_t)(aw2^0x001FFFFFul)<<15)+0x1F9000ull;  // Don't ask
 	else
 		flex->Decode.capcode = aw1-0x8000;
 }
@@ -495,14 +496,17 @@ static void parse_capcode(struct Flex * flex, unsigned int aw1, unsigned int aw2
 
 static void decode_phase(struct Flex * flex, char PhaseNo) {
 	if (flex==NULL) return;
-	unsigned int *phaseptr=NULL;
+
+	uint32_t *phaseptr=NULL;
+	int i, j;
+
 	switch (PhaseNo) {
 		case 'A': phaseptr=flex->Data.PhaseA.buf; break;
 		case 'B': phaseptr=flex->Data.PhaseB.buf; break;
 		case 'C': phaseptr=flex->Data.PhaseC.buf; break;
 		case 'D': phaseptr=flex->Data.PhaseD.buf; break;
 	}
-	int i, j;
+
 	for (i=0; i<88; i++) {
 		int decode_error=bch3121_fix_errors(flex, &phaseptr[i], PhaseNo);
 
@@ -516,7 +520,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 	}
 
 	// Block information word is the first data word in frame
-	unsigned int biw = phaseptr[0];
+	uint32_t biw = phaseptr[0];
 
 	// Nothing to see here, please move along
 	if (biw == 0 || biw == 0x001FFFFF) {
@@ -544,7 +548,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		if (flex->Decode.long_address)
 			i++;
 
-		if (flex->Decode.capcode < 0) {		// Invalid address, skip
+		if (flex->Decode.capcode > 4297068542ll || flex->Decode.capcode < 0) {		// Invalid address (by spec, maximum address)
 			verbprintf(3, "FLEX: Invalid address\n");
 			continue;
 		}
@@ -552,7 +556,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		verbprintf(3, "FLEX: CAPCODE:%016lx\n", flex->Decode.capcode);
 
 		// Parse vector information word for address @ offset 'i'
-		unsigned int viw = phaseptr[j];
+		uint32_t viw = phaseptr[j];
 		flex->Decode.type = ((viw >> 4) & 0x00000007);
 		int mw1 = (viw >> 7) & 0x00000007F;
 		int len = (viw >> 14) & 0x0000007F;
