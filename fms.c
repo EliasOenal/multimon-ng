@@ -93,7 +93,7 @@ static void fms_disp_vehicle_id(uint16_t vehicle_id)
     uint8_t nib2 = (vehicle_id >> 8) & 0xF;
     uint8_t nib3 = (vehicle_id >> 12) & 0xF;
 
-    verbprintf(0, "FZG %1d%1d%1d%1d\t", nib0, nib1, nib2, nib3);
+    verbprintf(0, "FZG %1x%1x%1x%1x\t", nib0, nib1, nib2, nib3);
 }
 
 static void fms_disp_state(uint8_t state, uint8_t service_id, uint8_t direction)
