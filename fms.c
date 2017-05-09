@@ -275,16 +275,16 @@ static void fms_disp_packet(uint64_t message)
 
     state = (message >> 48) & 0xF;
 
-    model = (message >> 49) & 0x1;
-    direction = (message >> 50) & 0x1;
+    model = (message >> 52) & 0x1;
+    direction = (message >> 53) & 0x1;
     fms_disp_state(state, service_id, direction);
 
     fms_disp_direction(direction);
 
-    short_info = (message >> 51) & 0x3;
+    short_info = (message >> 54) & 0x3;
     fms_disp_shortinfo(short_info);
 
-    crc = (message >> 54) & 0x3F;
+    crc = (message >> 55) & 0x3F;
 
     verbprintf(0, ") ");
 
