@@ -172,13 +172,13 @@ static char *translate_alpha(unsigned char chr)
                  { 0x7d, "\374" }, /* lower case u dieresis */
                  { 0x7e, "\337" }, /* sharp s */
              #elif defined CHARSET_UTF8
-                 { 0x5b, "Ä" }, /* upper case A dieresis */
-                 { 0x5c, "Ö" }, /* upper case O dieresis */
-                 { 0x5d, "Ü" }, /* upper case U dieresis */
-                 { 0x7b, "ä" }, /* lower case a dieresis */
-                 { 0x7c, "ö" }, /* lower case o dieresis */
-                 { 0x7d, "ü" }, /* lower case u dieresis */
-                 { 0x7e, "ß" }, /* sharp s */
+                 { 0x5b, "[" }, /* upper case A dieresis */
+                 { 0x5c, "\\" }, /* upper case O dieresis */
+                 { 0x5d, "]" }, /* upper case U dieresis */
+                 { 0x7b, "{" }, /* lower case a dieresis */
+                 { 0x7c, "|" }, /* lower case o dieresis */
+                 { 0x7d, "}" }, /* lower case u dieresis */
+                 { 0x7e, "~" }, /* sharp s */
              #else
                  { 0x5b, "[" }, /* upper case A dieresis */
                  { 0x5c, "\\" }, /* upper case O dieresis */
