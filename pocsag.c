@@ -180,13 +180,13 @@ static char *translate_alpha(unsigned char chr)
                  { 0x7d, "ü" }, /* lower case u dieresis */
                  { 0x7e, "ß" }, /* sharp s */
              #else
-                 { 0x5b, "AE" }, /* upper case A dieresis */
-                 { 0x5c, "OE" }, /* upper case O dieresis */
-                 { 0x5d, "UE" }, /* upper case U dieresis */
-                 { 0x7b, "ae" }, /* lower case a dieresis */
-                 { 0x7c, "oe" }, /* lower case o dieresis */
-                 { 0x7d, "ue" }, /* lower case u dieresis */
-                 { 0x7e, "ss" }, /* sharp s */
+                 { 0x5b, "[" }, /* upper case A dieresis */
+                 { 0x5c, "\\" }, /* upper case O dieresis */
+                 { 0x5d, "]" }, /* upper case U dieresis */
+                 { 0x7b, "{" }, /* lower case a dieresis */
+                 { 0x7c, "|" }, /* lower case o dieresis */
+                 { 0x7d, "}" }, /* lower case u dieresis */
+                 { 0x7e, "~" }, /* sharp s */
              #endif
                  { 127, "<DEL>" }};
 
