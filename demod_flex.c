@@ -449,9 +449,14 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 }
 
 
-static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int j) {
+static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
 	if (flex==NULL) return;
 	unsigned const char flex_bcd[17] = "0123456789 U -][";
+
+	uint w1 = phaseptr[j] >> 7;
+	uint w2 = w1 >> 7;
+	w1 = w1 & 0x7f;
+	w2 = (w2 & 0x07) + w1;	// numeric message is 7 words max
 
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
@@ -462,9 +467,9 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 	// vector word if long address
 	int dw;
 	if(!flex->Decode.long_address) {
-		dw = phaseptr[mw1];
-		mw1++;
-		mw2++;
+		dw = phaseptr[w1];
+		w1++;
+		w2++;
 	} else {
 		dw = phaseptr[j+1];
 	}
@@ -477,7 +482,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 		count += 2;        // Otherwise skip 2
 	}
 	int i;
-	for(i = mw1; i <= mw2; i++) {
+	for(i = (int)w1; i <= (int)w2; i++) {
 		int k;
 		for(k = 0; k < 21; k++) {
 			// Shift LSB from data word into digit
@@ -612,13 +617,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		flex->Decode.type = ((viw >> 4) & 0x00000007);
 		int mw1 = (viw >> 7) & 0x00000007F;
 		int len = (viw >> 14) & 0x0000007F;
-
-		// Calucalte the array stop point
 		int mw2 = mw1+(len - 1);
-
-		// The length of a numberic page is the number of bytes, so we need to increase the count by one
-		if (is_numeric_page(flex))
-			mw2++;
 
 		if (mw1 == 0 && mw2 == 0){
 			verbprintf(3, "FLEX: Invalid VIW\n");
@@ -651,7 +650,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		if (is_alphanumeric_page(flex))
 			parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, flex_groupmessage);
 		else if (is_numeric_page(flex))
-			parse_numeric(flex, phaseptr, PhaseNo, mw1, mw2, j);
+			parse_numeric(flex, phaseptr, PhaseNo, j);
 		else if (is_tone_page(flex))
 			parse_tone_only(flex, PhaseNo);
 		else
