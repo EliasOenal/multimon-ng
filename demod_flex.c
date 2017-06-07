@@ -19,6 +19,18 @@
  *	along with this program; if not, write to the Free Software
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
+/*
+ *  Version 0.8v (08 Jun 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - Added Group Messaging
+ *     - Fixed Phase adjustments (phasing as part of Symbol identification)
+ *     - Fixed Alpha numeric length adjustments to stop "Invalid Vector" errors
+ *     - Fixed numeric message treatment
+ *     - Fixed invalid identification of "unknown" messages
+ *     - Added 3200 2 fsk identification to all more message types to be processed (this was a big deal for NZ)
+ *     - Changed uint to int variables
+ *      
+ */
 
 /* ---------------------------------------------------------------------- */
 
@@ -82,7 +94,7 @@ struct Flex_Demodulator {
 
 struct Flex_GroupHandler {
 	int 			    aGroupCodes[17][1000];
-        int 			    GroupFrame[17];
+  int 			    GroupFrame[17];
 };
 
 struct Flex_Modulation {
@@ -378,8 +390,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	int i;
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-        char message[1024];
-        int  currentChar = 0; 
+  char message[1024];
+  int  currentChar = 0; 
 
 	for (i = mw1; i <= mw2; i++) {
 		unsigned int dw =  phaseptr[i];
@@ -408,7 +420,6 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                         currentChar++;
 		}
 	}
-	
 
 	if(flex_groupmessage == 1) {
 		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] GPN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
@@ -424,27 +435,26 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	}
 	verbprintf(0, "\n");
 
-        if(flex_groupmessage == 1) {
+	if(flex_groupmessage == 1) {
 		int groupbit = flex->Decode.capcode-2029568;
 		if(groupbit < 0) return;
+			
 		int endpoint = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
-                for(int g = 1; g <= endpoint;g++)
+		for(int g = 1; g <= endpoint;g++)
 		{
 			verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] GPN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                                flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.aGroupCodes[groupbit][g]);
+					flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.aGroupCodes[groupbit][g]);
 
-       	        	for(int x = 0; x < currentChar; x++)
-                	{
-                        	verbprintf(0, "%c", message[x]);
-                	}
-	
+			for(int x = 0; x < currentChar; x++)
+			{
+				verbprintf(0, "%c", message[x]);
+			}
+
 			verbprintf(0, "\n");
 		}
-
 		// reset the value 
 		flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX] = 0;	
 	}
-
 
 }
 
@@ -453,8 +463,8 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 	if (flex==NULL) return;
 	unsigned const char flex_bcd[17] = "0123456789 U -][";
 
-	uint w1 = phaseptr[j] >> 7;
-	uint w2 = w1 >> 7;
+	int w1 = phaseptr[j] >> 7;
+	int w2 = w1 >> 7;
 	w1 = w1 & 0x7f;
 	w2 = (w2 & 0x07) + w1;	// numeric message is 7 words max
 
@@ -482,7 +492,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 		count += 2;        // Otherwise skip 2
 	}
 	int i;
-	for(i = (int)w1; i <= (int)w2; i++) {
+	for(i = w1; i <= w2; i++) {
 		int k;
 		for(k = 0; k < 21; k++) {
 			// Shift LSB from data word into digit
@@ -639,7 +649,8 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
                     int groupbit = (int)((viw >> 17) & 0x7f);    // Listen to this groupcode
 
                     flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX]++;
-                    flex->GroupHandler.aGroupCodes[groupbit][flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX]] = flex->Decode.capcode;
+                    int CapcodePlacement = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
+                    flex->GroupHandler.aGroupCodes[groupbit][CapcodePlacement] = flex->Decode.capcode;
                     flex->GroupHandler.GroupFrame[groupbit] = iAssignedFrame;
 
                     // Nothing else to do with this word.. move on!!
