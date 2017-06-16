@@ -361,7 +361,7 @@ static int decode_fiw(struct Flex * flex) {
 
 	if (checksum == 0xF) {
 		int timeseconds = flex->FIW.cycleno*4*60 + flex->FIW.frameno*4*60/128;
-		verbprintf(1, "FLEX: FrameInfoWord: cycleno=%02i frameno=%03i fix3=0x%02x time=%02i:%02i\n",
+		verbprintf(2, "FLEX: FrameInfoWord: cycleno=%02i frameno=%03i fix3=0x%02x time=%02i:%02i\n",
 				flex->FIW.cycleno,
 				flex->FIW.frameno,
 				flex->FIW.fix3,
@@ -420,7 +420,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                         currentChar++;
 		}
 	}
-
+	message[currentChar] = '\0';
+	
 	if(flex_groupmessage == 1) {
 		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] GPN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 				flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
@@ -428,12 +429,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 				flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 	}
-	
-	for(int x = 0; x < currentChar; x++)
-	{
-		verbprintf(0, "%c", message[x]);
-	}
-	verbprintf(0, "\n");
+  verbprintf(0, "%s\n", message);
 
 	if(flex_groupmessage == 1) {
 		int groupbit = flex->Decode.capcode-2029568;
@@ -442,15 +438,12 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 		int endpoint = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
 		for(int g = 1; g <= endpoint;g++)
 		{
+	    verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.aGroupCodes[groupbit][g]);
+
 			verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] GPN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 					flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.aGroupCodes[groupbit][g]);
 
-			for(int x = 0; x < currentChar; x++)
-			{
-				verbprintf(0, "%c", message[x]);
-			}
-
-			verbprintf(0, "\n");
+		  verbprintf(0, "%s\n", message);
 		}
 		// reset the value 
 		flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX] = 0;	
@@ -647,9 +640,12 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
                     // if (flex_groupmessage == 1) continue;
                     int iAssignedFrame = (int)((viw >> 10) & 0x7f);  // Frame with groupmessage
                     int groupbit = (int)((viw >> 17) & 0x7f);    // Listen to this groupcode
-
+										
+										
                     flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX]++;
                     int CapcodePlacement = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
+                    verbprintf(1, "FLEX: Found Short Instruction, Group bit: %i capcodes in group so far %i, adding Capcode: [%09lld]\n", groupbit, CapcodePlacement, flex->Decode.capcode);
+
                     flex->GroupHandler.aGroupCodes[groupbit][CapcodePlacement] = flex->Decode.capcode;
                     flex->GroupHandler.GroupFrame[groupbit] = iAssignedFrame;
 
@@ -855,10 +851,10 @@ static void flex_sym(struct Flex * flex, unsigned char sym) {
 					if (flex->Sync.baud!=0 && flex->Sync.levels!=0) {
 						flex->State.Current=FLEX_STATE_FIW;
 
-						verbprintf(1, "FLEX: SyncInfoWord: sync_code=0x%04x baud=%i levels=%i polarity=%s zero=%f envelope=%f symrate=%f\n",
+						verbprintf(2, "FLEX: SyncInfoWord: sync_code=0x%04x baud=%i levels=%i polarity=%s zero=%f envelope=%f symrate=%f\n",
 								sync_code, flex->Sync.baud, flex->Sync.levels, flex->Sync.polarity?"NEG":"POS", flex->Modulation.zero, flex->Modulation.envelope, flex->Modulation.symbol_rate);
 					} else {
-						verbprintf(3, "FLEX: Unknown Sync code = 0x%04x\n", sync_code);
+						verbprintf(2, "FLEX: Unknown Sync code = 0x%04x\n", sync_code);
 						flex->State.Current=FLEX_STATE_SYNC1;
 					}
 				} else {
