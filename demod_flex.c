@@ -20,6 +20,10 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.1v (16 Jun 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - Added Debugging to help track the group messaging issues
+ *     - Improved Alpha output and removed several loops to improve CPU cycles
  *  Version 0.8v (08 Jun 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - Added Group Messaging
