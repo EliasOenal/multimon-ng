@@ -20,6 +20,11 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.3v (22 Jun 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - I had previously tagged Group Messages as GPN message types, 
+ *       this was my own identification rather than a Flex standard type. 
+ *       Now that I have cleaned up all identified (so far) issues I have changed back to the correct Flex message type of ALN (Alpha).
  *  Version 0.8.2v (21 Jun 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - Fixed group messaging capcode issue - modified the Capcode Array to be int64_t rather than int (I was incorrectly casting the long to an int) 
@@ -430,13 +435,13 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	message[currentChar] = '\0';
 	
 	if(flex_groupmessage == 1) {
-		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] GPN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 				flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 	} else {
 		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 				flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 	}
-  verbprintf(0, "%s\n", message);
+	verbprintf(0, "%s\n", message);
 
 	if(flex_groupmessage == 1) {
 		int groupbit = flex->Decode.capcode-2029568;
@@ -445,12 +450,12 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 		int endpoint = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
 		for(int g = 1; g <= endpoint;g++)
 		{
-	    verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.aGroupCodes[groupbit][g]);
+			verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.aGroupCodes[groupbit][g]);
 
-			verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] GPN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+			verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 					flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.aGroupCodes[groupbit][g]);
 
-		  verbprintf(0, "%s\n", message);
+			verbprintf(0, "%s\n", message);
 		}
 		// reset the value 
 		flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX] = 0;	
