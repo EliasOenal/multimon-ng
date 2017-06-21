@@ -20,6 +20,9 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.2v (21 Jun 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - Fixed group messaging capcode issue - modified the Capcode Array to be int64_t rather than int (I was incorrectly casting the long to an int) 
  *  Version 0.8.1v (16 Jun 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - Added Debugging to help track the group messaging issues
@@ -97,8 +100,8 @@ struct Flex_Demodulator {
 };
 
 struct Flex_GroupHandler {
-	int 			    aGroupCodes[17][1000];
-  int 			    GroupFrame[17];
+	int64_t                     aGroupCodes[17][1000];
+	int                         GroupFrame[17];
 };
 
 struct Flex_Modulation {
