@@ -36,6 +36,8 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
+#include <getopt.h>
 
 #ifdef SUN_AUDIO
 #include <sys/audioio.h>
@@ -85,6 +87,8 @@ static int repeatable_sox = 0;
 static int mute_sox = 0;
 static int integer_only = true;
 static bool dont_flush = false;
+static bool is_startline = true;
+static int timestamp = 0;
 
 extern int pocsag_mode;
 extern int pocsag_invert_input;
@@ -106,12 +110,34 @@ void quit(void);
 
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
+	char buf[1024];
+	char time_buf[20];
+	time_t t;
+	struct tm* tm_info;
+
     if (verb_level > verbose_level)
         return;
     va_list args;
     va_start(args, fmt);
     {
-        vfprintf(stdout, fmt, args);
+        if (timestamp) {
+            if (is_startline) {
+                t = time(NULL);
+                tm_info = localtime(&t);
+                strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+                snprintf(buf, sizeof(buf), "%s: %s", time_buf, fmt);
+                is_startline = false;
+            } else {
+                strcpy(buf,fmt);
+            }
+            if (NULL != strchr(buf,'\n')) { /* detect end of line in stream */
+                is_startline = true;
+            }
+        } else {
+            strcpy(buf,fmt);
+        }
+
+        vfprintf(stdout, buf, args);
         if(!dont_flush)
             fflush(stdout);
     }
@@ -575,7 +601,13 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
 
-    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu")) != EOF) {
+    static struct option long_options[] =
+      {
+        {"timestamp", no_argument, &timestamp, 1},
+        {0, 0, 0, 0}
+      };
+
+    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
