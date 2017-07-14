@@ -110,7 +110,7 @@ void quit(void);
 
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
-	char buf[1024];
+//	char buf[1024];
 	char time_buf[20];
 	time_t t;
 	struct tm* tm_info;
@@ -125,19 +125,22 @@ void _verbprintf(int verb_level, const char *fmt, ...)
                 t = time(NULL);
                 tm_info = localtime(&t);
                 strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
-                snprintf(buf, sizeof(buf), "%s: %s", time_buf, fmt);
+                fprintf(stdout, "%s: ", time_buf);
+//                snprintf(buf, sizeof(buf), "%s: %s", time_buf, fmt);
                 is_startline = false;
-            } else {
-                strcpy(buf,fmt);
             }
-            if (NULL != strchr(buf,'\n')) { /* detect end of line in stream */
+//            } else {
+//                strcpy(buf,fmt);
+//            }
+            if (NULL != strchr(fmt,'\n')) { /* detect end of line in stream */
                 is_startline = true;
             }
-        } else {
-            strcpy(buf,fmt);
         }
+//        } else {
+//            strcpy(buf,fmt);
+//        }
 
-        vfprintf(stdout, buf, args);
+        vfprintf(stdout, fmt, args);
         if(!dont_flush)
             fflush(stdout);
     }
