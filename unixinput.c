@@ -110,7 +110,6 @@ void quit(void);
 
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
-//	char buf[1024];
 	char time_buf[20];
 	time_t t;
 	struct tm* tm_info;
@@ -126,19 +125,13 @@ void _verbprintf(int verb_level, const char *fmt, ...)
                 tm_info = localtime(&t);
                 strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
                 fprintf(stdout, "%s: ", time_buf);
-//                snprintf(buf, sizeof(buf), "%s: %s", time_buf, fmt);
                 is_startline = false;
             }
-//            } else {
-//                strcpy(buf,fmt);
-//            }
+
             if (NULL != strchr(fmt,'\n')) { /* detect end of line in stream */
                 is_startline = true;
             }
         }
-//        } else {
-//            strcpy(buf,fmt);
-//        }
 
         vfprintf(stdout, fmt, args);
         if(!dont_flush)
@@ -240,8 +233,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
 static void input_sound(unsigned int sample_rate, unsigned int overlap,
                         const char *ifname)
 {
-    //printf("DUMMY SOUND IN!");
-    //fflush(stdout);
+    (void)sample_rate;
+    (void)overlap;
+    (void)ifname;
 }
 #elif WIN32_AUDIO
 //Implemented in win32_soundin.c
