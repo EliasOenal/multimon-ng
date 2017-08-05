@@ -89,6 +89,7 @@ static int integer_only = true;
 static bool dont_flush = false;
 static bool is_startline = true;
 static int timestamp = 0;
+static char *label = NULL;
 
 extern int pocsag_mode;
 extern int pocsag_invert_input;
@@ -124,7 +125,10 @@ void _verbprintf(int verb_level, const char *fmt, ...)
                 t = time(NULL);
                 tm_info = localtime(&t);
                 strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
-                fprintf(stdout, "%s: ", time_buf);
+		if (label != NULL)
+			fprintf(stdout, "%s: %s ", time_buf, label);
+		else
+			fprintf(stdout, "%s: ", time_buf);
                 is_startline = false;
             }
 
@@ -502,7 +506,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         fd = pipedes[0];
     }
 #endif
-    
+
     /*
      * demodulate
      */
@@ -582,7 +586,8 @@ static const char usage_str[] = "\n"
         "  -g         : CW: Gap length in ms (default: 50)\n"
         "  -x         : CW: Disable auto threshold detection\n"
         "  -y         : CW: Disable auto timing detection\n"
-		"  --timestamp: Add a time stamp in front of every printed line\n"
+        "  --timestamp: Add a time stamp in front of every printed line\n"
+        " --label     : Add a label to the front of every printed line\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
@@ -602,6 +607,7 @@ int main(int argc, char *argv[])
     static struct option long_options[] =
       {
         {"timestamp", no_argument, &timestamp, 1},
+        {"label", required_argument, NULL, 'l'},
         {0, 0, 0, 0}
       };
 
@@ -764,6 +770,9 @@ intypefound:
         case 'y':
             cw_disable_auto_timing = true;
             break;
+	case 'l':
+	    label = strdup(optarg);
+	    break;
         }
     }
 
