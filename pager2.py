@@ -23,12 +23,13 @@ import time
 class pager2(gr.top_block):
 
     def __init__(self):
-        gr.top_block.__init__(self, "Pager2")
+        do_audio = False
+        gr.top_block.__init__(self, "Pager")
 
         ##################################################
         # Variables
         ##################################################
-        self.volume = volume = 0.05
+        self.volume = volume = 0.1
         self.sample_rate = sample_rate = 1e6
         self.out_scale = out_scale = 10000
         self.freq = freq = 148.664e6
@@ -38,16 +39,11 @@ class pager2(gr.top_block):
         ##################################################
         # Blocks
         ##################################################
-        #self.volume_multiply = blocks.multiply_const_vff((volume, ))
-        self.rational_resampler_xxx_1 = filter.rational_resampler_fff(
-                interpolation=441,
-                decimation=960,
-                taps=None,
-                fractional_bw=None,
-        )
+        if do_audio:
+            self.volume_multiply = blocks.multiply_const_vff((volume, ))
         self.rational_resampler_xxx_0 = filter.rational_resampler_fff(
-                interpolation=int(audio_rate/1000),
-                decimation=int(fm_sample/10000),
+                interpolation=441,
+                decimation=1000,
                 taps=None,
                 fractional_bw=None,
         )
@@ -72,7 +68,8 @@ class pager2(gr.top_block):
         	1, sample_rate, 7.5e3, 1.5e3, firdes.WIN_HAMMING, 6.76))
         self.blocks_float_to_short_0 = blocks.float_to_short(1, out_scale)
         self.blocks_fd_sink_0 = blocks.file_descriptor_sink(gr.sizeof_short*1, self.p.stdin.fileno())
-        #self.audio_sink_0 = audio.sink(22050, '', True)
+        if do_audio:
+            self.audio_sink_0 = audio.sink(22050, '', True)
         self.analog_nbfm_rx_0 = analog.nbfm_rx(
         	audio_rate=int(fm_sample / 10),
         	quad_rate=int(fm_sample),
@@ -87,10 +84,10 @@ class pager2(gr.top_block):
         self.connect((self.blocks_float_to_short_0, 0), (self.blocks_fd_sink_0, 0))
         self.connect((self.low_pass_filter_0, 0), (self.analog_nbfm_rx_0, 0))
         self.connect((self.osmosdr_source_0, 0), (self.low_pass_filter_0, 0))
-        self.connect((self.rational_resampler_xxx_0, 0), (self.rational_resampler_xxx_1, 0))
-        self.connect((self.rational_resampler_xxx_1, 0), (self.blocks_float_to_short_0, 0))
-        #self.connect((self.rational_resampler_xxx_1, 0), (self.volume_multiply, 0))
-        #self.connect((self.volume_multiply, 0), (self.audio_sink_0, 0))
+        self.connect((self.rational_resampler_xxx_0, 0), (self.blocks_float_to_short_0, 0))
+        if do_audio:
+            self.connect((self.rational_resampler_xxx_0, 0), (self.volume_multiply, 0))
+            self.connect((self.volume_multiply, 0), (self.audio_sink_0, 0))
 
     def get_volume(self):
         return self.volume
