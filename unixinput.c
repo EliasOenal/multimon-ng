@@ -587,7 +587,7 @@ static const char usage_str[] = "\n"
         "  -x         : CW: Disable auto threshold detection\n"
         "  -y         : CW: Disable auto timing detection\n"
         "  --timestamp: Add a time stamp in front of every printed line\n"
-        " --label     : Add a label to the front of every printed line\n"
+        "  --label    : Add a label to the front of every printed line\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
