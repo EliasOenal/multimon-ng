@@ -771,7 +771,7 @@ intypefound:
             cw_disable_auto_timing = true;
             break;
 	case 'l':
-	    label = strdup(optarg);
+	    label = optarg;
 	    break;
         }
     }
