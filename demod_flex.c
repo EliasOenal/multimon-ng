@@ -632,20 +632,12 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		flex->Decode.type = ((viw >> 4) & 0x00000007);
 		int mw1 = (viw >> 7) & 0x00000007F;
 		int len = (viw >> 14) & 0x0000007F;
-		int mw2 = mw1+(len - 1);
 
-		if (mw1 == 0 && mw2 == 0){
-			verbprintf(3, "FLEX: Invalid VIW\n");
-			continue;				// Invalid VIW
-		}
-
-		if (is_tone_page(flex))
-			mw1 = mw2 = 0;
-
-		if (mw1 > 87 || mw2 > 87){
-			verbprintf(3, "FLEX: Invalid Offsets\n");
-			continue;				// Invalid offsets
-		}
+                int w1 = (int)(viw >> 7);
+                int w2 = w1 >> 7;
+                w1 = w1 & 0x7f;
+                w2 = (w2 & 0x7f) + w1 - 1;
+                // int wL = w2 - w1;
 
 		if (flex->Decode.type == FLEX_PAGETYPE_SHORT_INSTRUCTION)
                 {
@@ -665,7 +657,22 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
                     continue;
                 }
 
-			//parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, j, flex_groupmessage);
+		int mw2 = mw1+(len - 1);
+
+		if (mw1 == 0 && mw2 == 0){
+			verbprintf(3, "FLEX: Invalid VIW\n");
+			continue;				// Invalid VIW
+		}
+
+		if (is_tone_page(flex))
+			mw1 = mw2 = 0;
+
+		if (mw1 > 87 || mw2 > 87){
+			verbprintf(3, "FLEX: Invalid Offsets\n");
+			continue;				// Invalid offsets
+		}
+
+		//parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, j, flex_groupmessage);
 		if (is_alphanumeric_page(flex))
 			parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, flex_groupmessage);
 		else if (is_numeric_page(flex))
