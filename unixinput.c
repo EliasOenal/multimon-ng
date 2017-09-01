@@ -119,16 +119,15 @@ void _verbprintf(int verb_level, const char *fmt, ...)
         return;
     va_list args;
     va_start(args, fmt);
+    if (label != NULL)
+	    fprintf(stdout, "%s: ", label);
     {
         if (timestamp) {
             if (is_startline) {
                 t = time(NULL);
                 tm_info = localtime(&t);
                 strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
-		if (label != NULL)
-			fprintf(stdout, "%s: %s ", time_buf, label);
-		else
-			fprintf(stdout, "%s: ", time_buf);
+		fprintf(stdout, "%s: ", time_buf);
                 is_startline = false;
             }
 
