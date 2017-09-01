@@ -116,4 +116,5 @@ set( SOURCES ${SOURCES}
 add_executable( "${TARGET}" ${SOURCES} ${HEADERS} )
 set_property(TARGET "${TARGET}" PROPERTY LINKER_LANGUAGE C)
 target_link_libraries( "${TARGET}" m )
+install(TARGETS multimon-ng DESTINATION bin)
 
