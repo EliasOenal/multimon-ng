@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2014
+ *      Copyright (C) 2012-2017
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
@@ -119,27 +119,27 @@ void _verbprintf(int verb_level, const char *fmt, ...)
         return;
     va_list args;
     va_start(args, fmt);
-    if (label != NULL)
-	    fprintf(stdout, "%s: ", label);
+
+    if (is_startline)
     {
+        if (label != NULL)
+            fprintf(stdout, "%s: ", label);
+        
         if (timestamp) {
-            if (is_startline) {
-                t = time(NULL);
-                tm_info = localtime(&t);
-                strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
-		fprintf(stdout, "%s: ", time_buf);
-                is_startline = false;
-            }
-
-            if (NULL != strchr(fmt,'\n')) { /* detect end of line in stream */
-                is_startline = true;
-            }
+            t = time(NULL);
+            tm_info = localtime(&t);
+            strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+            fprintf(stdout, "%s: ", time_buf);
         }
-
-        vfprintf(stdout, fmt, args);
-        if(!dont_flush)
-            fflush(stdout);
+        
+        is_startline = false;
     }
+    if (NULL != strchr(fmt,'\n')) /* detect end of line in stream */
+        is_startline = true;
+
+    vfprintf(stdout, fmt, args);
+    if(!dont_flush)
+        fflush(stdout);
     va_end(args);
 }
 
@@ -778,9 +778,10 @@ intypefound:
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-        "             (C) 2012-2014 by Elias Oenal\n"
-        "available demodulators:");
+    fprintf(stderr, "multimon-ng 1.1.3\n" 
+        "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+        "  (C) 2012-2017 by Elias Oenal\n"
+        "Available demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
         fprintf(stderr, " %s", dem[i]->name);
     }
