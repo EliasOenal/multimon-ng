@@ -20,6 +20,10 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.4v (05 Sep 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - Found a bug in the code that was not handling multiple group messages within the same frame, 
+ *       and the long address bit was being miss treated in the same cases. Both issue have been fixed but further testing will help.
  *  Version 0.8.3v (22 Jun 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - I had previously tagged Group Messages as GPN message types, 
