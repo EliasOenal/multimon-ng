@@ -615,8 +615,8 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		// parse_capcode(flex, phaseptr[i], phaseptr[i+1]); // Older version maybe still needed so I'm not removing it (yet)
 		if (flex->Decode.long_address)
 		{
-			verbprintf(3, "FLEX: Found 'Long Address' bit, ignoring as I think this is handled incorrectly at the moment issue#79\n");
-			//i++;
+			verbprintf(4, "FLEX: Found 'Long Address' bit, ignoring as I think this is handled incorrectly at the moment issue#79\n");
+			// i++;
 		}
 
         	if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
