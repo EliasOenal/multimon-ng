@@ -20,6 +20,10 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.5v (08 Sep 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - Issue #78 - Found a problem in the length detection sequence, modified the if statement to ensure the message length is 
+ *       only checked for Aplha messages, the other types calculate thier length while decoding
  *  Version 0.8.4v (05 Sep 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - Found a bug in the code that was not handling multiple group messages within the same frame, 
@@ -674,14 +678,15 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		if (is_tone_page(flex))
 			mw1 = mw2 = 0;
 
-		if (mw1 > 87 || mw2 > 87){
-			verbprintf(3, "FLEX: Invalid Offsets\n");
-			continue;				// Invalid offsets
-		}
 
-		//parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, j, flex_groupmessage);
-		if (is_alphanumeric_page(flex))
+                // Check if this is an alpha message
+                if (is_alphanumeric_page(flex)) { 
+    			if (mw1 > 87 || mw2 > 87){
+				verbprintf(3, "FLEX: Invalid Offsets\n");
+				continue;				// Invalid offsets
+			}
 			parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, flex_groupmessage);
+                }
 		else if (is_numeric_page(flex))
 			parse_numeric(flex, phaseptr, PhaseNo, j);
 		else if (is_tone_page(flex))
