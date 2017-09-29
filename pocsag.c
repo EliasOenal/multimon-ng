@@ -720,9 +720,8 @@ static inline bool word_complete(struct demod_state *s)
 {    
     // Do nothing for 31 bits
     // When the word is complete let the program counter pass
-    if((s->l2.pocsag.rx_bit = (++(s->l2.pocsag.rx_bit) % 32)))
-        return false;
-    return true; // 32 bits received
+    s->l2.pocsag.rx_bit = (s->l2.pocsag.rx_bit + 1) % 32;
+    return s->l2.pocsag.rx_bit == 0;
 }
 
 static inline bool is_sync(const uint32_t * const rx_data)
@@ -767,7 +766,7 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
 
         // it is always 17 words
         unsigned char rxword = s->l2.pocsag.rx_word; // for address calculation
-        s->l2.pocsag.rx_word = ++(s->l2.pocsag.rx_word) % 17;
+        s->l2.pocsag.rx_word = (s->l2.pocsag.rx_word + 1) % 17;
 
         if(s->l2.pocsag.state == SYNC)
             s->l2.pocsag.state = ADDRESS; // We're in sync, move on.

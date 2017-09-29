@@ -105,13 +105,6 @@ static int x_error_handler(Display *disp, XErrorEvent *evt)
 
 /* ---------------------------------------------------------------------- */
 
-static Bool predicate(Display *display, XEvent *event, char *arg)
-{
-	return True;
-}
-
-/* ---------------------------------------------------------------------- */
-
 static char *x_getkey(void)
 {
 	XWindowAttributes winattrs;
@@ -121,7 +114,7 @@ static char *x_getkey(void)
 
 	if (!display)
 		return NULL;
-	while (XCheckIfEvent(display, &evt, predicate, NULL)) { 
+	while (XNextEvent(display, &evt) == 0) {
 		switch (evt.type) {
 		case KeyPress:
 			i = XLookupString((XKeyEvent *)&evt, kbuf, 

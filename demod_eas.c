@@ -58,6 +58,8 @@
 #define FREQ_SPACE 1562.5                 // binary 0 freq, in Hz
 #define FREQ_SAMP  22050                  // req'd input sampling rate, in Hz
 #define BAUD       520.83                 // symbol rate, in Hz
+#define CORRLEN    ((220500/52083)/100)
+
 #define PREAMBLE   ((unsigned char)0xAB)  // preamble byte, MSB first
 #define HEADER_BEGIN "ZCZC"               // message begin
 #define EOM "NNNN"                        // message end
@@ -77,7 +79,6 @@
 
 /* ---------------------------------------------------------------------- */
 
-#define CORRLEN ((int)(FREQ_SAMP/BAUD))
 #define SPHASEINC (0x10000u*BAUD*SUBSAMP/FREQ_SAMP)
 
 static float eascorr_mark_i[CORRLEN];
@@ -187,7 +188,7 @@ static void eas_frame(struct demod_state *s, char data)
        { 
          // All EAS messages should end in a minus sign ("-")
          // trim any trailing characters
-         ptr = strrchr(&s->l2.eas.msg_buf[s->l2.eas.msgno], '-');
+         ptr = strrchr(s->l2.eas.msg_buf[s->l2.eas.msgno], '-');
          if (ptr)
          {
             // found. make the next character zero
