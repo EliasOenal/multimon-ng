@@ -388,59 +388,48 @@ static int decode_fiw(struct Flex * flex) {
 	}
 }
 
+static char* append_alphanumeric(char* buf, unsigned int dw) {
+	int i;
+	for (i = 0; i < 3; i++) {
+		unsigned char ch = (dw >> (i * 7)) & 0x7F;
+		if (ch && ch != 0x03) {
+			*buf = ch;
+			buf++;
+		}
+	}
+	return buf;
+}
 
 // static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int j, int flex_groupmessage) {
 static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int flex_groupmessage) {
 	if (flex==NULL) return;
 	verbprintf(3, "FLEX: Parse Alpha Numeric\n");
-	int frag;
-	//   int cont;
-
-	frag = ( phaseptr[mw1] >> 11) & 0x03;
-	mw1++;
 
 	int i;
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-  char message[1024];
-  int  currentChar = 0; 
+	char buf[1024], *message;
+	int frag = (phaseptr[mw1] >> 11) & 0x03;
 
-	for (i = mw1; i <= mw2; i++) {
-		unsigned int dw =  phaseptr[i];
-		unsigned char ch;
-
-		if (i > mw1 || frag != 0x03) {
-			ch = dw & 0x7F;
-			if (ch != 0x03) {
-				message[currentChar] = ch;	
-				//verbprintf(0, "%c", ch);
-               			currentChar++;
-			}
-		}
-
-		ch = (dw >> 7) & 0x7F;
-		if (ch != 0x03) {
-			message[currentChar] = ch;	
-			//verbprintf(0, "%c", ch);
-                        currentChar++;
-		}
-
-		ch = (dw >> 14) & 0x7F;
-		if (ch != 0x03) {
-			message[currentChar] = ch;	
-			//verbprintf(0, "%c", ch);
-                        currentChar++;
-		}
-	}
-	message[currentChar] = '\0';
-	
-	if(flex_groupmessage == 1) {
-		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-				flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+	if (frag == 0x3) {
+		// fragment shifts the message data up by one word
+		message = buf;
+		mw2++;
 	} else {
-		verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-				flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+		// ignore control data in first byte
+		message = append_alphanumeric(buf, phaseptr[mw1] & ~0x7F);
 	}
+	for (i = mw1+1; i < mw2; i++) {
+		message = append_alphanumeric(message, phaseptr[i]);
+	}
+	*message = '\0';
+	message = buf;
+	if (frag == 0x3) {
+		message++;
+	}
+
+	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 	verbprintf(0, "%s\n", message);
 
 	if(flex_groupmessage == 1) {
