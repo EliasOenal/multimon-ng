@@ -54,8 +54,8 @@ SOURCES += \
     fms.c \
     demod_eas.c \
     demod_morse.c \
-    demod_dumpcsv.c
-
+    demod_dumpcsv.c \
+    demod_x10.c
 
 macx{
 DEFINES += DUMMY_AUDIO

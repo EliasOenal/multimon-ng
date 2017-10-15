@@ -131,7 +131,7 @@ void _verbprintf(int verb_level, const char *fmt, ...)
             strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
             fprintf(stdout, "%s: ", time_buf);
         }
-        
+
         is_startline = false;
     }
     if (NULL != strchr(fmt,'\n')) /* detect end of line in stream */
@@ -778,7 +778,7 @@ intypefound:
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng 1.1.3\n" 
+    fprintf(stderr, "multimon-ng 1.1.4\n" 
         "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
         "  (C) 2012-2017 by Elias Oenal\n"
         "Available demodulators:");

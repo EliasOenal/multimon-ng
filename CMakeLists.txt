@@ -11,10 +11,10 @@ else( NOT WIN32 )
 endif( NOT WIN32 )
 
 set( TARGET "${PROJECT_NAME}" )
-set( VERSION "1.0.0" )
+set( VERSION "1.1.4" )
 set( MAJOR "1" )
-set( MINOR "0" )
-set( PATCH "0" )
+set( MINOR "1" )
+set( PATCH "4" )
 set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra" )
 
 if( WIN32 )
@@ -110,6 +110,7 @@ set( SOURCES ${SOURCES}
 	demod_eas.c
 	demod_morse.c
 	demod_dumpcsv.c
+	demod_x10.c
 	)
 
 
