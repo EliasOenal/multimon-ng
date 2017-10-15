@@ -20,6 +20,14 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.5v (08 Sep 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - Issue #78 - Found a problem in the length detection sequence, modified the if statement to ensure the message length is 
+ *       only checked for Aplha messages, the other types calculate thier length while decoding
+ *  Version 0.8.4v (05 Sep 2017)
+ *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
+ *     - Found a bug in the code that was not handling multiple group messages within the same frame, 
+ *       and the long address bit was being miss treated in the same cases. Both issue have been fixed but further testing will help.
  *  Version 0.8.3v (22 Jun 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - I had previously tagged Group Messages as GPN message types, 
@@ -603,7 +611,10 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		parse_capcode(flex, phaseptr[i]);
 		// parse_capcode(flex, phaseptr[i], phaseptr[i+1]); // Older version maybe still needed so I'm not removing it (yet)
 		if (flex->Decode.long_address)
-			i++;
+		{
+			verbprintf(4, "FLEX: Found 'Long Address' bit, ignoring as I think this is handled incorrectly at the moment issue#79\n");
+			// i++;
+		}
 
         	if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
 	           flex_groupmessage = 1;
@@ -621,20 +632,12 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		flex->Decode.type = ((viw >> 4) & 0x00000007);
 		int mw1 = (viw >> 7) & 0x00000007F;
 		int len = (viw >> 14) & 0x0000007F;
-		int mw2 = mw1+(len - 1);
 
-		if (mw1 == 0 && mw2 == 0){
-			verbprintf(3, "FLEX: Invalid VIW\n");
-			continue;				// Invalid VIW
-		}
-
-		if (is_tone_page(flex))
-			mw1 = mw2 = 0;
-
-		if (mw1 > 87 || mw2 > 87){
-			verbprintf(3, "FLEX: Invalid Offsets\n");
-			continue;				// Invalid offsets
-		}
+                int w1 = (int)(viw >> 7);
+                int w2 = w1 >> 7;
+                w1 = w1 & 0x7f;
+                w2 = (w2 & 0x7f) + w1 - 1;
+                // int wL = w2 - w1;
 
 		if (flex->Decode.type == FLEX_PAGETYPE_SHORT_INSTRUCTION)
                 {
@@ -654,9 +657,25 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
                     continue;
                 }
 
-			//parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, j, flex_groupmessage);
-		if (is_alphanumeric_page(flex))
+		int mw2 = mw1+(len - 1);
+
+		if (mw1 == 0 && mw2 == 0){
+			verbprintf(3, "FLEX: Invalid VIW\n");
+			continue;				// Invalid VIW
+		}
+
+		if (is_tone_page(flex))
+			mw1 = mw2 = 0;
+
+
+                // Check if this is an alpha message
+                if (is_alphanumeric_page(flex)) { 
+    			if (mw1 > 87 || mw2 > 87){
+				verbprintf(3, "FLEX: Invalid Offsets\n");
+				continue;				// Invalid offsets
+			}
 			parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, flex_groupmessage);
+                }
 		else if (is_numeric_page(flex))
 			parse_numeric(flex, phaseptr, PhaseNo, j);
 		else if (is_tone_page(flex))
