@@ -131,19 +131,14 @@ static void x10_report(struct demod_state *s, int clr) {
 
 static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 {
-    short *src;
-    float div, f;
+    const short *src;
     int i;
     int bits = 0;
 
     verbprintf(2, "x10_demod length=%d, current_sequence=%d\n", length, s->l1.x10.current_sequence);
 
-
-    div =  (SAMPLING_RATE/ 1000.0f );
     src = buffer.sbuffer;
     for ( i=0 ; i < length ; i++, src++) {
-	uint32_t ptop;
-	float ptopf;
 
 	// Start of 9ms high preable (part 1)
 	if ( s->l1.x10.current_stage == 0 ) {
