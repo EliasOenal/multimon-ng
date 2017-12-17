@@ -20,6 +20,12 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.6v (18 Dec 2017)
+ *  Modification (to this file) made by Bruce Quinton (Zanoroy@gmail.com) on behalf of bertinhollan (https://github.com/bertinholland)
+ *     - Issue #87 created by bertinhollan: Reported issue is that the flex period timeout was too short and therefore some group messages were not being processed correctly
+ *                                          After some testing bertinhollan found that increasing the timeout period fixed the issue in his area. I have done further testing in my local
+ *                                          area and found the change has not reduced my success rate. I think the timeout is a localisation setting and I have added "DEMOD_TIMEOUT" 
+ *                                          to the definitions in the top of this file (the default value is 100 bertinhollan's prefered value, changed up from 50)
  *  Version 0.8.5v (08 Sep 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - Issue #78 - Found a problem in the length detection sequence, modified the if statement to ensure the message length is 
@@ -76,6 +82,7 @@
 #define LOCK_LEN             24            // Number of symbols to check for phase locking (max 32)
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
+#define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
 
 enum Flex_PageTypeEnum {
 	FLEX_PAGETYPE_SECURE,
@@ -1084,9 +1091,9 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
 			}
 		}
 
-		/*Time out after 50 periods with no zero crossing*/
+		/*Time out after X periods with no zero crossing*/
 		flex->Demodulator.timeout++;
-		if (flex->Demodulator.timeout>50) {
+		if (flex->Demodulator.timeout>DEMOD_TIMEOUT) {
 			verbprintf(1, "FLEX: Timeout\n");
 			flex->Demodulator.locked = 0;
 		}
