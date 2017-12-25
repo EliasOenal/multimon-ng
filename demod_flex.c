@@ -423,7 +423,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	int i;
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
-  	char buf[1024], *message;
+	char buf[1024], *message;
+  
 	int frag = (phaseptr[mw1] >> 11) & 0x03;
 
 	if (frag == 0x3) {
@@ -433,8 +434,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	} else {
 		// ignore control data in first byte
 		message = append_alphanumeric(buf, phaseptr[mw1] & ~0x7F);
-	}
 
+	}
 	for (i = mw1+1; i < mw2; i++) {
 		message = append_alphanumeric(message, phaseptr[i]);
 	}
@@ -447,7 +448,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
-	verbprintf(0, "%s\n", message);
+  verbprintf(0, "%s\n", message);
 
 	if(flex_groupmessage == 1) {
 		int groupbit = flex->Decode.capcode-2029568;

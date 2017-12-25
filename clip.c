@@ -390,40 +390,6 @@ static void clip_disp_packet(struct demod_state *s, unsigned char *bp, unsigned 
 
 /* ---------------------------------------------------------------------- */
 
-static void disp_packet(struct demod_state *s, unsigned char *bp, unsigned int len)
-{
-        unsigned char i,j;
-	(void) s;  // Suppress the warning.
-
-        if (!bp)
-		return;
-        if (!len) {
-                verbprintf(0, "\n");
-                return;
-        }
-        j = 0;
-        while (len) {
-                i = *bp++;
-                if ((i >= 32) && (i < 128))
-                        verbprintf(0, "%c",i);
-                else if (i == 13) {
-                        if (j) 
-                                verbprintf(0, "\n");
-                        j = 0;
-                } else
-                       verbprintf(0, "[0x%02X]",i);
-
-                if (i >= 32)
-                        j = 1;
-
-                len--;
-        }
-        if (j)
-                verbprintf(0, "\n");
-}
-
-/* ---------------------------------------------------------------------- */
-
 void clip_init(struct demod_state *s)
 {
 	memset(&s->l2.uart, 0, sizeof(s->l2.uart));
