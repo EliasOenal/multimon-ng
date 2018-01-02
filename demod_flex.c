@@ -20,6 +20,12 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.6v (18 Dec 2017)
+ *  Modification (to this file) made by Bruce Quinton (Zanoroy@gmail.com) on behalf of bertinhollan (https://github.com/bertinholland)
+ *     - Issue #87 created by bertinhollan: Reported issue is that the flex period timeout was too short and therefore some group messages were not being processed correctly
+ *                                          After some testing bertinhollan found that increasing the timeout period fixed the issue in his area. I have done further testing in my local
+ *                                          area and found the change has not reduced my success rate. I think the timeout is a localisation setting and I have added "DEMOD_TIMEOUT" 
+ *                                          to the definitions in the top of this file (the default value is 100 bertinhollan's prefered value, changed up from 50)
  *  Version 0.8.5v (08 Sep 2017)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *     - Issue #78 - Found a problem in the length detection sequence, modified the if statement to ensure the message length is 
@@ -76,6 +82,7 @@
 #define LOCK_LEN             24            // Number of symbols to check for phase locking (max 32)
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
+#define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
 
 enum Flex_PageTypeEnum {
 	FLEX_PAGETYPE_SECURE,
@@ -417,6 +424,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	time_t now=time(NULL);
 	struct tm * gmt=gmtime(&now);
 	char buf[1024], *message;
+  
 	int frag = (phaseptr[mw1] >> 11) & 0x03;
 
 	if (frag == 0x3) {
@@ -426,6 +434,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 	} else {
 		// ignore control data in first byte
 		message = append_alphanumeric(buf, phaseptr[mw1] & ~0x7F);
+
 	}
 	for (i = mw1+1; i < mw2; i++) {
 		message = append_alphanumeric(message, phaseptr[i]);
@@ -438,7 +447,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
 	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
 			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-	verbprintf(0, "%s\n", message);
+
+  verbprintf(0, "%s\n", message);
 
 	if(flex_groupmessage == 1) {
 		int groupbit = flex->Decode.capcode-2029568;
@@ -1082,9 +1092,9 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
 			}
 		}
 
-		/*Time out after 50 periods with no zero crossing*/
+		/*Time out after X periods with no zero crossing*/
 		flex->Demodulator.timeout++;
-		if (flex->Demodulator.timeout>50) {
+		if (flex->Demodulator.timeout>DEMOD_TIMEOUT) {
 			verbprintf(1, "FLEX: Timeout\n");
 			flex->Demodulator.locked = 0;
 		}
