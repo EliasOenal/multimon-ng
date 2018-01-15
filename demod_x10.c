@@ -167,7 +167,7 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 		    s->l1.x10.current_stage = 2;
 		    s->l1.x10.last_rise = i + s->l1.x10.current_sequence;
 		} else {
-		    fprintf(stderr, "stage 1 fail1\n");
+            verbprintf(9, "stage 1 fail1\n");
 		    s->l1.x10.current_stage = 0;
 		}
 		continue;
