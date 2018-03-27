@@ -114,7 +114,8 @@ static char *x_getkey(void)
 
 	if (!display)
 		return NULL;
-	while (XNextEvent(display, &evt) == 0) {
+	while (XCheckWindowEvent(display, window, KeyPressMask |
+				StructureNotifyMask | ExposureMask, &evt)) {
 		switch (evt.type) {
 		case KeyPress:
 			i = XLookupString((XKeyEvent *)&evt, kbuf, 
