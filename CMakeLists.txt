@@ -11,10 +11,10 @@ else( NOT WIN32 )
 endif( NOT WIN32 )
 
 set( TARGET "${PROJECT_NAME}" )
-set( VERSION "1.1.4" )
+set( VERSION "1.1.5" )
 set( MAJOR "1" )
 set( MINOR "1" )
-set( PATCH "4" )
+set( PATCH "5" )
 set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra" )
 
 if( WIN32 )
