@@ -20,6 +20,14 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.7v (11 APR 2018)
+ *  Modification (to this file) made by Bruce Quinton (zanoroy@gmail.com) and Rob0101 (as seen on github: https://github.com/rob0101)
+ *     - Issue *95 created by rob0101: '-a FLEX dropping first character of some message on regular basis'
+ *     - Implemented Rob0101's suggestion of K, F and C flags to indicate the message fragmentation: 
+ *         'K' message is complete and O'K' to display to the world.
+ *         'F' message is a 'F'ragment and needs a 'C'ontinuation message to complete it. Message = Fragment + Continuation
+ *         'C' message is a 'C'ontinuation of another fragmented message
+ * 
  *  Version 0.8.6v (18 Dec 2017)
  *  Modification (to this file) made by Bruce Quinton (Zanoroy@gmail.com) on behalf of bertinhollan (https://github.com/bertinholland)
  *     - Issue #87 created by bertinhollan: Reported issue is that the flex period timeout was too short and therefore some group messages were not being processed correctly
@@ -403,72 +411,105 @@ static int decode_fiw(struct Flex * flex) {
 	}
 }
 
-static char* append_alphanumeric(char* buf, unsigned int dw) {
-	int i;
-	for (i = 0; i < 3; i++) {
-		unsigned char ch = (dw >> (i * 7)) & 0x7F;
-		if (ch && ch != 0x03) {
-			*buf = ch;
-			buf++;
-		}
-	}
-	return buf;
-}
+//static char* append_alphanumeric(char* buf, unsigned int dw) {
+//	int i;
+//	for (i = 0; i < 3; i++) {
+//		unsigned char ch = (dw >> (i * 7)) & 0x7F;
+//		if (ch && ch != 0x03) {
+//			*buf = ch;
+//			buf++;
+//		}
+//	}
+//	return buf;
+//}
 
-// static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int j, int flex_groupmessage) {
 static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int flex_groupmessage) {
-	if (flex==NULL) return;
-	verbprintf(3, "FLEX: Parse Alpha Numeric\n");
+        if (flex==NULL) return;
+        verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
-	int i;
-	time_t now=time(NULL);
-	struct tm * gmt=gmtime(&now);
-  	char buf[1024], *message;
-	int frag = (phaseptr[mw1] >> 11) & 0x03;
+        int i;
+        time_t now=time(NULL);
+        struct tm * gmt=gmtime(&now);
+        // char buf[1024], *message;
+        char message[1024];
+        int  currentChar = 0; 
+        char frag_flag = 'K';
+        
+        int frag = (phaseptr[mw1] >> 11) & 0x03;
+        int cont = ( phaseptr[mw1] >> 0x0A ) & 0x01;
 
-	if (frag == 0x3) {
-		// fragment shifts the message data up by one word
-		message = buf;
-		mw2++;
-	} else {
-		// ignore control data in first byte
-		message = append_alphanumeric(buf, phaseptr[mw1] & ~0x7F);
-	}
+        if (cont == 1) frag_flag = 'F';
+        if (cont == 0 && frag == 0) frag_flag = 'C';
+				
+				mw1++;
+				
+        for (i = mw1; i <= mw2; i++) {
+            unsigned int dw =  phaseptr[i];
+            unsigned char ch;
 
-	for (i = mw1+1; i < mw2; i++) {
-		message = append_alphanumeric(message, phaseptr[i]);
-	}
-	*message = '\0';
-	message = buf;
-	if (frag == 0x3) {
-		message++;
-	}
+            if (i > mw1 || frag != 0x03) {
+                    ch = dw & 0x7F;
+                    if (ch != 0x03) {
+                        message[currentChar] = ch;      
+                        currentChar++;
+                    }
+            }
 
-	verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-			flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+            ch = (dw >> 7) & 0x7F;
+            if (ch != 0x03) {
+                message[currentChar] = ch;      
+                currentChar++;
+            }
 
-	verbprintf(0, "%s\n", message);
+            ch = (dw >> 14) & 0x7F;
+            if (ch != 0x03) {
+                message[currentChar] = ch;      
+                currentChar++;
+            }
+    }
 
-	if(flex_groupmessage == 1) {
-		int groupbit = flex->Decode.capcode-2029568;
-		if(groupbit < 0) return;
-			
-		int endpoint = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
-		for(int g = 1; g <= endpoint;g++)
-		{
-			verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.aGroupCodes[groupbit][g]);
+//        if (frag == 0x3) {
+//                // fragment shifts the message data up by one word
+//                message = buf;
+//                mw2++;
+//        } else {
+//                // ignore control data in first byte
+//                message = append_alphanumeric(buf, phaseptr[mw1] & ~0x7F);
+//        }
+//
+//        for (i = mw1+1; i < mw2; i++) {
+//                message = append_alphanumeric(message, phaseptr[i]);
+//        }
+//        *message = '\0';
+//        message = buf;
+//        if (frag == 0x03) {
+//                message++;
+//        }
+        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", 
+        								gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
-			verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-					flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.aGroupCodes[groupbit][g]);
+        verbprintf(0, "%s\n", message);
 
-			verbprintf(0, "%s\n", message);
-		}
-		// reset the value 
-		flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX] = 0;	
-	}
+        if(flex_groupmessage == 1) {
+                int groupbit = flex->Decode.capcode-2029568;
+                if(groupbit < 0) return;
+
+                int endpoint = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
+                for(int g = 1; g <= endpoint;g++)
+                {
+                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.aGroupCodes[groupbit][g]);
+
+                        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.aGroupCodes[groupbit][g]);
+
+                        verbprintf(0, "%s\n", message);
+                }
+                // reset the value
+                flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX] = 0;
+        }
 
 }
-
 
 static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
 	if (flex==NULL) return;
