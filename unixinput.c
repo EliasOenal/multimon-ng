@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2014
+ *      Copyright (C) 2012-2017
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
@@ -36,6 +36,8 @@
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
+#include <getopt.h>
 
 #ifdef SUN_AUDIO
 #include <sys/audioio.h>
@@ -85,6 +87,9 @@ static int repeatable_sox = 0;
 static int mute_sox = 0;
 static int integer_only = true;
 static bool dont_flush = false;
+static bool is_startline = true;
+static int timestamp = 0;
+static char *label = NULL;
 
 extern int pocsag_mode;
 extern int pocsag_invert_input;
@@ -106,15 +111,35 @@ void quit(void);
 
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
+	char time_buf[20];
+	time_t t;
+	struct tm* tm_info;
+
     if (verb_level > verbose_level)
         return;
     va_list args;
     va_start(args, fmt);
+
+    if (is_startline)
     {
-        vfprintf(stdout, fmt, args);
-        if(!dont_flush)
-            fflush(stdout);
+        if (label != NULL)
+            fprintf(stdout, "%s: ", label);
+        
+        if (timestamp) {
+            t = time(NULL);
+            tm_info = localtime(&t);
+            strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+            fprintf(stdout, "%s: ", time_buf);
+        }
+
+        is_startline = false;
     }
+    if (NULL != strchr(fmt,'\n')) /* detect end of line in stream */
+        is_startline = true;
+
+    vfprintf(stdout, fmt, args);
+    if(!dont_flush)
+        fflush(stdout);
     va_end(args);
 }
 
@@ -211,8 +236,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
 static void input_sound(unsigned int sample_rate, unsigned int overlap,
                         const char *ifname)
 {
-    //printf("DUMMY SOUND IN!");
-    //fflush(stdout);
+    (void)sample_rate;
+    (void)overlap;
+    (void)ifname;
 }
 #elif WIN32_AUDIO
 //Implemented in win32_soundin.c
@@ -479,7 +505,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         fd = pipedes[0];
     }
 #endif
-    
+
     /*
      * demodulate
      */
@@ -559,6 +585,8 @@ static const char usage_str[] = "\n"
         "  -g         : CW: Gap length in ms (default: 50)\n"
         "  -x         : CW: Disable auto threshold detection\n"
         "  -y         : CW: Disable auto timing detection\n"
+        "  --timestamp: Add a time stamp in front of every printed line\n"
+        "  --label    : Add a label to the front of every printed line\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
@@ -575,7 +603,14 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
 
-    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu")) != EOF) {
+    static struct option long_options[] =
+      {
+        {"timestamp", no_argument, &timestamp, 1},
+        {"label", required_argument, NULL, 'l'},
+        {0, 0, 0, 0}
+      };
+
+    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -734,15 +769,19 @@ intypefound:
         case 'y':
             cw_disable_auto_timing = true;
             break;
+	case 'l':
+	    label = optarg;
+	    break;
         }
     }
 
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-        "             (C) 2012-2014 by Elias Oenal\n"
-        "available demodulators:");
+    fprintf(stderr, "multimon-ng 1.1.4\n" 
+        "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+        "  (C) 2012-2017 by Elias Oenal\n"
+        "Available demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
         fprintf(stderr, " %s", dem[i]->name);
     }

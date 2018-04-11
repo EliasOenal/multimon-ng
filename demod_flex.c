@@ -411,18 +411,6 @@ static int decode_fiw(struct Flex * flex) {
 	}
 }
 
-//static char* append_alphanumeric(char* buf, unsigned int dw) {
-//	int i;
-//	for (i = 0; i < 3; i++) {
-//		unsigned char ch = (dw >> (i * 7)) & 0x7F;
-//		if (ch && ch != 0x03) {
-//			*buf = ch;
-//			buf++;
-//		}
-//	}
-//	return buf;
-//}
-
 static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int flex_groupmessage) {
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
@@ -441,7 +429,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         if (cont == 1) frag_flag = 'F';
         if (cont == 0 && frag == 0) frag_flag = 'C';
 				
-				mw1++;
+	mw1++;
 				
         for (i = mw1; i <= mw2; i++) {
             unsigned int dw =  phaseptr[i];
@@ -466,27 +454,10 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 message[currentChar] = ch;      
                 currentChar++;
             }
-    }
+        }
 
-//        if (frag == 0x3) {
-//                // fragment shifts the message data up by one word
-//                message = buf;
-//                mw2++;
-//        } else {
-//                // ignore control data in first byte
-//                message = append_alphanumeric(buf, phaseptr[mw1] & ~0x7F);
-//        }
-//
-//        for (i = mw1+1; i < mw2; i++) {
-//                message = append_alphanumeric(message, phaseptr[i]);
-//        }
-//        *message = '\0';
-//        message = buf;
-//        if (frag == 0x03) {
-//                message++;
-//        }
         verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", 
-        								gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+        		gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                         flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
         verbprintf(0, "%s\n", message);
