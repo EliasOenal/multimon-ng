@@ -456,6 +456,9 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
             }
         }
 
+        message[currentChar] = '\0';
+
+// 	message = '\0';
         verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", 
         		gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                         flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
