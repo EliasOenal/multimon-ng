@@ -20,6 +20,10 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.9.0v (22 May 2018)
+ *  Modification (to this file) made by Bruce Quinton (zanoroy@gmail.com)
+ *    - Addded Define at top of file to modify the way missed group messages are reported in the debug output (default is 1; report missed capcodes on the same line)
+ *                           REPORT_GROUP_CODES   1             // Report each cleared faulty group capcode : 0 = Each on a new line; 1 = All on the same line;
  *  Version 0.8.9 (20 Mar 2018)
  *  Modification (to this file) made by Bruce Quinton (zanoroy@gmail.com)
  *     - Issue #101 created by bertinhollan (https://github.com/bertinholland): Bug flex: Wrong split up group message after a data corruption frame.
@@ -91,7 +95,7 @@
 
 #define FREQ_SAMP            22050
 #define FILTLEN              1
-
+#define REPORT_GROUP_CODES   1		   // Report each cleared faulty group capcode : 0 = Each on a new line; 1 = All on the same line;
 
 #define FLEX_SYNC_MARKER     0xA6C6AAAAul  // Synchronisation code marker for FLEX
 #define SLICE_THRESHOLD      0.667         // For 4 level code, levels 0 and 3 have 3 times the amplitude of levels 1 and 2, so quantise at 2/3
@@ -102,6 +106,7 @@
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
+
 
 enum Flex_PageTypeEnum {
 	FLEX_PAGETYPE_SECURE,
@@ -415,7 +420,7 @@ static int decode_fiw(struct Flex * flex) {
 				timeseconds/60,
 				timeseconds%60);
 		// Lets check the FrameNo against the expected group message frames, if we have 'Missed a group message' tell the user and clear the Cap Codes
-                for(int g = 0; g < 18 ;g++)
+                for(int g = 0; g < 17 ;g++)
                 {
 			// Do we have a group message pending for this groupbit?
 			if(flex->GroupHandler.GroupFrame[g] >= 0)
@@ -452,7 +457,33 @@ static int decode_fiw(struct Flex * flex) {
 
  				if(Reset == 1)
 				{
-                        		verbprintf(3,"FLEX: Group messages seem to have been missed: Groupbit: %i; Total Capcodes; %i; Clearing data;\n", g, flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX]);
+                        			
+                			int endpoint = flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX];
+					if(REPORT_GROUP_CODES > 0)
+					{
+						verbprintf(3,"FLEX: Group messages seem to have been missed; Groupbit: %i; Total Capcodes: %i; Clearing Data; Capcodes: ", g, endpoint);
+					}
+					
+			                for(int capIndex = 1; capIndex <= endpoint; capIndex++)
+					{
+						if(REPORT_GROUP_CODES == 0)
+						{
+							verbprintf(3,"FLEX: Group messages seem to have been missed; Groupbit: %i; Clearing data; Capcode: [%09lld]\n", g, flex->GroupHandler.GroupCodes[g][capIndex]);
+						}
+						else
+						{
+							if(capIndex > 1)
+							{
+								verbprintf(3,",");
+							}
+							verbprintf(3,"[%09lld]", flex->GroupHandler.GroupCodes[g][capIndex]);
+						}
+					}
+
+					if(REPORT_GROUP_CODES > 0)
+                                        {
+                                                verbprintf(3,"\n");
+                                        }
 
                 			// reset the value
 			                flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX] = 0;
@@ -1236,7 +1267,7 @@ struct Flex * Flex_New(unsigned int SampleFrequency) {
 			flex=NULL;
 		}
 
-		for(int g = 0; g < 18; g++)
+		for(int g = 0; g < 17; g++)
 		{
 			flex->GroupHandler.GroupFrame[g] = -1;
 		    	flex->GroupHandler.GroupCycle[g] = -1;
