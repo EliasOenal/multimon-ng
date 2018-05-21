@@ -20,14 +20,24 @@
  *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  */
 /*
+ *  Version 0.8.9 (20 Mar 2018)
+ *  Modification (to this file) made by Bruce Quinton (zanoroy@gmail.com)
+ *     - Issue #101 created by bertinhollan (https://github.com/bertinholland): Bug flex: Wrong split up group message after a data corruption frame.
+ *     - Added logic to the FIW decoding that checks for any 'Group Messages' and if the frame has past them remove the group message and log output
+ *     - The following settings (at the top of this file, just under these comments) have changed from:
+ *                              PHASE_LOCKED_RATE    0.150
+ *                              PHASE_UNLOCKED_RATE  0.150
+ *       these new settings appear to work better when attempting to locate the Sync lock in the message preamble.
+ *  Version 0.8.8v (20 APR 2018)
+ *  Modification (to this file) made by Bruce Quinton (zanoroy@gmail.com)
+ *     - Issue #101 created by bertinhollan (https://github.com/bertinholland): Bug flex: Wrong split up group message after a data corruption frame. 
  *  Version 0.8.7v (11 APR 2018)
  *  Modification (to this file) made by Bruce Quinton (zanoroy@gmail.com) and Rob0101 (as seen on github: https://github.com/rob0101)
- *     - Issue *95 created by rob0101: '-a FLEX dropping first character of some message on regular basis'
+ *     - Issue *#95 created by rob0101: '-a FLEX dropping first character of some message on regular basis'
  *     - Implemented Rob0101's suggestion of K, F and C flags to indicate the message fragmentation: 
  *         'K' message is complete and O'K' to display to the world.
  *         'F' message is a 'F'ragment and needs a 'C'ontinuation message to complete it. Message = Fragment + Continuation
  *         'C' message is a 'C'ontinuation of another fragmented message
- * 
  *  Version 0.8.6v (18 Dec 2017)
  *  Modification (to this file) made by Bruce Quinton (Zanoroy@gmail.com) on behalf of bertinhollan (https://github.com/bertinholland)
  *     - Issue #87 created by bertinhollan: Reported issue is that the flex period timeout was too short and therefore some group messages were not being processed correctly
@@ -75,6 +85,7 @@
 #include <string.h>
 #include <time.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 /* ---------------------------------------------------------------------- */
 
@@ -85,8 +96,8 @@
 #define FLEX_SYNC_MARKER     0xA6C6AAAAul  // Synchronisation code marker for FLEX
 #define SLICE_THRESHOLD      0.667         // For 4 level code, levels 0 and 3 have 3 times the amplitude of levels 1 and 2, so quantise at 2/3
 #define DC_OFFSET_FILTER     0.010         // DC Offset removal IIR filter response (seconds)
-#define PHASE_LOCKED_RATE    0.150         // Correction factor for locked state
-#define PHASE_UNLOCKED_RATE  0.150         // Correction factor for unlocked state
+#define PHASE_LOCKED_RATE    0.045         // Correction factor for locked state
+#define PHASE_UNLOCKED_RATE  0.050         // Correction factor for unlocked state
 #define LOCK_LEN             24            // Number of symbols to check for phase locking (max 32)
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
@@ -128,8 +139,9 @@ struct Flex_Demodulator {
 };
 
 struct Flex_GroupHandler {
-	int64_t                     aGroupCodes[17][1000];
-	int                         GroupFrame[17];
+	int64_t                     GroupCodes[17][1000];
+	int	                    GroupCycle[17];
+	int     		    GroupFrame[17];
 };
 
 struct Flex_Modulation {
@@ -402,7 +414,53 @@ static int decode_fiw(struct Flex * flex) {
 				flex->FIW.fix3,
 				timeseconds/60,
 				timeseconds%60);
+		// Lets check the FrameNo against the expected group message frames, if we have 'Missed a group message' tell the user and clear the Cap Codes
+                for(int g = 0; g < 18 ;g++)
+                {
+			// Do we have a group message pending for this groupbit?
+			if(flex->GroupHandler.GroupFrame[g] >= 0)
+			{
+				int Reset = 0;
+				verbprintf(4, "Flex: GroupBit %i, FrameNo: %i, Cycle No: %i target Cycle No: %i\n", g, flex->GroupHandler.GroupFrame[g], flex->GroupHandler.GroupCycle[g], (int)flex->FIW.cycleno);	
+				// Now lets check if its expected in this frame..
+				if((int)flex->FIW.cycleno == flex->GroupHandler.GroupCycle[g])
+				{
+					if(flex->GroupHandler.GroupFrame[g] < (int)flex->FIW.frameno)
+					{
+						Reset = 1;
+					}
+				}
+                                // Check if we should have sent a group message in the previous cycle 
+				else if(flex->FIW.cycleno == 0) 
+				{
+					if(flex->GroupHandler.GroupCycle[g] == 15)
+					{
+						Reset = 1;
+					}
+				}
+                                // If we are waiting for the cycle to roll over then move onto the next for loop item 
+				else if(flex->FIW.cycleno == 15 && flex->GroupHandler.GroupCycle[g] == 0)
+				{
+					continue;
+				} 
+				// Otherwise if the target cycle is less than the current cycle, reset the data
+				else if(flex->GroupHandler.GroupCycle[g] < (int)flex->FIW.cycleno)
+				{
+					Reset = 1;
+				}
+			
 
+ 				if(Reset == 1)
+				{
+                        		verbprintf(3,"FLEX: Group messages seem to have been missed: Groupbit: %i; Total Capcodes; %i; Clearing data;\n", g, flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX]);
+
+                			// reset the value
+			                flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX] = 0;
+	                		flex->GroupHandler.GroupFrame[g] = -1;
+		                	flex->GroupHandler.GroupCycle[g] = -1;
+				}
+			}
+                }
 		return 0;
 	} else {
 		verbprintf(3, "FLEX: Bad Checksum 0x%x\n", checksum);
@@ -469,18 +527,20 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 int groupbit = flex->Decode.capcode-2029568;
                 if(groupbit < 0) return;
 
-                int endpoint = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
+                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
                 for(int g = 1; g <= endpoint;g++)
                 {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.aGroupCodes[groupbit][g]);
+                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
 
                         verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.aGroupCodes[groupbit][g]);
+                                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.GroupCodes[groupbit][g]);
 
                         verbprintf(0, "%s\n", message);
                 }
                 // reset the value
-                flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX] = 0;
+                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
+		flex->GroupHandler.GroupFrame[groupbit] = -1;
+		flex->GroupHandler.GroupCycle[groupbit] = -1;
         }
 
 }
@@ -597,6 +657,11 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 
 		if (decode_error) {
 			verbprintf(3, "FLEX: Garbled message at block %i\n", i);
+
+                        // If the previous frame was a short message then we need to Null out the Group Message pointer
+                        // this issue and sugested resolution was presented by 'bertinholland'
+
+
 			return;
 		}
 
@@ -666,16 +731,39 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 		if (flex->Decode.type == FLEX_PAGETYPE_SHORT_INSTRUCTION)
                 {
                     // if (flex_groupmessage == 1) continue;
-                    int iAssignedFrame = (int)((viw >> 10) & 0x7f);  // Frame with groupmessage
+                    unsigned int iAssignedFrame = (int)((viw >> 10) & 0x7f);  // Frame with groupmessage
                     int groupbit = (int)((viw >> 17) & 0x7f);    // Listen to this groupcode
 										
-										
-                    flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX]++;
-                    int CapcodePlacement = flex->GroupHandler.aGroupCodes[groupbit][CAPCODES_INDEX];
+	 	    ////////#############################################################################									
+	 	    ////////#############################################################################									
+                    flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]++;
+                    int CapcodePlacement = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
                     verbprintf(1, "FLEX: Found Short Instruction, Group bit: %i capcodes in group so far %i, adding Capcode: [%09lld]\n", groupbit, CapcodePlacement, flex->Decode.capcode);
 
-                    flex->GroupHandler.aGroupCodes[groupbit][CapcodePlacement] = flex->Decode.capcode;
+                    flex->GroupHandler.GroupCodes[groupbit][CapcodePlacement] = flex->Decode.capcode;
                     flex->GroupHandler.GroupFrame[groupbit] = iAssignedFrame;
+
+		    // Ok, so the cycle and frame can be used to make sure we haven't missed the message frame.
+		    // but the cycle is 0 - 15 and the frame is 0 - 127
+		    if(iAssignedFrame > flex->FIW.frameno)
+		    {
+			flex->GroupHandler.GroupCycle[groupbit] = (int)flex->FIW.cycleno;
+			verbprintf(4, "FLEX: Message frame is in this cycle: %i\n", flex->GroupHandler.GroupCycle[groupbit]);
+
+		    }
+		    else
+		    {
+			if(flex->FIW.cycleno == 15)
+                        {
+				flex->GroupHandler.GroupCycle[groupbit] = 0;
+			}
+			else
+			{
+				flex->GroupHandler.GroupCycle[groupbit] = (int)flex->FIW.cycleno++;
+		    	}
+			verbprintf(4, "FLEX: Message frame is in the next cycle: %i\n", flex->GroupHandler.GroupCycle[groupbit]);
+		    }
+
 
                     // Nothing else to do with this word.. move on!!
                     continue;
@@ -685,7 +773,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 
 		if (mw1 == 0 && mw2 == 0){
 			verbprintf(3, "FLEX: Invalid VIW\n");
-			continue;				// Invalid VIW
+			continue;  // Invalid VIW
 		}
 
 		if (is_tone_page(flex))
@@ -1146,6 +1234,12 @@ struct Flex * Flex_New(unsigned int SampleFrequency) {
 		if (flex->Decode.BCHCode == NULL) {
 			Flex_Delete(flex);
 			flex=NULL;
+		}
+
+		for(int g = 0; g < 18; g++)
+		{
+			flex->GroupHandler.GroupFrame[g] = -1;
+		    	flex->GroupHandler.GroupCycle[g] = -1;
 		}
 	}
 
