@@ -430,7 +430,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_AUTO) && func == 3 && (guess_alpha >= guess_skyper || unsure)))
+            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_AUTO) && func != 0 && (guess_alpha >= guess_skyper || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -444,7 +444,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && func == 3 && (guess_skyper >= guess_alpha || unsure)))
+            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && func != 0 && (guess_skyper >= guess_alpha || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
