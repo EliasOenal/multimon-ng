@@ -1,23 +1,25 @@
 /*
  *      demod_flex.c
  *
+ *      Copyright 2004,2006,2010 Free Software Foundation, Inc.
  *      Copyright (C) 2015 Craig Shelley (craig@microtron.org.uk)
  *
  *      FLEX Radio Paging Decoder - Adapted from GNURadio for use with Multimon
  *
- *	This program is free software; you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation; either version 2 of the License, or
- *	(at your option) any later version.
+ *      GNU Radio is free software; you can redistribute it and/or modify
+ *      it under the terms of the GNU General Public License as published by
+ *      the Free Software Foundation; either version 3, or (at your option)
+ *      any later version.
  *
- *	This program is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *	GNU General Public License for more details.
+ *      GNU Radio is distributed in the hope that it will be useful,
+ *      but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *      MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *      GNU General Public License for more details.
  *
- *	You should have received a copy of the GNU General Public License
- *	along with this program; if not, write to the Free Software
- *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ *      You should have received a copy of the GNU General Public License
+ *      along with GNU Radio; see the file COPYING.  If not, write to
+ *      the Free Software Foundation, Inc., 51 Franklin Street,
+ *      Boston, MA 02110-1301, USA.
  */
 /*
  *  Version 0.9.0v (22 May 2018)
