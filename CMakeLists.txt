@@ -67,6 +67,15 @@ if( NOT MSVC )
 endif( NOT MSVC )
 add_definitions( "-DMAX_VERBOSE_LEVEL=3" "-DCHARSET_UTF8" )
 
+if ( EXISTS "${multimon-ng_SOURCE_DIR}/BCHCode.c" )
+	set( SOURCES ${SOURCES}
+		BCHCode.c )
+else()
+	message(STATUS "Using the BCH decoder stub")
+	set( SOURCES ${SOURCES}
+		BCHCode_stub.c )
+endif()
+
 set( HEADERS ${HEADERS}
     	multimon.h
     	gen.h
@@ -102,7 +111,6 @@ set( SOURCES ${SOURCES}
 	demod_afsk24_2.c
 	demod_afsk12.c
 	demod_flex.c
-	BCHCode.c
 	costabi.c
 	costabf.c
 	clip.c
