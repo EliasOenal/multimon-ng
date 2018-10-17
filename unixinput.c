@@ -778,7 +778,7 @@ intypefound:
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng 1.1.5\n"
+    fprintf(stderr, "multimon-ng 1.1.6\n"
         "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
         "  (C) 2012-2018 by Elias Oenal\n"
         "Available demodulators:");
