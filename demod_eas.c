@@ -58,7 +58,6 @@
 #define FREQ_SPACE 1562.5                 // binary 0 freq, in Hz
 #define FREQ_SAMP  22050                  // req'd input sampling rate, in Hz
 #define BAUD       520.83                 // symbol rate, in Hz
-#define CORRLEN    ((220500/52083)/100)
 
 #define PREAMBLE   ((unsigned char)0xAB)  // preamble byte, MSB first
 #define HEADER_BEGIN "ZCZC"               // message begin
@@ -78,7 +77,7 @@
 #define MIN_IDENTICAL_MSGS 2              // # of msgs which must be identical
 
 /* ---------------------------------------------------------------------- */
-
+#define CORRLEN ((int)(FREQ_SAMP/BAUD))
 #define SPHASEINC (0x10000u*BAUD*SUBSAMP/FREQ_SAMP)
 
 static float eascorr_mark_i[CORRLEN];

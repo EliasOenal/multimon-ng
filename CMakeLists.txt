@@ -11,10 +11,10 @@ else( NOT WIN32 )
 endif( NOT WIN32 )
 
 set( TARGET "${PROJECT_NAME}" )
-set( VERSION "1.1.4" )
+set( VERSION "1.1.6" )
 set( MAJOR "1" )
 set( MINOR "1" )
-set( PATCH "4" )
+set( PATCH "6" )
 set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra" )
 
 if( WIN32 )
@@ -67,6 +67,15 @@ if( NOT MSVC )
 endif( NOT MSVC )
 add_definitions( "-DMAX_VERBOSE_LEVEL=3" "-DCHARSET_UTF8" )
 
+if ( EXISTS "${multimon-ng_SOURCE_DIR}/BCHCode.c" )
+	set( SOURCES ${SOURCES}
+		BCHCode.c )
+else()
+	message(STATUS "Using the BCH decoder stub")
+	set( SOURCES ${SOURCES}
+		BCHCode_stub.c )
+endif()
+
 set( HEADERS ${HEADERS}
     	multimon.h
     	gen.h
@@ -102,7 +111,6 @@ set( SOURCES ${SOURCES}
 	demod_afsk24_2.c
 	demod_afsk12.c
 	demod_flex.c
-	BCHCode.c
 	costabi.c
 	costabf.c
 	clip.c

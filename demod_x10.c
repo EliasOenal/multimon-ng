@@ -16,19 +16,9 @@
  */
 
 /* ---------------------------------------------------------------------- */
-
 #include "multimon.h"
-#include <sys/types.h>
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <sys/resource.h>
-#include <signal.h>
-#include <math.h>
 #include <string.h>
 #include <stdio.h>
-#include <unistd.h>
-
-
 /* ---------------------------------------------------------------------- */
 
 static const char housecode[] = "MECKOGAINFDLPHBJ";
@@ -167,7 +157,7 @@ static void x10_demod(struct demod_state *s, buffer_t buffer, int length)
 		    s->l1.x10.current_stage = 2;
 		    s->l1.x10.last_rise = i + s->l1.x10.current_sequence;
 		} else {
-		    fprintf(stderr, "stage 1 fail1\n");
+            verbprintf(9, "stage 1 fail1\n");
 		    s->l1.x10.current_stage = 0;
 		}
 		continue;
