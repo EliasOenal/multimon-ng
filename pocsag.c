@@ -409,7 +409,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
 
             func = s->l2.pocsag.function;
 
-            if(guess_alpha < 20 && guess_skyper < 20)
+            if(guess_num < 20 && guess_alpha < 20 && guess_skyper < 20)
             {
                 if(pocsag_heuristic_pruning)
                     return;
