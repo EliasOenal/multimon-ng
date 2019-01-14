@@ -57,7 +57,7 @@
 #define POSCAG
 /* ---------------------------------------------------------------------- */
 
-int pocsag_mode = 0;
+int pocsag_mode = POCSAG_MODE_STANDARD;
 int pocsag_invert_input = 0;
 int pocsag_error_correction = 2;
 int pocsag_show_partial_decodes = 0;
@@ -416,7 +416,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 unsure = 1;
             }
 
-            if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_AUTO) && func == 0 ))
+            if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_STANDARD) && (func == 0)) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_num >= 20 || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -430,7 +430,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_AUTO) && func != 0 && (guess_alpha >= guess_skyper || unsure)))
+            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_STANDARD) && (func != 0)) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_alpha >= guess_skyper || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -444,7 +444,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && func != 0 && (guess_skyper >= guess_alpha || unsure)))
+            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_skyper >= guess_alpha || unsure))) // Only output SKYPER if we're explicitly asking for it or we're auto guessing! (because it's not part of one of the standards, right?!)
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
