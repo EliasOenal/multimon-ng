@@ -97,6 +97,7 @@ extern int pocsag_error_correction;
 extern int pocsag_show_partial_decodes;
 extern int pocsag_heuristic_pruning;
 extern int pocsag_prune_empty;
+extern bool pocsag_init_charset(char *charset);
 
 extern int aprs_mode;
 extern int cw_dit_length;
@@ -580,6 +581,7 @@ static const char usage_str[] = "\n"
         "                       (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
         "  -b <level> : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
         "                       Lower levels increase performance and lower false positives.\n"
+        "  -C <cs>    : POCSAG: Set Charset.\n"
         "  -o         : CW: Set threshold for dit detection (default: 500)\n"
         "  -d         : CW: Dit length in ms (default: 50)\n"
         "  -g         : CW: Gap length in ms (default: 50)\n"
@@ -607,10 +609,11 @@ int main(int argc, char *argv[])
       {
         {"timestamp", no_argument, &timestamp, 1},
         {"label", required_argument, NULL, 'l'},
+        {"charset", required_argument, NULL, 'C'},
         {0, 0, 0, 0}
       };
 
-    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu", long_options, NULL)) != EOF) {
+    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeuC:", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -730,6 +733,11 @@ intypefound:
             }else fprintf(stderr, "a POCSAG mode has already been selected!\n");
             break;
             
+        case 'C':
+    		if (!pocsag_init_charset(optarg))
+    			errflg++;
+        	break;
+        	
         case 'n':
             dont_flush = true;
             break;
@@ -769,6 +777,7 @@ intypefound:
         case 'y':
             cw_disable_auto_timing = true;
             break;
+            
 	case 'l':
 	    label = optarg;
 	    break;
