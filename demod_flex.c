@@ -22,6 +22,9 @@
  *      Boston, MA 02110-1301, USA.
  */
 /*
+ *  Version 0.9.1v (10 Jan 2019)
+ *  Modification (to this file) made by Rob0101
+ *   Fixed marking messages with K,F,C - One case had a 'C' marked as a 'K' 
  *  Version 0.9.0v (22 May 2018)
  *  Modification (to this file) made by Bruce Quinton (zanoroy@gmail.com)
  *    - Addded Define at top of file to modify the way missed group messages are reported in the debug output (default is 1; report missed capcodes on the same line)
@@ -512,14 +515,15 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         // char buf[1024], *message;
         char message[1024];
         int  currentChar = 0; 
-        char frag_flag = 'K';
+        char frag_flag = '?';
         
         int frag = (phaseptr[mw1] >> 11) & 0x03;
-        int cont = ( phaseptr[mw1] >> 0x0A ) & 0x01;
+        int cont = (phaseptr[mw1] >> 0x0A) & 0x01;
 
-        if (cont == 1) frag_flag = 'F';
-        if (cont == 0 && frag == 0) frag_flag = 'C';
-				
+        if (cont == 0 && frag == 3) frag_flag = 'K'; // complete, ready to send
+        if (cont == 0 && frag != 3) frag_flag = 'C'; // incomplete until appended to 1 or more 'F's
+        if (cont == 1             ) frag_flag = 'F'; // incomplete until a 'C' fragment is appended
+		
 	mw1++;
 				
         for (i = mw1; i <= mw2; i++) {
