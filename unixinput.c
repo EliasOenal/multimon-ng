@@ -30,7 +30,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
 #include <errno.h>
@@ -457,6 +459,9 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         // read from stdin and force raw input
         fd = 0;
         type = "raw";
+#ifdef WINDOWS
+        setmode(fd, O_BINARY);
+#endif
     }
     else if (!type || !strcmp(type, "raw")) {
 #ifdef WINDOWS
