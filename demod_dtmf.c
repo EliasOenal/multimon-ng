@@ -114,6 +114,10 @@ static inline int process_block(struct demod_state *s)
 		return -1;
 	if ((tote * 0.4) > (totte[i] + totte[j+4]))
 		return -1;
+	if (totte[i]*3.0<totte[j+4])
+		return -1;
+	if (totte[j+4]*3.0<totte[i])
+		return -1;
 	return (i & 3) | ((j << 2) & 0xc);
 }
 
