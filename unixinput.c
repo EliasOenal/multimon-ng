@@ -582,8 +582,8 @@ static const char usage_str[] = "\n"
         "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
         "  -p         : POCSAG: Show partially received messages.\n"
-        "  -f <mode>  : POCSAG: Disables auto-detection and forces decoding of data as <mode>\n"
-        "                       (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
+        "  -f <mode>  : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
+        "                       (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
         "  -b <level> : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
         "                       Lower levels increase performance and lower false positives.\n"
         "  -C <cs>    : POCSAG: Set Charset.\n"
@@ -735,6 +735,8 @@ intypefound:
                     pocsag_mode = POCSAG_MODE_ALPHA;
                 else if(!strncmp("skyper",optarg, sizeof("skyper")))
                     pocsag_mode = POCSAG_MODE_SKYPER;
+                else if(!strncmp("auto",optarg, sizeof("auto")))
+                    pocsag_mode = POCSAG_MODE_AUTO;
             }else fprintf(stderr, "a POCSAG mode has already been selected!\n");
             break;
             

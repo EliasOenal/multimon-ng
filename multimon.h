@@ -46,10 +46,11 @@ extern const float costabf[0x400];
 
 enum
 {
-    POCSAG_MODE_AUTO = 0,
+    POCSAG_MODE_STANDARD = 0,
     POCSAG_MODE_NUMERIC = 1,
     POCSAG_MODE_ALPHA = 2,
     POCSAG_MODE_SKYPER = 3,
+    POCSAG_MODE_AUTO = 4,
 };
 
 enum EAS_L2_State

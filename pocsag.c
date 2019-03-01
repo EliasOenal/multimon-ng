@@ -57,7 +57,7 @@
 #define POSCAG
 /* ---------------------------------------------------------------------- */
 
-int pocsag_mode = 0;
+int pocsag_mode = POCSAG_MODE_STANDARD;
 int pocsag_invert_input = 0;
 int pocsag_error_correction = 2;
 int pocsag_show_partial_decodes = 0;
@@ -361,7 +361,7 @@ static char *translate_alpha(unsigned char chr)
 /* ---------------------------------------------------------------------- */
 static int guesstimate_alpha(const unsigned char cp)
 {
-    if(cp < 32 || cp == 127)
+    if((cp > 0 && cp < 32) || cp == 127)
         return -5; // Non printable characters are uncommon
     else if((cp > 32 && cp < 48)
             || (cp > 57 && cp < 65)
@@ -544,10 +544,13 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
             int guess_alpha = 0;
             int guess_skyper = 0;
             int unsure = 0;
+            int func = 0;
 
             guess_num = print_msg_numeric(&s->l2.pocsag, num_string, sizeof(num_string));
             guess_alpha = print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string));
             guess_skyper = print_msg_skyper(&s->l2.pocsag, skyper_string, sizeof(skyper_string));
+
+            func = s->l2.pocsag.function;
 
             if(guess_num < 20 && guess_alpha < 20 && guess_skyper < 20)
             {
@@ -556,8 +559,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 unsure = 1;
             }
 
-
-            if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_num >= 20 || unsure)))
+            if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_STANDARD) && (func == 0)) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_num >= 20 || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -571,7 +573,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_alpha >= 20 || unsure)))
+            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_STANDARD) && (func != 0)) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_alpha >= guess_skyper || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -585,7 +587,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_skyper >= 20 || unsure)))
+            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_skyper >= guess_alpha || unsure))) // Only output SKYPER if we're explicitly asking for it or we're auto guessing! (because it's not part of one of the standards, right?!)
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
