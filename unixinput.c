@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2018
+ *      Copyright (C) 2012-2019
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
@@ -30,7 +30,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
 #include <errno.h>
@@ -97,6 +99,7 @@ extern int pocsag_error_correction;
 extern int pocsag_show_partial_decodes;
 extern int pocsag_heuristic_pruning;
 extern int pocsag_prune_empty;
+extern bool pocsag_init_charset(char *charset);
 
 extern int aprs_mode;
 extern int cw_dit_length;
@@ -456,6 +459,9 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         // read from stdin and force raw input
         fd = 0;
         type = "raw";
+#ifdef WINDOWS
+        setmode(fd, O_BINARY);
+#endif
     }
     else if (!type || !strcmp(type, "raw")) {
 #ifdef WINDOWS
@@ -576,10 +582,11 @@ static const char usage_str[] = "\n"
         "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
         "  -p         : POCSAG: Show partially received messages.\n"
-        "  -f <mode>  : POCSAG: Disables auto-detection and forces decoding of data as <mode>\n"
-        "                       (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
+        "  -f <mode>  : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
+        "                       (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
         "  -b <level> : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
         "                       Lower levels increase performance and lower false positives.\n"
+        "  -C <cs>    : POCSAG: Set Charset.\n"
         "  -o         : CW: Set threshold for dit detection (default: 500)\n"
         "  -d         : CW: Dit length in ms (default: 50)\n"
         "  -g         : CW: Gap length in ms (default: 50)\n"
@@ -607,10 +614,11 @@ int main(int argc, char *argv[])
       {
         {"timestamp", no_argument, &timestamp, 1},
         {"label", required_argument, NULL, 'l'},
+        {"charset", required_argument, NULL, 'C'},
         {0, 0, 0, 0}
       };
 
-    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu", long_options, NULL)) != EOF) {
+    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeuC:", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -727,9 +735,16 @@ intypefound:
                     pocsag_mode = POCSAG_MODE_ALPHA;
                 else if(!strncmp("skyper",optarg, sizeof("skyper")))
                     pocsag_mode = POCSAG_MODE_SKYPER;
+                else if(!strncmp("auto",optarg, sizeof("auto")))
+                    pocsag_mode = POCSAG_MODE_AUTO;
             }else fprintf(stderr, "a POCSAG mode has already been selected!\n");
             break;
             
+        case 'C':
+    		if (!pocsag_init_charset(optarg))
+    			errflg++;
+        	break;
+        	
         case 'n':
             dont_flush = true;
             break;
@@ -769,6 +784,7 @@ intypefound:
         case 'y':
             cw_disable_auto_timing = true;
             break;
+            
 	case 'l':
 	    label = optarg;
 	    break;
@@ -778,9 +794,9 @@ intypefound:
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng 1.1.6\n"
+    fprintf(stderr, "multimon-ng 1.1.7\n"
         "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-        "  (C) 2012-2018 by Elias Oenal\n"
+        "  (C) 2012-2019 by Elias Oenal\n"
         "Available demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
         fprintf(stderr, " %s", dem[i]->name);
