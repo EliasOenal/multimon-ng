@@ -625,9 +625,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 			}
 			dw >>= 1;
 			if(--count == 0) {
-				if(digit != 0x0C) {// Fill
-					verbprintf(0, "%c", flex_bcd[digit]);
-				}
+				verbprintf(0, "%c", flex_bcd[digit]);
 				count = 4;
 			}
 		}
