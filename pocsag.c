@@ -374,7 +374,7 @@ bool pocsag_init_charset(char *charset)
 	else
 	{
 		fprintf(stderr, "Error: invalid POCSAG charset %s\n", charset);
-		fprintf(stderr, "Use: US,FR,DE\n");
+		fprintf(stderr, "Use: US,FR,DE,SE\n");
 		charset = "US";
 		return false; 
 	}
