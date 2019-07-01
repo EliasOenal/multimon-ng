@@ -321,6 +321,34 @@ bool pocsag_init_charset(char *charset)
 			trtab[0x7e] = "ss";
 		#endif
 	}
+	else if (strcmp(charset,"SE")==0) // Swedish charset
+	{
+		#ifdef CHARSET_UTF8
+			trtab[0x5b] = "Ä";
+			trtab[0x5c] = "Ö";
+			trtab[0x5d] = "Å";
+
+			trtab[0x7b] = "ä";
+			trtab[0x7c] = "ö";
+			trtab[0x7d] = "å";
+		#elif defined CHARSET_LATIN1
+			trtab[0x5b] = "\304";
+			trtab[0x5c] = "\326";
+			trtab[0x5d] = "\305";
+
+			trtab[0x7b] = "\344";
+			trtab[0x7c] = "\366";
+			trtab[0x7d] = "\345";
+		#else
+			trtab[0x5b] = "AE";
+			trtab[0x5c] = "OE";
+			trtab[0x5d] = "AO";
+
+			trtab[0x7b] = "ae";
+			trtab[0x7c] = "oe";
+			trtab[0x7d] = "ao";
+		#endif
+	}
 	else if (strcmp(charset,"FR")==0) // French charset
 	{
 		trtab[0x24] = "£";
