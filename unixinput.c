@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2014
+ *      Copyright (C) 2012-2019
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
@@ -30,12 +30,16 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#ifndef _MSC_VER
+#ifdef _MSC_VER
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
 #include <errno.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>
+#include <getopt.h>
 
 #ifdef SUN_AUDIO
 #include <sys/audioio.h>
@@ -85,6 +89,9 @@ static int repeatable_sox = 0;
 static int mute_sox = 0;
 static int integer_only = true;
 static bool dont_flush = false;
+static bool is_startline = true;
+static int timestamp = 0;
+static char *label = NULL;
 
 extern int pocsag_mode;
 extern int pocsag_invert_input;
@@ -92,6 +99,7 @@ extern int pocsag_error_correction;
 extern int pocsag_show_partial_decodes;
 extern int pocsag_heuristic_pruning;
 extern int pocsag_prune_empty;
+extern bool pocsag_init_charset(char *charset);
 
 extern int aprs_mode;
 extern int cw_dit_length;
@@ -106,15 +114,35 @@ void quit(void);
 
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
+	char time_buf[20];
+	time_t t;
+	struct tm* tm_info;
+
     if (verb_level > verbose_level)
         return;
     va_list args;
     va_start(args, fmt);
+
+    if (is_startline)
     {
-        vfprintf(stdout, fmt, args);
-        if(!dont_flush)
-            fflush(stdout);
+        if (label != NULL)
+            fprintf(stdout, "%s: ", label);
+        
+        if (timestamp) {
+            t = time(NULL);
+            tm_info = localtime(&t);
+            strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+            fprintf(stdout, "%s: ", time_buf);
+        }
+
+        is_startline = false;
     }
+    if (NULL != strchr(fmt,'\n')) /* detect end of line in stream */
+        is_startline = true;
+
+    vfprintf(stdout, fmt, args);
+    if(!dont_flush)
+        fflush(stdout);
     va_end(args);
 }
 
@@ -211,8 +239,9 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
 static void input_sound(unsigned int sample_rate, unsigned int overlap,
                         const char *ifname)
 {
-    //printf("DUMMY SOUND IN!");
-    //fflush(stdout);
+    (void)sample_rate;
+    (void)overlap;
+    (void)ifname;
 }
 #elif WIN32_AUDIO
 //Implemented in win32_soundin.c
@@ -430,6 +459,9 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         // read from stdin and force raw input
         fd = 0;
         type = "raw";
+#ifdef WINDOWS
+        setmode(fd, O_BINARY);
+#endif
     }
     else if (!type || !strcmp(type, "raw")) {
 #ifdef WINDOWS
@@ -479,7 +511,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
         fd = pipedes[0];
     }
 #endif
-    
+
     /*
      * demodulate
      */
@@ -550,15 +582,18 @@ static const char usage_str[] = "\n"
         "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
         "  -p         : POCSAG: Show partially received messages.\n"
-        "  -f <mode>  : POCSAG: Disables auto-detection and forces decoding of data as <mode>\n"
-        "                       (<mode> can be 'numeric', 'alpha' and 'skyper')\n"
+        "  -f <mode>  : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
+        "                       (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
         "  -b <level> : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
         "                       Lower levels increase performance and lower false positives.\n"
+        "  -C <cs>    : POCSAG: Set Charset.\n"
         "  -o         : CW: Set threshold for dit detection (default: 500)\n"
         "  -d         : CW: Dit length in ms (default: 50)\n"
         "  -g         : CW: Gap length in ms (default: 50)\n"
         "  -x         : CW: Disable auto threshold detection\n"
         "  -y         : CW: Disable auto timing detection\n"
+        "  --timestamp: Add a time stamp in front of every printed line\n"
+        "  --label    : Add a label to the front of every printed line\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
@@ -575,7 +610,15 @@ int main(int argc, char *argv[])
     unsigned int overlap = 0;
     char *input_type = "hw";
 
-    while ((c = getopt(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeu")) != EOF) {
+    static struct option long_options[] =
+      {
+        {"timestamp", no_argument, &timestamp, 1},
+        {"label", required_argument, NULL, 'l'},
+        {"charset", required_argument, NULL, 'C'},
+        {0, 0, 0, 0}
+      };
+
+    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeuC:", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -692,9 +735,16 @@ intypefound:
                     pocsag_mode = POCSAG_MODE_ALPHA;
                 else if(!strncmp("skyper",optarg, sizeof("skyper")))
                     pocsag_mode = POCSAG_MODE_SKYPER;
+                else if(!strncmp("auto",optarg, sizeof("auto")))
+                    pocsag_mode = POCSAG_MODE_AUTO;
             }else fprintf(stderr, "a POCSAG mode has already been selected!\n");
             break;
             
+        case 'C':
+    		if (!pocsag_init_charset(optarg))
+    			errflg++;
+        	break;
+        	
         case 'n':
             dont_flush = true;
             break;
@@ -734,15 +784,20 @@ intypefound:
         case 'y':
             cw_disable_auto_timing = true;
             break;
+            
+	case 'l':
+	    label = optarg;
+	    break;
         }
     }
 
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-        "             (C) 2012-2014 by Elias Oenal\n"
-        "available demodulators:");
+    fprintf(stderr, "multimon-ng 1.1.8\n"
+        "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+        "  (C) 2012-2019 by Elias Oenal\n"
+        "Available demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
         fprintf(stderr, " %s", dem[i]->name);
     }

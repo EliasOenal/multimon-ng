@@ -57,7 +57,7 @@
 #define POSCAG
 /* ---------------------------------------------------------------------- */
 
-int pocsag_mode = 0;
+int pocsag_mode = POCSAG_MODE_STANDARD;
 int pocsag_invert_input = 0;
 int pocsag_error_correction = 2;
 int pocsag_show_partial_decodes = 0;
@@ -125,100 +125,271 @@ static unsigned int pocsag_syndrome(uint32_t data)
 }
 
 /* ---------------------------------------------------------------------- */
+	// ISO 646 national variant: US / IRV (1991)
+    char *trtab[128] = {
+			"<NUL>", 	//  0x0
+			"<SOH>", 	//  0x1
+			"<STX>", 	//  0x2
+			"<ETX>", 	//  0x3
+			"<EOT>", 	//  0x4
+			"<ENQ>", 	//  0x5
+			"<ACK>", 	//  0x6
+			"<BEL>", 	//  0x7
+			"<BS>",  	//  0x8
+			"<HT>",  	//  0x9
+			"<LF>",  	//  0xa
+			"<VT>",  	//  0xb
+			"<FF>",  	//  0xc
+			"<CR>",  	//  0xd
+			"<SO>",  	//  0xe
+			"<SI>",  	//  0xf
+			"<DLE>", 	// 0x10
+			"<DC1>", 	// 0x11
+			"<DC2>", 	// 0x12
+			"<DC3>", 	// 0x13
+			"<DC4>", 	// 0x14
+			"<NAK>", 	// 0x15
+			"<SYN>", 	// 0x16
+			"<ETB>", 	// 0x17
+			"<CAN>", 	// 0x18
+			"<EM>",  	// 0x19
+			"<SUB>", 	// 0x1a
+			"<ESC>", 	// 0x1b
+			"<FS>",  	// 0x1c
+			"<GS>",  	// 0x1d
+			"<RS>",  	// 0x1e
+			"<US>",  	// 0x1f
+			" ", 		// 0x20
+			"!", 		// 0x21
+			"\"", 		// 0x22
+
+						// national variant
+			"#", 		// 0x23
+			"$", 		// 0x24
+
+			"%", 		// 0x25
+			"&", 		// 0x26
+			"'", 		// 0x27
+			"(", 		// 0x28
+			")", 		// 0x29
+			"*", 		// 0x2a
+			"+", 		// 0x2b
+			",", 		// 0x2c
+			"-", 		// 0x2d
+			".", 		// 0x2e
+			"/", 		// 0x2f
+			"0", 		// 0x30
+			"1", 		// 0x31
+			"2", 		// 0x32
+			"3", 		// 0x33
+			"4", 		// 0x34
+			"5", 		// 0x35
+			"6", 		// 0x36
+			"7", 		// 0x37
+			"8", 		// 0x38
+			"9", 		// 0x39
+			":", 		// 0x3a
+			";", 		// 0x3b
+			"<", 		// 0x3c
+			"=", 		// 0x3d
+			">", 		// 0x3e
+			"?", 		// 0x3f
+			"@", 		// 0x40
+			"A", 		// 0x41
+			"B", 		// 0x42
+			"C", 		// 0x43
+			"D", 		// 0x44
+			"E", 		// 0x45
+			"F", 		// 0x46
+			"G", 		// 0x47
+			"H", 		// 0x48
+			"I", 		// 0x49
+			"J", 		// 0x4a
+			"K", 		// 0x4b
+			"L", 		// 0x4c
+			"M", 		// 0x4d
+			"N", 		// 0x4e
+			"O", 		// 0x4f
+			"P", 		// 0x50
+			"Q", 		// 0x51
+			"R", 		// 0x52
+			"S", 		// 0x53
+			"T", 		// 0x54
+			"U", 		// 0x55
+			"V", 		// 0x56
+			"W", 		// 0x57
+			"X", 		// 0x58
+			"Y", 		// 0x59
+			"Z", 		// 0x5a
+			
+						// national variant
+			"[", 		// 0x5b
+			"\\", 		// 0x5c
+			"]", 		// 0x5d
+			"^", 		// 0x5e
+			
+			"_", 		// 0x5f
+
+						// national variant
+			"`", 		// 0x60
+
+			"a", 		// 0x61
+			"b", 		// 0x62
+			"c", 		// 0x63
+			"d", 		// 0x64
+			"e", 		// 0x65
+			"f", 		// 0x66
+			"g", 		// 0x67
+			"h", 		// 0x68
+			"i", 		// 0x69
+			"j", 		// 0x6a
+			"k", 		// 0x6b
+			"l", 		// 0x6c
+			"m", 		// 0x6d
+			"n", 		// 0x6e
+			"o", 		// 0x6f
+			"p", 		// 0x70
+			"q", 		// 0x71
+			"r", 		// 0x72
+			"s", 		// 0x73
+			"t", 		// 0x74
+			"u", 		// 0x75
+			"v", 		// 0x76
+			"w", 		// 0x77
+			"x", 		// 0x78
+			"y", 		// 0x79
+			"z", 		// 0x7a
+			
+						// national variant
+			"{", 		// 0x7b
+			"|", 		// 0x7c
+			"}", 		// 0x7d
+			"~", 		// 0x7e
+			
+			"<DEL>"		// 0x7f  
+		};
+
+
+/*
+						// national variant
+			"#", 		// 0x23
+			"$", 		// 0x24
+
+			"[", 		// 0x5b
+			"\\", 		// 0x5c
+			"]", 		// 0x5d
+			"^", 		// 0x5e
+
+			"`", 		// 0x60
+
+			"{", 		// 0x7b
+			"|", 		// 0x7c
+			"}", 		// 0x7d
+			"~", 		// 0x7e
+*/
+
+bool pocsag_init_charset(char *charset)
+{
+	if(strcmp(charset,"DE")==0) // German charset
+	{
+		#ifdef CHARSET_UTF8
+			trtab[0x5b] = "Ä";
+			trtab[0x5c] = "Ö";
+			trtab[0x5d] = "Ü";
+
+			trtab[0x7b] = "ä";
+			trtab[0x7c] = "ö";
+			trtab[0x7d] = "ü";
+			trtab[0x7e] = "ß";
+		#elif defined CHARSET_LATIN1
+			trtab[0x5b] = "\304";
+			trtab[0x5c] = "\326";
+			trtab[0x5d] = "\334";
+
+			trtab[0x7b] = "\344";
+			trtab[0x7c] = "\366";
+			trtab[0x7d] = "\374";
+			trtab[0x7e] = "\337";
+		#else
+			trtab[0x5b] = "AE";
+			trtab[0x5c] = "OE";
+			trtab[0x5d] = "UE";
+
+			trtab[0x7b] = "ae";
+			trtab[0x7c] = "oe";
+			trtab[0x7d] = "ue";
+			trtab[0x7e] = "ss";
+		#endif
+	}
+	else if (strcmp(charset,"SE")==0) // Swedish charset
+	{
+		#ifdef CHARSET_UTF8
+			trtab[0x5b] = "Ä";
+			trtab[0x5c] = "Ö";
+			trtab[0x5d] = "Å";
+
+			trtab[0x7b] = "ä";
+			trtab[0x7c] = "ö";
+			trtab[0x7d] = "å";
+		#elif defined CHARSET_LATIN1
+			trtab[0x5b] = "\304";
+			trtab[0x5c] = "\326";
+			trtab[0x5d] = "\305";
+
+			trtab[0x7b] = "\344";
+			trtab[0x7c] = "\366";
+			trtab[0x7d] = "\345";
+		#else
+			trtab[0x5b] = "AE";
+			trtab[0x5c] = "OE";
+			trtab[0x5d] = "AO";
+
+			trtab[0x7b] = "ae";
+			trtab[0x7c] = "oe";
+			trtab[0x7d] = "ao";
+		#endif
+	}
+	else if (strcmp(charset,"FR")==0) // French charset
+	{
+		trtab[0x24] = "£";
+
+		trtab[0x40] = "à";
+
+		trtab[0x5b] = "°";
+		trtab[0x5c] = "ç";
+		trtab[0x5d] = "§";
+		trtab[0x5e] = "^";
+		trtab[0x5f] = "_";
+		trtab[0x60] = "µ";
+
+		trtab[0x7b] = "é";
+		trtab[0x7c] = "ù";
+		trtab[0x7d] = "è";
+		trtab[0x7e] = "¨";
+	}
+	else if (strcmp(charset,"US")==0) // US charset
+	{
+		// default
+	}
+	else
+	{
+		fprintf(stderr, "Error: invalid POCSAG charset %s\n", charset);
+		fprintf(stderr, "Use: US,FR,DE,SE\n");
+		charset = "US";
+		return false; 
+	}
+	return true;
+}
 
 static char *translate_alpha(unsigned char chr)
 {
-    static const struct trtab {
-        unsigned char code;
-        char *str;
-    } trtab[] = {{  0, "<NUL>" },
-                 {  1, "<SOH>" },
-                 {  2, "<STX>" },
-                 {  3, "<ETX>" },
-                 {  4, "<EOT>" },
-                 {  5, "<ENQ>" },
-                 {  6, "<ACK>" },
-                 {  7, "<BEL>" },
-                 {  8, "<BS>" },
-                 {  9, "<HT>" },
-                 { 10, "<LF>" },
-                 { 11, "<VT>" },
-                 { 12, "<FF>" },
-                 { 13, "<CR>" },
-                 { 14, "<SO>" },
-                 { 15, "<SI>" },
-                 { 16, "<DLE>" },
-                 { 17, "<DC1>" },
-                 { 18, "<DC2>" },
-                 { 19, "<DC3>" },
-                 { 20, "<DC4>" },
-                 { 21, "<NAK>" },
-                 { 22, "<SYN>" },
-                 { 23, "<ETB>" },
-                 { 24, "<CAN>" },
-                 { 25, "<EM>" },
-                 { 26, "<SUB>" },
-                 { 27, "<ESC>" },
-                 { 28, "<FS>" },
-                 { 29, "<GS>" },
-                 { 30, "<RS>" },
-                 { 31, "<US>" },
-             #ifdef CHARSET_LATIN1
-                 { 0x5b, "\304" }, /* upper case A dieresis */
-                 { 0x5c, "\326" }, /* upper case O dieresis */
-                 { 0x5d, "\334" }, /* upper case U dieresis */
-                 { 0x7b, "\344" }, /* lower case a dieresis */
-                 { 0x7c, "\366" }, /* lower case o dieresis */
-                 { 0x7d, "\374" }, /* lower case u dieresis */
-                 { 0x7e, "\337" }, /* sharp s */
-             #elif defined CHARSET_UTF8
-                 { 0x5b, "Ä" }, /* upper case A dieresis */
-                 { 0x5c, "Ö" }, /* upper case O dieresis */
-                 { 0x5d, "Ü" }, /* upper case U dieresis */
-                 { 0x7b, "ä" }, /* lower case a dieresis */
-                 { 0x7c, "ö" }, /* lower case o dieresis */
-                 { 0x7d, "ü" }, /* lower case u dieresis */
-                 { 0x7e, "ß" }, /* sharp s */
-             #else
-                 { 0x5b, "AE" }, /* upper case A dieresis */
-                 { 0x5c, "OE" }, /* upper case O dieresis */
-                 { 0x5d, "UE" }, /* upper case U dieresis */
-                 { 0x7b, "ae" }, /* lower case a dieresis */
-                 { 0x7c, "oe" }, /* lower case o dieresis */
-                 { 0x7d, "ue" }, /* lower case u dieresis */
-                 { 0x7e, "ss" }, /* sharp s */
-             #endif
-                 { 127, "<DEL>" }};
-
-    int min = 0, max = (sizeof(trtab) / sizeof(trtab[0])) - 1;
-
-    /*
-     * binary search, list must be ordered!
-     */
-    for (;;) {
-        int mid = (min+max) >> 1;
-        const struct trtab *tb = trtab + mid;
-        int cmp = ((int) tb->code) - ((int) chr);
-
-        if (!cmp)
-            return tb->str;
-        if (cmp < 0) {
-            min = mid+1;
-            if (min > max)
-                return NULL;
-        }
-        if (cmp > 0) {
-            max = mid-1;
-            if (max < min)
-                return NULL;
-        }
-    }
+	return trtab[chr & 0x7f];
 }
 
 /* ---------------------------------------------------------------------- */
 static int guesstimate_alpha(const unsigned char cp)
 {
-    if(cp < 32 || cp == 127)
+    if((cp > 0 && cp < 32) || cp == 127)
         return -5; // Non printable characters are uncommon
     else if((cp > 32 && cp < 48)
             || (cp > 57 && cp < 65)
@@ -401,10 +572,13 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
             int guess_alpha = 0;
             int guess_skyper = 0;
             int unsure = 0;
+            int func = 0;
 
             guess_num = print_msg_numeric(&s->l2.pocsag, num_string, sizeof(num_string));
             guess_alpha = print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string));
             guess_skyper = print_msg_skyper(&s->l2.pocsag, skyper_string, sizeof(skyper_string));
+
+            func = s->l2.pocsag.function;
 
             if(guess_num < 20 && guess_alpha < 20 && guess_skyper < 20)
             {
@@ -413,8 +587,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 unsure = 1;
             }
 
-
-            if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_num >= 20 || unsure)))
+            if((pocsag_mode == POCSAG_MODE_NUMERIC) || ((pocsag_mode == POCSAG_MODE_STANDARD) && (func == 0)) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_num >= 20 || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -428,7 +601,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_alpha >= 20 || unsure)))
+            if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_STANDARD) && (func != 0)) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_alpha >= guess_skyper || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -442,7 +615,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 verbprintf(0,"\n");
             }
 
-            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_skyper >= 20 || unsure)))
+            if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_skyper >= guess_alpha || unsure))) // Only output SKYPER if we're explicitly asking for it or we're auto guessing! (because it's not part of one of the standards, right?!)
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                     verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
@@ -720,9 +893,8 @@ static inline bool word_complete(struct demod_state *s)
 {    
     // Do nothing for 31 bits
     // When the word is complete let the program counter pass
-    if((s->l2.pocsag.rx_bit = (++(s->l2.pocsag.rx_bit) % 32)))
-        return false;
-    return true; // 32 bits received
+    s->l2.pocsag.rx_bit = (s->l2.pocsag.rx_bit + 1) % 32;
+    return s->l2.pocsag.rx_bit == 0;
 }
 
 static inline bool is_sync(const uint32_t * const rx_data)
@@ -767,7 +939,7 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
 
         // it is always 17 words
         unsigned char rxword = s->l2.pocsag.rx_word; // for address calculation
-        s->l2.pocsag.rx_word = ++(s->l2.pocsag.rx_word) % 17;
+        s->l2.pocsag.rx_word = (s->l2.pocsag.rx_word + 1) % 17;
 
         if(s->l2.pocsag.state == SYNC)
             s->l2.pocsag.state = ADDRESS; // We're in sync, move on.

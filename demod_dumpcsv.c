@@ -38,7 +38,6 @@ static void dumpcsv_init(struct demod_state *s)
 
 static void dumpcsv_demod(struct demod_state *s, buffer_t buffer, int length)
 {
-	short p;
 	const short *src;
 	float f;
 	int i;
@@ -51,12 +50,11 @@ static void dumpcsv_demod(struct demod_state *s, buffer_t buffer, int length)
             f = (float) ( (i + s->l1.dumpcsv.current_sequence)  / SAMPLE_MS );
 
 	    /* cut back on superfluous plot points
-	    if ( abs(p - *src ) < 40 )
+	    if (i > 0 && abs(src[-1] - *src ) < 40 )
 		continue;
 	    */
 
 	    fprintf(stdout, "%.6f,%hd\n", f, *src);
-	    p = *src;
 	}
 
        // Save current count

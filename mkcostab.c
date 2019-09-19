@@ -42,9 +42,9 @@ int main(int argc, char *argv[])
 	if (!(ff = fopen("costabf.c", "w")))
 		exit(1);
 	fprintf(fi, "/*\n * This file is machine generated, DO NOT EDIT!\n */\n\n"
-		"extern const int costabi[0x%x] = {", COSTABSIZE);
+		"const int costabi[0x%x] = {", COSTABSIZE);
 	fprintf(ff, "/*\n * This file is machine generated, DO NOT EDIT!\n */\n\n"
-		"extern const float costabf[0x%x] = {", COSTABSIZE);
+		"const float costabf[0x%x] = {", COSTABSIZE);
 	for (i = 0; i < COSTABSIZE; i++) {
 		if ((i & 3) == 0)
 			fprintf(ff, "\n\t");

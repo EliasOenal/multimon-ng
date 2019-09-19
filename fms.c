@@ -96,7 +96,7 @@ static void fms_disp_vehicle_id(uint16_t vehicle_id)
     verbprintf(0, "FZG %1x%1x%1x%1x\t", nib0, nib1, nib2, nib3);
 }
 
-static void fms_disp_state(uint8_t state, uint8_t service_id, uint8_t direction)
+static void fms_disp_state(uint8_t state, uint8_t direction)
 {
     verbprintf(0, "Status %1x=", state);
 
@@ -237,6 +237,7 @@ static char fms_is_crc_correct(uint64_t message)
     {
         if (crc[i])
         {
+            fms_print_crc(crc);
             return 0;
         }
     }
@@ -253,7 +254,7 @@ static void fms_disp_packet(uint64_t message)
     uint8_t loc_id;      // Ortskennung
     uint16_t vehicle_id; // Fahrzeugkennung
     uint8_t state;       // Status
-    uint8_t model;       // Baustufenkennung
+    // uint8_t model;       // Baustufenkennung
     uint8_t direction;   // Richtungskennung
     uint8_t short_info;  // taktische Kurzinformation
     uint8_t crc;         // Redundanz
@@ -275,9 +276,9 @@ static void fms_disp_packet(uint64_t message)
 
     state = (message >> 48) & 0xF;
 
-    model = (message >> 52) & 0x1;
+    //model = (message >> 52) & 0x1;
     direction = (message >> 53) & 0x1;
-    fms_disp_state(state, service_id, direction);
+    fms_disp_state(state, direction);
 
     fms_disp_direction(direction);
 
@@ -298,7 +299,7 @@ static void fms_disp_packet(uint64_t message)
     }
     else
     {
-        verbprintf(0, "CRC INCORRECT");
+        verbprintf(0, "CRC INCORRECT (%x)", crc);
     }
     verbprintf(0, "\n");
 }
@@ -357,7 +358,7 @@ void fms_rxbit(struct demod_state *s, int bit)
                     {
                         verbprintf(2, "FMS was able to correct a one bit error by swapping bit %d Original packet:\n", i);
                         fms_disp_packet(s->l2.fmsfsk.rxbitstream);
-                        s->l2.fmsfsk.rxbitstream = (msg ^ (1 << (i+16)) | 1); // lowest bit set means that the CRC has been corrected by us
+                        s->l2.fmsfsk.rxbitstream = (msg ^ (1 << (i+16))) | 1; // lowest bit set means that the CRC has been corrected by us
                         break;
                     }
                     i++;
