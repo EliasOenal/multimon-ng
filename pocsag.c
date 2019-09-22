@@ -367,6 +367,15 @@ bool pocsag_init_charset(char *charset)
 		trtab[0x7d] = "è";
 		trtab[0x7e] = "¨";
 	}
+    else if (strcmp(charset,"SI")==0) // Slovenian charset
+    {
+        trtab[0x40] = "Ž";
+        trtab[0x5b] = "Š";
+        trtab[0x5e] = "Č";
+        trtab[0x60] = "ž";
+        trtab[0x7b] = "š";
+        trtab[0x7e] = "č";
+    }
 	else if (strcmp(charset,"US")==0) // US charset
 	{
 		// default
@@ -374,7 +383,7 @@ bool pocsag_init_charset(char *charset)
 	else
 	{
 		fprintf(stderr, "Error: invalid POCSAG charset %s\n", charset);
-		fprintf(stderr, "Use: US,FR,DE,SE\n");
+		fprintf(stderr, "Use: US,FR,DE,SE,SI\n");
 		charset = "US";
 		return false; 
 	}
