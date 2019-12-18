@@ -25,6 +25,10 @@
 
 /* ---------------------------------------------------------------------- */
 
+bool fms_justhex = false;
+
+/* ---------------------------------------------------------------------- */
+
 static void fms_disp_service_id(uint8_t service_id)
 {
     verbprintf(0, "%1x=", service_id);
@@ -261,33 +265,38 @@ static void fms_disp_packet(uint64_t message)
 
     fms_print_message_hex(message);
 
-    verbprintf(0, "FMS: %08x%04x (", message >> 32, ((uint32_t)message >> 16));
+    verbprintf(0, "FMS: %08x%04x", message >> 32, ((uint32_t)message >> 16));
 
-    service_id = (message >> 16) & 0xF;
-    fms_disp_service_id(service_id);
+    if(!fms_justhex)
+    {
+        verbprintf(0, " (");
+        service_id = (message >> 16) & 0xF;
+        fms_disp_service_id(service_id);
 
-    state_id = (message >> 20) & 0xF;
-    loc_id = (message >> 24) & 0xFF;
-    fms_disp_state_id(state_id, loc_id);
-    fms_disp_loc_id(loc_id);
+        state_id = (message >> 20) & 0xF;
+        loc_id = (message >> 24) & 0xFF;
+        fms_disp_state_id(state_id, loc_id);
+        fms_disp_loc_id(loc_id);
 
-    vehicle_id = (message >> 32) & 0xFFFF;
-    fms_disp_vehicle_id(vehicle_id);
+        vehicle_id = (message >> 32) & 0xFFFF;
+        fms_disp_vehicle_id(vehicle_id);
 
-    state = (message >> 48) & 0xF;
+        state = (message >> 48) & 0xF;
 
-    //model = (message >> 52) & 0x1;
-    direction = (message >> 53) & 0x1;
-    fms_disp_state(state, direction);
+        //model = (message >> 52) & 0x1;
+        direction = (message >> 53) & 0x1;
+        fms_disp_state(state, direction);
 
-    fms_disp_direction(direction);
+        fms_disp_direction(direction);
 
-    short_info = (message >> 54) & 0x3;
-    fms_disp_shortinfo(short_info);
+        short_info = (message >> 54) & 0x3;
+        fms_disp_shortinfo(short_info);
 
-    crc = (message >> 55) & 0x3F;
+        crc = (message >> 55) & 0x3F;
 
-    verbprintf(0, ") ");
+        verbprintf(0, ") ");
+    }
+    else verbprintf(0, " ");
 
     if (fms_is_crc_correct(message))
     {
@@ -297,10 +306,8 @@ static void fms_disp_packet(uint64_t message)
             verbprintf(0, " AFTER SWAPPING ONE BIT");
         }
     }
-    else
-    {
-        verbprintf(0, "CRC INCORRECT (%x)", crc);
-    }
+    else verbprintf(0, "CRC INCORRECT (%x)", crc);
+    
     verbprintf(0, "\n");
 }
 
