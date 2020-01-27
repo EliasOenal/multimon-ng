@@ -42,6 +42,9 @@ You can also "pipe" raw samples into multimon-ng using something like
 ```sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw - | ./multimon-ng -```
 (note the trailing dash)
 
+As a last example, here is how you can use it in combination with RTL-SDR:
+```rtl_fm -f 403600000 -s 22050 | multimon-ng -t raw -a FMSFSK -a AFSK1200 /dev/stdin```
+
 Packaging
 ---------
 

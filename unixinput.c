@@ -93,6 +93,8 @@ static bool is_startline = true;
 static int timestamp = 0;
 static char *label = NULL;
 
+extern bool fms_justhex;
+
 extern int pocsag_mode;
 extern int pocsag_invert_input;
 extern int pocsag_error_correction;
@@ -578,6 +580,7 @@ static const char usage_str[] = "\n"
         "  -m         : Mute SoX warnings\n"
         "  -r         : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
         "  -n         : Don't flush stdout, increases performance.\n"
+        "  -j         : FMS: Just output hex data and CRC, no parsing.\n"
         "  -e         : POCSAG: Hide empty messages.\n"
         "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
@@ -618,7 +621,7 @@ int main(int argc, char *argv[])
         {0, 0, 0, 0}
       };
 
-    while ((c = getopt_long(argc, argv, "t:a:s:v:b:f:g:d:o:cqhAmrxynipeuC:", long_options, NULL)) != EOF) {
+    while ((c = getopt_long(argc, argv, "t:a:s:v:f:b:C:o:d:g:cqhAmrnjeuipxy", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -667,6 +670,10 @@ int main(int argc, char *argv[])
             
         case 'm':
             mute_sox = 1;
+            break;
+
+        case 'j':
+            fms_justhex = true;
             break;
             
         case 'r':
@@ -794,7 +801,7 @@ intypefound:
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng 1.1.7\n"
+    fprintf(stderr, "multimon-ng 1.1.8\n"
         "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
         "  (C) 2012-2019 by Elias Oenal\n"
         "Available demodulators:");
