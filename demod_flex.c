@@ -22,6 +22,10 @@
  *      Boston, MA 02110-1301, USA.
  */
 /*
+ *  Version 0.9.3v (28 Jan 2020)
+ *  Modification made by bierviltje and implemented by Bruce Quinton (Zanoroy@gmail.com)
+ *   - Issue #123 created by bierviltje (https://github.com/bierviltje) - Feature request: FLEX: put group messages in an array/list
+ *   - This also changed the delimiter to a | rather than a space
  *  Version 0.9.2v (03 Apr 2019)
  *  Modification made by Bruce Quinton (Zanoroy@gmail.com)
  *   - Issue #120 created by PimHaarsma - Flex Tone-Only messages with short numeric body Bug fixed using code documented in the ticket system
@@ -556,7 +560,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
         message[currentChar] = '\0';
 
-//  message = '\0';
+/*
         verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", 
             gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                         flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
@@ -582,7 +586,32 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
     flex->GroupHandler.GroupFrame[groupbit] = -1;
     flex->GroupHandler.GroupCycle[groupbit] = -1;
         }
+*/
 
+// Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
+        static char pt_out[4096] = { 0 };
+        int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
+                        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+
+        if(flex_groupmessage == 1) {
+                int groupbit = flex->Decode.capcode-2029568;
+                if(groupbit < 0) return;
+
+                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
+                for(int g = 1; g <= endpoint;g++)
+                {
+                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
+                        pt_offset += sprintf(pt_out + pt_offset, " %09lld", flex->GroupHandler.GroupCodes[groupbit][g]);
+                }
+
+                // reset the value
+                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
+                flex->GroupHandler.GroupFrame[groupbit] = -1;
+                flex->GroupHandler.GroupCycle[groupbit] = -1;
+        } 
+        pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s\n", message);
+        verbprintf(0, pt_out);
 }
 
 static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
