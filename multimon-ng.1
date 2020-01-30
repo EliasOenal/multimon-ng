@@ -1,0 +1,226 @@
+.\" -*- nroff -*-
+.TH MULTIMON-NG 1 "January 30, 2020"
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.\" Some roff macros, for reference:
+.\" .nh        disable hyphenation
+.\" .hy        enable hyphenation
+.\" .ad l      left justify
+.\" .ad b      justify to both left and right margins
+.\" .nf        disable filling
+.\" .fi        enable filling
+.\" .br        insert line break
+.\" .sp <n>    insert n+1 empty lines
+.\" for manpage-specific macros, see man(7)
+.SH NAME
+multimon-ng \- program to decode radio transmissions
+.SH SYNOPSIS
+.B multimon-ng
+.RI [ options ]\ [input_file]
+.SH DESCRIPTION
+This manual page documents briefly the
+.B multimon-ng
+command. This manual page was written for Debian because the original
+program does not have a manual page.
+.PP
+.\" TeX users may be more comfortable with the \fB<whatever>\fP and
+.\" \fI<whatever>\fP escape sequences to invode bold face and italics,
+.\" respectively.
+The \fBmultimon-ng\fP software can decode a variety of digital transmission modes commonly found on VHF/UHF radio. A standard PC soundcard is used to acquire the signal from a transceiver. The decoding is done completely in software. Currently, the following modes are supported:
+.PP
+.RS
+.IP \(bu 4
+AX.25
+.RS
+.IP \(bu 4
+1200 Baud AFSK
+.IP \(bu 4
+2400 Baud AFSK (2 variants)
+.IP \(bu 4
+4800 Baud HAPN
+.IP \(bu 4
+9600 Baud FSK (G3RUH)
+.RE
+.
+.IP \(bu 4
+POCSAG
+.RS
+.IP \(bu 4
+512 Baud
+.IP \(bu 4
+1200 Baud
+.IP \(bu 4
+2400 Baud
+.RE
+.
+.IP \(bu 4
+Selective call
+.RS
+.IP \(bu 4
+CCIR
+.IP \(bu 4
+EEA
+.IP \(bu 4
+EIA
+.RE
+.
+.IP \(bu 4
+Frequency Shift Keying
+.RS
+.IP \(bu 4
+1200 Baud FSK (2200/1200 Hz)
+.IP \(bu 4
+1200 Baud FSK (2300/1100 Hz)
+.IP \(bu 4
+1200 baud FMS FSK
+.RE
+.
+.IP \(bu 4
+Miscellaneous
+.RS
+.IP \(bu 4
+DTMF
+.IP \(bu 4
+CW/Morse
+.IP \(bu 4
+EAS
+.IP \(bu 4
+FLEX
+.IP \(bu 4
+SCOPE
+.IP \(bu 4
+X10
+.IP \(bu 4
+ZVEI
+.RE
+.RE
+.PP
+An arbitrary set of the above modes may run concurrently on the same input signal (provided the CPU power is sufficient), so you do not have to know in advance which mode is used. Note however that some modes might require modifications to the radio (especially the 9600 baud FSK and the POCSAG modes) to work properly.
+.PP
+AX.25 - Amateur Packet Radio protocol datagram format.
+.br
+DTMF - Dual Tone Multi Frequency. Commonly used in in-band telephone dialing.
+.br
+EAS - Emergency Alert System.
+.br
+FLEX - a paging format.
+.br
+POCSAG (Post Office Code Standards Advisory Group) is a common paging transmission format.
+.br
+SCOPE - show samples in a rudimentary oscilloscope display on an X server.
+.br
+X10 - a home automation protocol.
+.br
+ZVEI - The German Electrical and Electronic Manufacturers' Association - paging tone format.
+.SH OPTIONS
+.TP
+.B  \-t <type>
+Input file type (any other type than raw requires sox).
+Allowed types: raw aiff au hcom sf voc cdr dat smp wav maud vwe.
+.TP
+.B  \-a <demod>
+Add demodulator (see below).
+.TP
+.B  \-s <demod>
+Subtract demodulator.
+.TP
+.B  \-c
+Remove all demodulators (must be added with -a <demod>).
+.TP
+.B  \-q
+Quiet output messages.
+.TP
+.B  \-v <num>
+Verbosity level (0-10).
+For POCSAG and MORSE_CW '-v1' prints decoding statistics.
+.TP
+.B  \-h
+Print the help.
+.TP
+.B  \-A
+APRS mode (TNC2 text output).
+.TP
+.B  \-m
+Mute SoX warnings.
+.TP
+.B  \-m
+Call SoX in repeatable mode (e.g. fixed random seed for dithering).
+.TP
+.B  \-n
+Don't flush stdout, increases performance.
+.TP
+.B  \-j
+FMS: Just output hex data and CRC, no parsing.
+.TP
+.B  \-e
+POCSAG: Hide empty messages.
+.TP
+.B  \-u
+POCSAG: Heuristically prune unlikely decodes.
+.TP
+.B  \-i
+POCSAG: Inverts the input samples. Try this if decoding fails.
+.TP
+.B  \-p
+POCSAG: Show partially received messages.
+.TP
+.B  \-f <mode>
+POCSAG: Disables auto-detection and forces decoding of data as <mode>
+(<mode> can be 'numeric', 'alpha', 'skyper' and 'auto')
+.TP
+.B  \-b <level>
+POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.
+Lower levels increase performance and lower false positives.
+.TP
+.B  \-C <cs>
+POCSAG: Set charset (default: US), where <cs> is one of:
+US, FR, DE, SE, SI
+.TP
+.B  \-o <time>
+CW: Set threshold for dit detection (default: 500)
+.TP
+.B  \-d <time>
+CW: Dit length in ms (default: 50)
+.TP
+.B  \-g <time>
+CW: Gap length in ms (default: 50)
+.TP
+.B  \-x
+CW: Disable auto threshold detection
+.TP
+.B  \-y
+CW: Disable auto timing detection
+.TP
+.B  \-\-timestamp
+Add a time stamp in front of every printed line
+.TP
+.B  \-\-label <label>
+Add a label to the front of every printed line
+.PP
+Where <demod> is one of:
+POCSAG512 POCSAG1200 POCSAG2400 FLEX EAS UFSK1200 CLIPFSK FMSFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3 HAPN4800 FSK9600 DTMF ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI EEA EIA CCIR MORSE_CW DUMPCSV X10 SCOPE
+.br
+The \-a and \-s options may be given multiple times to specify the desired list of demodulators.
+.SH EXAMPLE
+Decode signal modulations from a sound file /tmp/message.wav without using a SCOPE display:
+.br
+multimon-ng \-s SCOPE \-t wav /tmp/message.wav
+.PP
+With no input file specified, the program listens directly to the sound card using PulseAudio.
+So to decode (only) DTMF tones on the sound card input:
+.br
+multimon-ng -a DTMF
+.SH NOTICE
+Please note that monitoring commercial services may be prohibited in some countries, this software should therefore
+only be used to monitor the amateur radio service.
+.SH BUGS
+The DTMF and ZVEI decoders have more frequent spurious detection reports.
+.SH AUTHOR
+This manual page was written by A. Maitland Bottoms <bottoms@debian.org>
+and G\[:o]ran Weinholt <weinholt@debian.org>
+for the Debian GNU/Linux system (but may be used by others).
+.
+This is free software. You can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or any later
+version.
