@@ -40,6 +40,8 @@ elseif( UNIX )
 	check_c_source_compiles(
 		"int main() { __builtin_popcount(42); return 0; }" USE_BUILTIN_POPCOUNT )
 
+	set( INSTALL_MAN_DIR "${CMAKE_INSTALL_PREFIX}/share/man" )
+	install( FILES multimon-ng.1 DESTINATION "${INSTALL_MAN_DIR}/man1" )
 endif( WIN32 )
 
 if( X11_SUPPORT )
