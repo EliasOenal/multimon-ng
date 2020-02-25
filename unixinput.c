@@ -527,9 +527,9 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
             break;
         if (i > 0) {
             if(integer_only)
-            {
+        {
                 fbuf_cnt = i/sizeof(buffer[0]);
-            }
+        }
             else
             {
                 for (; (unsigned int) i >= sizeof(buffer[0]); i -= sizeof(buffer[0]), sp++)
@@ -580,7 +580,7 @@ static const char usage_str[] = "\n"
         "  -m         : Mute SoX warnings\n"
         "  -r         : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
         "  -n         : Don't flush stdout, increases performance.\n"
-	    "  -j         : FMS: Just output hex data and CRC, no parsing.\n"
+        "  -j         : FMS: Just output hex data and CRC, no parsing.\n"
         "  -e         : POCSAG: Hide empty messages.\n"
         "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
@@ -671,8 +671,8 @@ int main(int argc, char *argv[])
         case 'm':
             mute_sox = 1;
             break;
-	
-    	case 'j':
+
+        case 'j':
             fms_justhex = true;
             break;
             
