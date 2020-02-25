@@ -67,27 +67,34 @@ enum EAS_L1_State
     EAS_L1_SYNC = 1,
 };
 
-struct l2_state_clipfsk {
-    unsigned char rxbuf[512];
-    unsigned char *rxptr;
-    uint32_t rxstate;
-    uint32_t rxbitstream;
-    uint32_t rxbitbuf;
-};
-
-struct l2_state_fmsfsk {
-    unsigned char rxbuf[512];
-    unsigned char *rxptr;
-    uint32_t rxstate; // used to track the SYNC pattern
-    uint64_t rxbitstream; // holds RXed bits
-    uint32_t rxbitcount; // counts RXed bits
-};
-
 struct demod_state {
     const struct demod_param *dem_par;
     union {
-        struct l2_state_fmsfsk fmsfsk;
-        struct l2_state_clipfsk clipfsk;
+        struct l2_state_fmsfsk {
+            unsigned char rxbuf[512];
+            unsigned char *rxptr;
+            uint32_t rxstate; // used to track the SYNC pattern
+            uint64_t rxbitstream; // holds RXed bits
+            uint32_t rxbitcount; // counts RXed bits
+        } fmsfsk;
+
+        struct l2_state_cirfsk {
+            unsigned char rxbuf[2048];
+            unsigned char *rxptr;
+            uint32_t rxbytes; // expected Rx bytes
+            uint8_t  padding;
+            uint32_t rxbitstream; // holds RXed bits
+            uint32_t rxbitcount; // counts RXed bits
+        } cirfsk;
+
+        struct l2_state_clipfsk {
+            unsigned char rxbuf[512];
+            unsigned char *rxptr;
+            uint32_t rxstate;
+            uint32_t rxbitstream;
+            uint32_t rxbitbuf;
+        } clipfsk;
+
         struct l2_state_uart {
             unsigned char rxbuf[8192];
             unsigned char *rxptr;
@@ -292,6 +299,7 @@ extern const struct demod_param demod_eas;
 extern const struct demod_param demod_ufsk1200;
 extern const struct demod_param demod_clipfsk;
 extern const struct demod_param demod_fmsfsk;
+extern const struct demod_param demod_cirfsk;
 
 extern const struct demod_param demod_afsk1200;
 extern const struct demod_param demod_afsk2400;
@@ -328,7 +336,7 @@ extern const struct demod_param demod_scope;
 #endif
 
 #define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_flex, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
-    &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
+    &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, &demod_cirfsk, \
     &demod_fsk9600, &demod_dtmf, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
     &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD
 
@@ -336,11 +344,13 @@ extern const struct demod_param demod_scope;
 /* ---------------------------------------------------------------------- */
 
 void _verbprintf(int verb_level, const char *fmt, ...);
-#if !defined(MAX_VERBOSE_LEVEL)
-#   define MAX_VERBOSE_LEVEL 0
-#endif
+//#if !defined(MAX_VERBOSE_LEVEL)
+//#define MAX_VERBOSE_LEVEL 0
+//#endif
+//#define verbprintf(level, ...) \
+//    do { if (level <= MAX_VERBOSE_LEVEL) _verbprintf(level, __VA_ARGS__); } while (0)
 #define verbprintf(level, ...) \
-    do { if (level <= MAX_VERBOSE_LEVEL) _verbprintf(level, __VA_ARGS__); } while (0)
+    do { if (level <= 100) _verbprintf(level, __VA_ARGS__); } while (0)
 
 void hdlc_init(struct demod_state *s);
 void hdlc_rxbit(struct demod_state *s, int bit);
@@ -352,6 +362,9 @@ void clip_rxbit(struct demod_state *s, int bit);
 
 void fms_init(struct demod_state *s);
 void fms_rxbit(struct demod_state *s, int bit);
+
+void cir_init(struct demod_state *s);
+void cir_rxbit(struct demod_state *s, unsigned char bit);
 
 void pocsag_init(struct demod_state *s);
 void pocsag_rxbit(struct demod_state *s, int32_t bit);
