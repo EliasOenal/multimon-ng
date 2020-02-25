@@ -344,13 +344,12 @@ extern const struct demod_param demod_scope;
 /* ---------------------------------------------------------------------- */
 
 void _verbprintf(int verb_level, const char *fmt, ...);
-//#if !defined(MAX_VERBOSE_LEVEL)
-//#define MAX_VERBOSE_LEVEL 0
-//#endif
-//#define verbprintf(level, ...) \
-//    do { if (level <= MAX_VERBOSE_LEVEL) _verbprintf(level, __VA_ARGS__); } while (0)
+#if !defined(MAX_VERBOSE_LEVEL)
+#define MAX_VERBOSE_LEVEL 0
+#endif
 #define verbprintf(level, ...) \
-    do { if (level <= 100) _verbprintf(level, __VA_ARGS__); } while (0)
+    do { if (level <= MAX_VERBOSE_LEVEL) _verbprintf(level, __VA_ARGS__); } while (0)
+
 
 void hdlc_init(struct demod_state *s);
 void hdlc_rxbit(struct demod_state *s, int bit);
