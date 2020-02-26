@@ -274,7 +274,7 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     
     /* Create the recording stream */
     if (!(s = pa_simple_new(NULL, "multimon-ng", PA_STREAM_RECORD, NULL, "record", &ss, NULL, NULL, &error))) {
-        fprintf(stderr, __FILE__": pa_simple_new() failed: %s\n", pa_strerror(error));
+        fprintf(stderr, "unixinput.c: pa_simple_new() failed: %s\n", pa_strerror(error));
         exit(4);
     }
     
