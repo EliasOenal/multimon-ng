@@ -123,6 +123,11 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
                     s->l2.cirfsk.padding = length % 2;
                     length = length + length % 2;
                     s->l2.cirfsk.rxbytes = length + 2;
+                    if (length == 0) {
+                        s->l2.cirfsk.rxbitcount = 0;
+                        verbprintf(1, "CIR> zero length\n\n");
+                        return;
+                    }
                     verbprintf(1, "CIR> rx:%d (%d padding) \n", length, s->l2.cirfsk.padding);
                 }
                 // save data
@@ -137,8 +142,9 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
                     uint8_t padding = s->l2.cirfsk.padding;
                     uint16_t crc = crc16(s->l2.cirfsk.rxbuf, s->l2.cirfsk.rxbytes - 2 - padding);
                     verbprintf(2, "CIR> crc:%04x ", crc);
-                    if ((((crc >> 16) & 0xff) == s->l2.cirfsk.rxbuf[s->l2.cirfsk.rxbytes - padding]) && \
-                        ((crc & 0xff) == s->l2.cirfsk.rxbuf[s->l2.cirfsk.rxbytes - 1 - padding])) {
+
+                    if ((((crc >> 8) & 0x00ff) == s->l2.cirfsk.rxbuf[s->l2.cirfsk.rxbytes - 2 - padding]) && \
+                        ((crc & 0x00ff) == s->l2.cirfsk.rxbuf[s->l2.cirfsk.rxbytes - 1 - padding])) {
                         verbprintf(2, "crc ok\n");
                         cir_display_package(s->l2.cirfsk.rxbuf, s->l2.cirfsk.rxbytes - padding);
                     } else {
