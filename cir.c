@@ -109,6 +109,7 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
                 return;
             }
             s->l2.cirfsk.rxbitstream = 0;
+            // Part III Receive Payload
         } else if (s->l2.cirfsk.rxbitcount >= 58 && (s->l2.cirfsk.rxbitcount - 58) % 26 == 0) {
             uint32_t decoded;
             uint8_t errors = decode_BCH_26_16(s->l2.cirfsk.rxbitstream, &decoded);
