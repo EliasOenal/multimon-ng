@@ -118,6 +118,12 @@
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
+#define PHASE_WORDS          88            // per spec, there are 88 4B words per frame
+// there are 3 chars per message word (mw)
+// there are at most 88 words per frame's phase buffer of a page
+//   but at least 1 BIW 1 AW 1 VW, so max 85 data words (dw) for text
+// each dw is 3 chars of 7b ASCII (21 bits of text, 11 bits of checksum)
+#define MAX_ALN              256           // max possible ALN characters
 
 
 enum Flex_PageTypeEnum {
@@ -196,7 +202,7 @@ struct Flex_FIW {
 
 
 struct Flex_Phase {
-  unsigned int                buf[88];
+  unsigned int                buf[PHASE_WORDS];
   int                         idle_count;
 };
 
@@ -519,9 +525,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         int i;
         time_t now=time(NULL);
         struct tm * gmt=gmtime(&now);
-        // char buf[1024], *message;
-        char message[1024];
-        int  currentChar = 0; 
+        char message[MAX_ALN];
+        int  currentChar = 0;
         char frag_flag = '?';
         
         int frag = (phaseptr[mw1] >> 11) & 0x03;
@@ -754,7 +759,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     case 'D': phaseptr=flex->Data.PhaseD.buf; break;
   }
 
-  for (i=0; i<88; i++) {
+  for (i = 0; i < PHASE_WORDS; i++) {
     int decode_error=bch3121_fix_errors(flex, &phaseptr[i], PhaseNo);
 
     if (decode_error) {
@@ -884,7 +889,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 
                 // Check if this is an alpha message
                 if (is_alphanumeric_page(flex)) { 
-          if (mw1 > 87 || mw2 > 87){
+          if (mw1 >= PHASE_WORDS || mw2 >= PHASE_WORDS){
         verbprintf(3, "FLEX: Invalid Offsets\n");
         continue;       // Invalid offsets
       }
@@ -903,7 +908,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 static void clear_phase_data(struct Flex * flex) {
   if (flex==NULL) return;
   int i;
-  for (i=0; i<88; i++) {
+  for (i = 0; i < PHASE_WORDS; i++) {
     flex->Data.PhaseA.buf[i]=0;
     flex->Data.PhaseB.buf[i]=0;
     flex->Data.PhaseC.buf[i]=0;
