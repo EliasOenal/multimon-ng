@@ -39,3 +39,7 @@ Icon?
 ehthumbs.db
 Thumbs.db
 *.bak
+
+# Tool cache #
+##############
+*.sw[op]
