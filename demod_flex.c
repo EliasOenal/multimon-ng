@@ -805,12 +805,15 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     flex->Decode.long_address = (aiw < 0x8001L) ||
       (aiw > 0x1E0000L && aiw < 0x1F0001L) ||
       (aiw > 0x1F7FFEL);
-    flex->Decode.capcode = aiw - 0x8000L;
-
-    if (flex->Decode.long_address)
-    {
-      verbprintf(4, "FLEX: Found 'Long Address' bit, ignoring as I think this is handled incorrectly at the moment issue#79\n");
-      // i++;
+    flex->Decode.capcode = aiw - 0x8000L;  // when short address
+    if (flex->Decode.long_address) {
+      // Couldn't find spec on this, credit to PDW
+      flex->Decode.capcode = phaseptr[i + 1] ^ 0x1FFFFFL;
+      // 0x8000 is 16b, credit to PDW
+      flex->Decode.capcode = flex->Decode.capcode << 15;
+      // add in 2068480 and first word, credit to PDW
+      // NOTE per PDW: this is not number given (2067456) in the patent for FLEX
+      flex->Decode.capcode = flex->Decode.capcode + 2068480L + aiw;
     }
 
           if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
