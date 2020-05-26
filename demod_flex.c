@@ -366,6 +366,10 @@ static unsigned int flex_sync(struct Flex * flex, unsigned char sym) {
 static void decode_mode(struct Flex * flex, unsigned int sync_code) {
   if (flex==NULL) return;
 
+  // Something is off with these modes:
+  //   * Where is 6400/4?
+  //   * Why are there two 3200/4?
+  //   * Why is there a 1600/4?
   struct {
     int sync;
     unsigned int baud;
@@ -613,6 +617,10 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 flex->GroupHandler.GroupFrame[groupbit] = -1;
                 flex->GroupHandler.GroupCycle[groupbit] = -1;
         } 
+        // TODO option to filter non-printables
+        // TODO option to convert '\n' and '\r' to "\\n" and "\\r"
+        // TODO don't print if empty
+        // TODO sanitize % or you will have uncontrolled format string vuln
         pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s\n", message);
         verbprintf(0, pt_out);
 }
@@ -732,7 +740,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
 static void parse_capcode(struct Flex * flex, uint32_t aw1) {
   if (flex==NULL) return;
 
-  flex->Decode.long_address = (aw1 < 0x008001L) ||
+  flex->Decode.long_address = (aw1 < 0x8001L) ||
     (aw1 > 0x1E0000L) ||
     (aw1 > 0x1E7FFEL);
 
@@ -770,22 +778,27 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     }
 
     /*Extract just the message bits*/
-    phaseptr[i]&=0x001FFFFF;
+    phaseptr[i]&=0x1FFFFFL;
   }
 
   // Block information word is the first data word in frame
   uint32_t biw = phaseptr[0];
 
   // Nothing to see here, please move along
-  if (biw == 0 || biw == 0x001FFFFF) {
+  if (biw == 0 || (biw & 0x1FFFFFL) == 0x1FFFFFL) {
     verbprintf(3, "FLEX: Nothing to see here, please move along\n");
     return;
   }
 
+  // Address start address is bits 9-8, plus one for offset (to account for biw)
+  unsigned int aoffset = ((biw >> 8) & 0x3L) + 1;
   // Vector start index is bits 15-10
-  // Address start address is bits 9-8, plus one for offset
-  int voffset = (biw >> 10) & 0x3f;
-  int aoffset = ((biw >> 8) & 0x03) + 1;
+  unsigned int voffset = (biw >> 10) & 0x3fL;
+  if (voffset < aoffset) {
+      verbprintf(3, "FLEX: Invalid biw");
+      return;
+  }
+  // long addresses use double AW and VW, so there are anywhere between ceil(v-a/2) to v-a pages in this frame
 
   verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02i-%02i (%i pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
 
@@ -795,10 +808,10 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
   for (i = aoffset; i < voffset; i++) {
     j = voffset+i-aoffset;    // Start of vector field for address @ i
 
-    if (phaseptr[i] == 0x00000000 ||
-        phaseptr[i] == 0x001FFFFF) {
+    if (phaseptr[i] == 0 ||
+        (phaseptr[i] & 0x1FFFFFL) == 0x1FFFFFL) {
       verbprintf(3, "FLEX: Idle codewords, invalid address\n");
-      continue;       // Idle codewords, invalid address
+      continue;
     }
 
     parse_capcode(flex, phaseptr[i]);
@@ -814,11 +827,10 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
           }
 
     if (flex->Decode.capcode > 4297068542ll || flex->Decode.capcode < 0) {    // Invalid address (by spec, maximum address)
-      verbprintf(3, "FLEX: Invalid address\n");
+      verbprintf(3, "FLEX: Invalid address, capcode out of range %lld\n", flex->Decode.capcode);
       continue;
     }
-
-    verbprintf(3, "FLEX: CAPCODE:%016lx\n", flex->Decode.capcode);
+    verbprintf(3, "FLEX: CAPCODE:%016lx %ld\n", flex->Decode.capcode, flex->Decode.capcode);
 
     // Parse vector information word for address @ offset 'i'
     uint32_t viw = phaseptr[j];
@@ -829,12 +841,6 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     int frag = (int) (phaseptr[mw1] >> 11) & 0x3L;
     // which spec documents a cont flag? to derive the K/F/C frag_flag
     int cont = (int) (phaseptr[mw1] >> 10) & 0x1L;
-
-                int w1 = (int)(viw >> 7);
-                int w2 = w1 >> 7;
-                w1 = w1 & 0x7f;
-                w2 = (w2 & 0x7f) + w1 - 1;
-                // int wL = w2 - w1;
 
     if (flex->Decode.type == FLEX_PAGETYPE_SHORT_INSTRUCTION)
                 {
