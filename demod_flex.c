@@ -535,7 +535,7 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
 }
 
 
-static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int flex_groupmessage) {
+static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int cont, int frag, int flex_groupmessage) {
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
@@ -545,20 +545,17 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         unsigned char message[MAX_ALN];
         char frag_flag = '?';
         
-        int frag = (phaseptr[mw1] >> 11) & 0x03;
-        int cont = (phaseptr[mw1] >> 0x0A) & 0x01;
 
         if (cont == 0 && frag == 3) frag_flag = 'K'; // complete, ready to send
         if (cont == 0 && frag != 3) frag_flag = 'C'; // incomplete until appended to 1 or more 'F's
         if (cont == 1             ) frag_flag = 'F'; // incomplete until a 'C' fragment is appended
-    
-  mw1++;
-        
+
         memset(message, '\0', MAX_ALN);
         int  currentChar = 0;
-        for (i = mw1; i <= mw2 && i < PHASE_WORDS; i++) {
-            unsigned int dw =  phaseptr[i];
-            if (i > mw1 || frag != 0x03) {
+        // (mw + i) < PHASE_WORDS (aka mw+len<=PW) enforced within decode_phase
+        for (i = 0; i < len; i++) {
+            unsigned int dw =  phaseptr[mw + i];
+            if (i > 0 || frag != 0x03) {
                 currentChar += add_ch(dw & 0x7Fl, message, currentChar);
             }
             currentChar += add_ch((dw >> 7) & 0x7Fl, message, currentChar);
@@ -717,16 +714,15 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
   verbprintf(0, "\n");
 }
 
-static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2) {
+static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len) {
   if (flex==NULL) return;
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
   verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
       flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
-  int i;
-  for (i = mw1; i <= mw2; i++) {
-    verbprintf(0, " %08x", phaseptr[i]);
+  for (int i = 0; i < len; i++) {
+    verbprintf(0, " %08x", phaseptr[mw1 + i]);
   }
   verbprintf(0, "\n");
 }
@@ -826,9 +822,13 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 
     // Parse vector information word for address @ offset 'i'
     uint32_t viw = phaseptr[j];
-    flex->Decode.type = ((viw >> 4) & 0x00000007);
-    int mw1 = (viw >> 7) & 0x00000007F;
-    int len = (viw >> 14) & 0x0000007F;
+    flex->Decode.type = ((viw >> 4) & 0x7L);
+    unsigned int mw1 = (viw >> 7) & 0x7FL;
+    unsigned int len = (viw >> 14) & 0x7FL;
+    // the following doesn't account for long addresses
+    int frag = (int) (phaseptr[mw1] >> 11) & 0x3L;
+    // which spec documents a cont flag? to derive the K/F/C frag_flag
+    int cont = (int) (phaseptr[mw1] >> 10) & 0x1L;
 
                 int w1 = (int)(viw >> 7);
                 int w2 = w1 >> 7;
@@ -877,31 +877,29 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
                     continue;
                 }
 
-    int mw2 = mw1+(len - 1);
-
-    if (mw1 == 0 && mw2 == 0){
+    // mw1 == 0, or anything less than the offset after all the VIW, is bad
+    if (len < 1 || mw1 < (voffset + (voffset - aoffset)) || mw1 >= PHASE_WORDS) {
       verbprintf(3, "FLEX: Invalid VIW\n");
       continue;  // Invalid VIW
     }
+    // mw1 + len == 89 was observed, but still contained valid page, so truncate
+    if ((mw1 + len) > PHASE_WORDS){
+      len = PHASE_WORDS - mw1;
+    }
 
     if (is_tone_page(flex))
-      mw1 = mw2 = 0;
+      mw1 = len = 0;
 
-
-                // Check if this is an alpha message
-                if (is_alphanumeric_page(flex)) { 
-          if (mw1 >= PHASE_WORDS || mw2 >= PHASE_WORDS){
-        verbprintf(3, "FLEX: Invalid Offsets\n");
-        continue;       // Invalid offsets
-      }
-      parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, flex_groupmessage);
-                }
+    // Check if this is an alpha message
+    if (is_alphanumeric_page(flex))
+      mw1++;  // does not account for long address/group/frag/etc
+      parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, len, frag, cont, flex_groupmessage);
     else if (is_numeric_page(flex))
       parse_numeric(flex, phaseptr, PhaseNo, j);
     else if (is_tone_page(flex))
       parse_tone_only(flex, phaseptr, PhaseNo, j); // parse_tone_only(flex, PhaseNo);
     else
-      parse_unknown(flex, phaseptr, PhaseNo, mw1, mw2);
+      parse_unknown(flex, phaseptr, PhaseNo, mw1, len);
   }
 }
 
