@@ -518,6 +518,23 @@ static int decode_fiw(struct Flex * flex) {
   }
 }
 
+
+/* Add a character to ALN messages, but avoid buffer overflows and special characters */
+unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
+    // avoid buffer overflow that has been happening
+    if (idx >= MAX_ALN) {
+        verbprintf(3, "FLEX: idx %u >= MAX_ALN %u\n", idx, MAX_ALN);
+        return 0;
+    }
+    // don't store ETX end of text (0x03)
+    if (ch != 0x03) {
+        buf[idx] = ch;
+        return 1;
+    }
+    return 0;
+}
+
+
 static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int flex_groupmessage) {
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
@@ -525,8 +542,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         int i;
         time_t now=time(NULL);
         struct tm * gmt=gmtime(&now);
-        char message[MAX_ALN];
-        int  currentChar = 0;
+        unsigned char message[MAX_ALN];
         char frag_flag = '?';
         
         int frag = (phaseptr[mw1] >> 11) & 0x03;
@@ -538,31 +554,16 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
     
   mw1++;
         
-        for (i = mw1; i <= mw2; i++) {
+        memset(message, '\0', MAX_ALN);
+        int  currentChar = 0;
+        for (i = mw1; i <= mw2 && i < PHASE_WORDS; i++) {
             unsigned int dw =  phaseptr[i];
-            unsigned char ch;
-
             if (i > mw1 || frag != 0x03) {
-                    ch = dw & 0x7F;
-                    if (ch != 0x03) {
-                        message[currentChar] = ch;      
-                        currentChar++;
-                    }
+                currentChar += add_ch(dw & 0x7Fl, message, currentChar);
             }
-
-            ch = (dw >> 7) & 0x7F;
-            if (ch != 0x03) {
-                message[currentChar] = ch;      
-                currentChar++;
-            }
-
-            ch = (dw >> 14) & 0x7F;
-            if (ch != 0x03) {
-                message[currentChar] = ch;      
-                currentChar++;
-            }
+            currentChar += add_ch((dw >> 7) & 0x7Fl, message, currentChar);
+            currentChar += add_ch((dw >> 14) & 0x7Fl, message, currentChar);
         }
-
         message[currentChar] = '\0';
 
 /*
