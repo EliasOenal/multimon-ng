@@ -736,21 +736,6 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
 }
 
 
-//static void parse_capcode(struct Flex * flex, uint32_t aw1, uint32_t aw2) {
-static void parse_capcode(struct Flex * flex, uint32_t aw1) {
-  if (flex==NULL) return;
-
-  flex->Decode.long_address = (aw1 < 0x8001L) ||
-    (aw1 > 0x1E0000L) ||
-    (aw1 > 0x1E7FFEL);
-
-  ///if (flex->Decode.long_address)
-  //  flex->Decode.capcode = (int64_t)aw1+((int64_t)(aw2^0x001FFFFFul)<<15)+0x1F9000ull;  // Don't ask
-  //else
-  flex->Decode.capcode = aw1-0x8000;
-}
-
-
 static void decode_phase(struct Flex * flex, char PhaseNo) {
   if (flex==NULL) return;
 
@@ -813,9 +798,15 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       verbprintf(3, "FLEX: Idle codewords, invalid address\n");
       continue;
     }
+    /*********************
+     * Parse AW
+     */
+    uint32_t aiw = phaseptr[i];
+    flex->Decode.long_address = (aiw < 0x8001L) ||
+      (aiw > 0x1E0000L && aiw < 0x1F0001L) ||
+      (aiw > 0x1F7FFEL);
+    flex->Decode.capcode = aiw - 0x8000L;
 
-    parse_capcode(flex, phaseptr[i]);
-    // parse_capcode(flex, phaseptr[i], phaseptr[i+1]); // Older version maybe still needed so I'm not removing it (yet)
     if (flex->Decode.long_address)
     {
       verbprintf(4, "FLEX: Found 'Long Address' bit, ignoring as I think this is handled incorrectly at the moment issue#79\n");
