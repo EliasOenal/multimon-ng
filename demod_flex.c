@@ -803,16 +803,23 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     flex->Decode.long_address = (aiw < 0x8001L) ||
       (aiw > 0x1E0000L && aiw < 0x1F0001L) ||
       (aiw > 0x1F7FFEL);
-    flex->Decode.capcode = aiw - 0x8000L;  // when short address
+
+    flex->Decode.capcode = aiw - 0x8000L;  // if short address
     if (flex->Decode.long_address) {
       // Couldn't find spec on this, credit to PDW
       flex->Decode.capcode = phaseptr[i + 1] ^ 0x1FFFFFL;
-      // 0x8000 is 16b, credit to PDW
+      // 0x8000 or 32768 is 16b, use as upper part of 64b capcode
       flex->Decode.capcode = flex->Decode.capcode << 15;
       // add in 2068480 and first word, credit to PDW
       // NOTE per PDW: this is not number given (2067456) in the patent for FLEX
-      flex->Decode.capcode = flex->Decode.capcode + 2068480L + aiw;
+      flex->Decode.capcode += 2068480L + aiw;
     }
+    if (flex->Decode.capcode > 4297068542LL || flex->Decode.capcode < 0) {
+      // Invalid address (by spec, maximum address)
+      verbprintf(3, "FLEX: Invalid address, capcode out of range %lld\n", flex->Decode.capcode);
+      continue;
+    }
+    verbprintf(3, "FLEX: CAPCODE:%016lx %ld\n", flex->Decode.capcode, flex->Decode.capcode);
 
     flex_groupmessage = 0;
     flex_groupbit = 0;
@@ -821,12 +828,12 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
              flex_groupbit = flex->Decode.capcode - 2029568;
              if(flex_groupbit < 0) continue;
           }
-
-    if (flex->Decode.capcode > 4297068542ll || flex->Decode.capcode < 0) {    // Invalid address (by spec, maximum address)
-      verbprintf(3, "FLEX: Invalid address, capcode out of range %lld\n", flex->Decode.capcode);
-      continue;
+    if (flex->Decode.is_groupmessage && flex->Decode.long_address) {
+      // Invalid (by spec)
+      verbprintf(3, "FLEX: Don't process group messages if a long address\n");
+      return;
     }
-    verbprintf(3, "FLEX: CAPCODE:%016lx %ld\n", flex->Decode.capcode, flex->Decode.capcode);
+
 
     // Parse vector information word for address @ offset 'i'
     uint32_t viw = phaseptr[j];
