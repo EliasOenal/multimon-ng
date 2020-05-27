@@ -539,7 +539,7 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
 }
 
 
-static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int cont, int frag, int flex_groupmessage) {
+static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int cont, int frag, int flex_groupmessage, int groupbit) {
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
@@ -602,20 +602,17 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                         flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
         if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-2029568;
-                if(groupbit < 0) return;
-
-                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
+                int endpoint = flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX];
                 for(int g = 1; g <= endpoint;g++)
                 {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-                        pt_offset += sprintf(pt_out + pt_offset, " %09lld", flex->GroupHandler.GroupCodes[groupbit][g]);
+                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", flex_groupbit, endpoint, g, flex->GroupHandler.GroupCodes[flex_groupbit][g]);
+                        pt_offset += sprintf(pt_out + pt_offset, " %09lld", flex->GroupHandler.GroupCodes[flex_groupbit][g]);
                 }
 
                 // reset the value
-                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
-                flex->GroupHandler.GroupFrame[groupbit] = -1;
-                flex->GroupHandler.GroupCycle[groupbit] = -1;
+                flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
+                flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
+                flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
         } 
         // TODO option to filter non-printables
         // TODO option to convert '\n' and '\r' to "\\n" and "\\r"
@@ -898,7 +895,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     // Check if this is an alpha message
     if (is_alphanumeric_page(flex))
       mw1++;  // does not account for long address/group/frag/etc
-      parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, len, frag, cont, flex_groupmessage);
+      parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, len, frag, cont, flex_groupmessage, flex_groupbit);
     else if (is_numeric_page(flex))
       parse_numeric(flex, phaseptr, PhaseNo, j);
     else if (is_tone_page(flex))
