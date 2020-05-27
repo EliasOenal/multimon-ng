@@ -788,6 +788,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
   verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02i-%02i (%i pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
 
   int flex_groupmessage = 0;
+  int flex_groupbit = 0;
 
   // Iterate through pages and dispatch to appropriate handler
   for (i = aoffset; i < voffset; i++) {
@@ -816,8 +817,12 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       flex->Decode.capcode = flex->Decode.capcode + 2068480L + aiw;
     }
 
+    flex_groupmessage = 0;
+    flex_groupbit = 0;
           if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
              flex_groupmessage = 1;
+             flex_groupbit = flex->Decode.capcode - 2029568;
+             if(flex_groupbit < 0) continue;
           }
 
     if (flex->Decode.capcode > 4297068542ll || flex->Decode.capcode < 0) {    // Invalid address (by spec, maximum address)
