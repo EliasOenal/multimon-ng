@@ -828,22 +828,46 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
              flex_groupbit = flex->Decode.capcode - 2029568;
              if(flex_groupbit < 0) continue;
           }
-    if (flex->Decode.is_groupmessage && flex->Decode.long_address) {
+    if (flex_groupmessage && flex->Decode.long_address) {
       // Invalid (by spec)
       verbprintf(3, "FLEX: Don't process group messages if a long address\n");
       return;
     }
 
 
+    /*********************
+     * Parse VW
+     */
     // Parse vector information word for address @ offset 'i'
     uint32_t viw = phaseptr[j];
     flex->Decode.type = ((viw >> 4) & 0x7L);
     unsigned int mw1 = (viw >> 7) & 0x7FL;
     unsigned int len = (viw >> 14) & 0x7FL;
-    // the following doesn't account for long addresses
-    int frag = (int) (phaseptr[mw1] >> 11) & 0x3L;
-    // which spec documents a cont flag? to derive the K/F/C frag_flag
-    int cont = (int) (phaseptr[mw1] >> 10) & 0x1L;
+    unsigned int hdr = mw1;
+    if (flex->Decode.long_address) {
+      // the header is within the next VW
+      hdr = j + 1;
+      if (len >= 1) {
+        len--;
+      }
+    } else {  // if short address
+      // the header is within the message
+      hdr = mw1;
+      mw1++;
+      if (!flex->Decode.is_groupmessage && len >= 1) {
+        len--;
+      }
+    }
+    if (hdr >= PHASE_WORDS) {
+      verbprintf(3, "FLEX: Invalid VIW\n");
+      continue;
+    }
+    // get message fragment number (bits 11 and 12) from first header word
+    // if frag != 3 then this is a continued message
+    int frag = (int) (phaseptr[hdr] >> 11) & 0x3L;
+    // which spec documents a cont flag? it is used to derive the K/F/C frag_flag
+    int cont = (int) (phaseptr[hdr] >> 10) & 0x1L;;
+    verbprintf(3, "FLEX: VIW: type:%d mw1:%u len:%u frag:%i\n", flex->Decode.type, mw1, len, frag);
 
     if (flex->Decode.type == FLEX_PAGETYPE_SHORT_INSTRUCTION)
                 {
@@ -889,7 +913,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     // mw1 == 0, or anything less than the offset after all the VIW, is bad
     if (len < 1 || mw1 < (voffset + (voffset - aoffset)) || mw1 >= PHASE_WORDS) {
       verbprintf(3, "FLEX: Invalid VIW\n");
-      continue;  // Invalid VIW
+      continue;
     }
     // mw1 + len == 89 was observed, but still contained valid page, so truncate
     if ((mw1 + len) > PHASE_WORDS){
