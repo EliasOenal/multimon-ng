@@ -118,6 +118,7 @@
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
+#define GROUP_BITS           17            // Centralized maximum of group msg cache
 #define PHASE_WORDS          88            // per spec, there are 88 4B words per frame
 // there are 3 chars per message word (mw)
 // there are at most 88 words per frame's phase buffer of a page
@@ -162,9 +163,9 @@ struct Flex_Demodulator {
 };
 
 struct Flex_GroupHandler {
-  int64_t                     GroupCodes[17][1000];
-  int                     GroupCycle[17];
-  int             GroupFrame[17];
+  int64_t                     GroupCodes[GROUP_BITS][1000];
+  int                         GroupCycle[GROUP_BITS];
+  int                         GroupFrame[GROUP_BITS];
 };
 
 struct Flex_Modulation {
@@ -442,8 +443,7 @@ static int decode_fiw(struct Flex * flex) {
         timeseconds/60,
         timeseconds%60);
     // Lets check the FrameNo against the expected group message frames, if we have 'Missed a group message' tell the user and clear the Cap Codes
-                for(int g = 0; g < 17 ;g++)
-                {
+    for(int g = 0; g < GROUP_BITS ;g++) {
       // Do we have a group message pending for this groupbit?
       if(flex->GroupHandler.GroupFrame[g] >= 0)
       {
@@ -1342,7 +1342,7 @@ struct Flex * Flex_New(unsigned int SampleFrequency) {
       flex=NULL;
     }
 
-    for(int g = 0; g < 17; g++)
+    for(int g = 0; g < GROUP_BITS; g++)
     {
       flex->GroupHandler.GroupFrame[g] = -1;
           flex->GroupHandler.GroupCycle[g] = -1;
