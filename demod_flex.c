@@ -933,6 +933,11 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       parse_tone_only(flex, phaseptr, PhaseNo, j); // parse_tone_only(flex, PhaseNo);
     else
       parse_unknown(flex, phaseptr, PhaseNo, mw1, len);
+
+    // long addresses eat 2 aw and 2 vw, so skip the next aw-vw pair
+    if (flex->Decode.long_address) {
+      i++;
+    }
   }
 }
 
