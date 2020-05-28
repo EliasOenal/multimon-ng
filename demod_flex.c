@@ -124,7 +124,8 @@
 // there are at most 88 words per frame's phase buffer of a page
 //   but at least 1 BIW 1 AW 1 VW, so max 85 data words (dw) for text
 // each dw is 3 chars of 7b ASCII (21 bits of text, 11 bits of checksum)
-#define MAX_ALN              256           // max possible ALN characters
+// this is 256, BUT each char could need to be escaped (%, \n, \r, \t), so double it
+#define MAX_ALN              512           // max possible ALN characters
 
 
 enum Flex_PageTypeEnum {
