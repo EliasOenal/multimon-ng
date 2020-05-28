@@ -659,7 +659,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%010] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%010" PRId64 "] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
       flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
   // Get first dataword from message field or from second
@@ -842,10 +842,10 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     }
     if (flex->Decode.capcode > 4297068542LL || flex->Decode.capcode < 0) {
       // Invalid address (by spec, maximum address)
-      verbprintf(3, "FLEX: Invalid address, capcode out of range %lld\n", flex->Decode.capcode);
+      verbprintf(3, "FLEX: Invalid address, capcode out of range %" PRId64 "\n", flex->Decode.capcode);
       continue;
     }
-    verbprintf(3, "FLEX: CAPCODE:%016lx %ld\n", flex->Decode.capcode, flex->Decode.capcode);
+    verbprintf(3, "FLEX: CAPCODE:%016" PRIx64 " %" PRId64 "\n", flex->Decode.capcode, flex->Decode.capcode);
 
     flex_groupmessage = 0;
     flex_groupbit = 0;
