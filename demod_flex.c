@@ -614,12 +614,10 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
                 flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
         } 
-        // TODO option to filter non-printables
-        // TODO option to convert '\n' and '\r' to "\\n" and "\\r"
-        // TODO don't print if empty
-        // TODO sanitize % or you will have uncontrolled format string vuln
-        pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s\n", message);
-        verbprintf(0, pt_out);
+        if (message[0] != '\0') {
+            pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s\n", message);
+            verbprintf(0, pt_out);
+        }
 }
 
 static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
@@ -833,7 +831,6 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       verbprintf(3, "FLEX: Don't process group messages if a long address\n");
       return;
     }
-
 
     /*********************
      * Parse VW
