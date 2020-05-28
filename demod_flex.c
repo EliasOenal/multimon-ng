@@ -948,7 +948,6 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 
     // Check if this is an alpha message
     if (is_alphanumeric_page(flex))
-      mw1++;  // does not account for long address/group/frag/etc
       parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, len, frag, cont, flex_groupmessage, flex_groupbit);
     else if (is_numeric_page(flex))
       parse_numeric(flex, phaseptr, PhaseNo, j);
