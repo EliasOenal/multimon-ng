@@ -571,7 +571,6 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
-        int i;
         time_t now=time(NULL);
         struct tm * gmt=gmtime(&now);
         unsigned char message[MAX_ALN];
@@ -585,7 +584,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         memset(message, '\0', MAX_ALN);
         int  currentChar = 0;
         // (mw + i) < PHASE_WORDS (aka mw+len<=PW) enforced within decode_phase
-        for (i = 0; i < len; i++) {
+        for (unsigned int i = 0; i < len; i++) {
             unsigned int dw =  phaseptr[mw1 + i];
             if (i > 0 || frag != 0x03) {
                 currentChar += add_ch(dw & 0x7Fl, message, currentChar);
@@ -752,7 +751,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
   verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%010" PRId64 "] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
       flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
-  for (int i = 0; i < len; i++) {
+  for (unsigned int i = 0; i < len; i++) {
     verbprintf(0, " %08x", phaseptr[mw1 + i]);
   }
   verbprintf(0, "\n");
@@ -763,7 +762,6 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
   if (flex==NULL) return;
 
   uint32_t *phaseptr=NULL;
-  int i, j;
 
   switch (PhaseNo) {
     case 'A': phaseptr=flex->Data.PhaseA.buf; break;
@@ -772,11 +770,11 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     case 'D': phaseptr=flex->Data.PhaseD.buf; break;
   }
 
-  for (i = 0; i < PHASE_WORDS; i++) {
+  for (unsigned int i = 0; i < PHASE_WORDS; i++) {
     int decode_error=bch3121_fix_errors(flex, &phaseptr[i], PhaseNo);
 
     if (decode_error) {
-      verbprintf(3, "FLEX: Garbled message at block %i\n", i);
+      verbprintf(3, "FLEX: Garbled message at block %u\n", i);
 
                         // If the previous frame was a short message then we need to Null out the Group Message pointer
                         // this issue and sugested resolution was presented by 'bertinholland'
@@ -807,16 +805,13 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       return;
   }
   // long addresses use double AW and VW, so there are anywhere between ceil(v-a/2) to v-a pages in this frame
-
-  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02i-%02i (%i pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
+  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02i-%02i (up to %i pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
 
   int flex_groupmessage = 0;
   int flex_groupbit = 0;
 
   // Iterate through pages and dispatch to appropriate handler
-  for (i = aoffset; i < voffset; i++) {
-    j = voffset+i-aoffset;    // Start of vector field for address @ i
-
+  for (unsigned int i = aoffset; i < voffset; i++) {
     if (phaseptr[i] == 0 ||
         (phaseptr[i] & 0x1FFFFFL) == 0x1FFFFFL) {
       verbprintf(3, "FLEX: Idle codewords, invalid address\n");
@@ -864,6 +859,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
      * Parse VW
      */
     // Parse vector information word for address @ offset 'i'
+    unsigned int j = voffset+i-aoffset;    // Start of vector field for address @ i
     uint32_t viw = phaseptr[j];
     flex->Decode.type = ((viw >> 4) & 0x7L);
     unsigned int mw1 = (viw >> 7) & 0x7FL;
