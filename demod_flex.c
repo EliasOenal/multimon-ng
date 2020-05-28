@@ -530,8 +530,33 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
         verbprintf(3, "FLEX: idx %u >= MAX_ALN %u\n", idx, MAX_ALN);
         return 0;
     }
-    // don't store ETX end of text (0x03)
-    if (ch != 0x03) {
+    // TODO sanitize % or you will have uncontrolled format string vuln
+    // Originally, this only avoided storing ETX (end of text, 0x03).
+    // At minimum you'll also want to avoid storing NULL (str term, 0x00),
+    // otherwise verbprintf will truncate the message.
+    //   ex: if (ch != 0x03 && ch != 0x00) { buf[idx] = ch; return 1; }
+    // But while we are here, make it print friendly and get it onto a single line
+    //   * remove awkward ctrl chars (del, bs, bell, vertical tab, etc)
+    //   * encode valuable ctrl chars (new line/line feed, carriage ret, tab)
+    // NOTE: if you post process FLEX ALN output by sed/grep/awk etc on non-printables
+    //   then double check this doesn't mess with your pipeline
+    if (ch == 0x09 && idx < (MAX_ALN - 2)) {  // '\t'
+        buf[idx] = '\\';
+        buf[idx + 1] = 't';
+        return 2;
+    }
+    if (ch == 0x0a && idx < (MAX_ALN - 2)) {  // '\n'
+        buf[idx] = '\\';
+        buf[idx + 1] = 'n';
+        return 2;
+    }
+    if (ch == 0x0d && idx < (MAX_ALN - 2)) {  // '\r'
+        buf[idx] = '\\';
+        buf[idx + 1] = 'r';
+        return 2;
+    }
+    // only store ASCII printable
+    if (ch >= 32 && ch <= 126) {
         buf[idx] = ch;
         return 1;
     }
