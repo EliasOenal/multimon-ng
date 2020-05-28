@@ -565,7 +565,7 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
 }
 
 
-static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int cont, int frag, int flex_groupmessage, int groupbit) {
+static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int cont, int frag, int flex_groupmessage, int flex_groupbit) {
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
@@ -584,7 +584,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         int  currentChar = 0;
         // (mw + i) < PHASE_WORDS (aka mw+len<=PW) enforced within decode_phase
         for (i = 0; i < len; i++) {
-            unsigned int dw =  phaseptr[mw + i];
+            unsigned int dw =  phaseptr[mw1 + i];
             if (i > 0 || frag != 0x03) {
                 currentChar += add_ch(dw & 0x7Fl, message, currentChar);
             }
@@ -877,7 +877,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       // the header is within the message
       hdr = mw1;
       mw1++;
-      if (!flex->Decode.is_groupmessage && len >= 1) {
+      if (!flex_groupmessage && len >= 1) {
         len--;
       }
     }
