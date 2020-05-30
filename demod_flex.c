@@ -571,16 +571,16 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
+        verbprintf(1, "FLEX: %i/%i/%c %02i.%03i %10" PRId64 " %c%c|%1d|%3d\n", flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode, (flex->Decode.long_address ? 'L' : 'S'), (flex_groupmessage ? 'G' : 'S'), frag, len);
+
         time_t now=time(NULL);
         struct tm * gmt=gmtime(&now);
-        unsigned char message[MAX_ALN];
         char frag_flag = '?';
-        
-
         if (cont == 0 && frag == 3) frag_flag = 'K'; // complete, ready to send
         if (cont == 0 && frag != 3) frag_flag = 'C'; // incomplete until appended to 1 or more 'F's
         if (cont == 1             ) frag_flag = 'F'; // incomplete until a 'C' fragment is appended
 
+        unsigned char message[MAX_ALN];
         memset(message, '\0', MAX_ALN);
         int  currentChar = 0;
         // (mw + i) < PHASE_WORDS (aka mw+len<=PW) enforced within decode_phase
@@ -624,6 +624,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
 // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         static char pt_out[4096] = { 0 };
+        // TODO make this line syntax the same as the other 'FLEX: ' lines
         int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%10" PRId64,
                         gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                         flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
@@ -805,7 +806,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       return;
   }
   // long addresses use double AW and VW, so there are anywhere between ceil(v-a/2) to v-a pages in this frame
-  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02i-%02i (up to %i pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
+  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02u VW:%02u (up to %u pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
 
   int flex_groupmessage = 0;
   int flex_groupbit = 0;
@@ -888,7 +889,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     int frag = (int) (phaseptr[hdr] >> 11) & 0x3L;
     // which spec documents a cont flag? it is used to derive the K/F/C frag_flag
     int cont = (int) (phaseptr[hdr] >> 10) & 0x1L;;
-    verbprintf(3, "FLEX: VIW: type:%d mw1:%u len:%u frag:%i\n", flex->Decode.type, mw1, len, frag);
+    verbprintf(3, "FLEX: VIW %u: type:%d mw1:%u len:%u frag:%i\n", j, flex->Decode.type, mw1, len, frag);
 
     if (flex->Decode.type == FLEX_PAGETYPE_SHORT_INSTRUCTION)
                 {
