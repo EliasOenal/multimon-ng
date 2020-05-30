@@ -569,7 +569,7 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
 
 static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int cont, int frag, int flex_groupmessage, int flex_groupbit) {
         if (flex==NULL) return;
-        verbprintf(3, "FLEX: Parse Alpha Numeric\n");
+        verbprintf(3, "FLEX: Parse Alpha Numeric %u %u\n", mw1, len);
 
         verbprintf(1, "FLEX: %i/%i/%c %02i.%03i %10" PRId64 " %c%c|%1d|%3d\n", flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode, (flex->Decode.long_address ? 'L' : 'S'), (flex_groupmessage ? 'G' : 'S'), frag, len);
 
@@ -761,6 +761,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
 
 static void decode_phase(struct Flex * flex, char PhaseNo) {
   if (flex==NULL) return;
+  verbprintf(3, "FLEX: Decoding phase %c\n", PhaseNo);
 
   uint32_t *phaseptr=NULL;
 
@@ -806,13 +807,14 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       return;
   }
   // long addresses use double AW and VW, so there are anywhere between ceil(v-a/2) to v-a pages in this frame
-  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02u VW:%02u (up to %u pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
+  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW %02u VW %02u (up to %u pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
 
   int flex_groupmessage = 0;
   int flex_groupbit = 0;
 
   // Iterate through pages and dispatch to appropriate handler
   for (unsigned int i = aoffset; i < voffset; i++) {
+    verbprintf(3, "FLEX: Processing page offset #%u AW:%08X VW:%08X\n", i - aoffset + 1, phaseptr[i], phaseptr[voffset + i - aoffset]);
     if (phaseptr[i] == 0 ||
         (phaseptr[i] & 0x1FFFFFL) == 0x1FFFFFL) {
       verbprintf(3, "FLEX: Idle codewords, invalid address\n");
@@ -855,6 +857,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       verbprintf(3, "FLEX: Don't process group messages if a long address\n");
       return;
     }
+    verbprintf(3, "FLEX: AIW %u: capcode:%" PRId64 " long:%d group:%d groupbit:%d\n", i, flex->Decode.capcode, flex->Decode.long_address, flex_groupmessage, flex_groupbit);
 
     /*********************
      * Parse VW
@@ -865,7 +868,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     flex->Decode.type = ((viw >> 4) & 0x7L);
     unsigned int mw1 = (viw >> 7) & 0x7FL;
     unsigned int len = (viw >> 14) & 0x7FL;
-    unsigned int hdr = mw1;
+    unsigned int hdr;
     if (flex->Decode.long_address) {
       // the header is within the next VW
       hdr = j + 1;
