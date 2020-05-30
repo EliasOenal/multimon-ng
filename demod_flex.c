@@ -567,7 +567,7 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
 }
 
 
-static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int cont, int frag, int flex_groupmessage, int flex_groupbit) {
+static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int frag, int cont, int flex_groupmessage, int flex_groupbit) {
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric %u %u\n", mw1, len);
 
