@@ -563,6 +563,11 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
         buf[idx] = ch;
         return 1;
     }
+    // if you want all non-printables, show as hex, but also make MAX_ALN 1024
+    /* if (idx < (MAX_ALN - 4)) {
+        sprintf(buf + idx, "\\x%02x", ch);
+        return 4;
+    }*/
     return 0;
 }
 
@@ -873,6 +878,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       // the header is within the next VW
       hdr = j + 1;
       if (len >= 1) {
+        // per PDW
         len--;
       }
     } else {  // if short address
@@ -880,6 +886,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       hdr = mw1;
       mw1++;
       if (!flex_groupmessage && len >= 1) {
+        // not in spec, possible decode issue, but this fixed repeatedly observed len issues
         len--;
       }
     }
