@@ -629,10 +629,9 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
 // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         static char pt_out[4096] = { 0 };
-        // TODO make this line syntax the same as the other 'FLEX: ' lines
-        int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%10" PRId64,
+        int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%010" PRId64,
                         gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+                        flex->Sync.baud, flex->Sync.levels, PhaseNo, frag_flag, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
         if(flex_groupmessage == 1) {
                 int endpoint = flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX];
@@ -664,7 +663,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%010" PRId64 "] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+  verbprintf(0,  "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c  |%02i.%03i|%010" PRId64 "|NUM|", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
       flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
   // Get first dataword from message field or from second
@@ -723,7 +722,7 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
   
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%010" PRId64 "] TON ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec, flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  verbprintf(0,  "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c  |%02i.%03i|%010" PRId64 "|TON|", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec, flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
   // message type
   // 1=tone-only, 0=short numeric
@@ -754,7 +753,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
   if (flex==NULL) return;
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%010" PRId64 "] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+  verbprintf(0,  "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c  |%02i.%03i|%010" PRId64 "|UNK|", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
       flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
   for (unsigned int i = 0; i < len; i++) {
