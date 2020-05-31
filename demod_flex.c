@@ -906,19 +906,19 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     if (is_alphanumeric_page(flex)) {
       verbprintf(0, "ALN|");
       parse_alphanumeric(flex, phaseptr, mw1, len, frag, cont, flex_groupmessage, flex_groupbit);
-	}
+    }
     else if (is_numeric_page(flex)) {
       verbprintf(0, "NUM|");
       parse_numeric(flex, phaseptr, j);
-	}
+    }
     else if (is_tone_page(flex)) {
       verbprintf(0, "TON|");
       parse_tone_only(flex, phaseptr, j);
-	}
+    }
     else {
       verbprintf(0, "UNK|");
       parse_unknown(flex, phaseptr, mw1, len);
-	}
+    }
     verbprintf(0, "\n");
 
     // long addresses eat 2 aw and 2 vw, so skip the next aw-vw pair
