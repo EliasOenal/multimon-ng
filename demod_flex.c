@@ -558,6 +558,17 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
         buf[idx + 1] = 'r';
         return 2;
     }
+    // unixinput.c::_verbprintf uses this output as a format string
+    // which introduces an uncontrolled format string vulnerability
+    // and also, generally, risks stack corruption
+    if (ch == '%') {
+        if (idx < (MAX_ALN - 2)) {
+            buf[idx] = '%';
+            buf[idx + 1] = '%';
+            return 2;
+        }
+        return 0;
+    }
     // only store ASCII printable
     if (ch >= 32 && ch <= 126) {
         buf[idx] = ch;
