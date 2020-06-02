@@ -119,7 +119,8 @@ set( SOURCES ${SOURCES}
 	demod_morse.c
 	demod_dumpcsv.c
 	demod_x10.c
-        demod_cirfsk.c cir.c BCH26.c BCH26.h)
+	demod_cirfsk.c
+	cir.c)
 
 
 add_executable( "${TARGET}" ${SOURCES} ${HEADERS} )
