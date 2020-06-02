@@ -76,7 +76,6 @@ static void cirfsk_demod(struct demod_state *s, buffer_t buffer, int length)
 {
     float f;
     unsigned char curbit;
-
     if (s->l1.fmsfsk.subsamp) {
         int numfill = SUBSAMP - s->l1.fmsfsk.subsamp;
         if (length < numfill) {
@@ -108,7 +107,6 @@ static void cirfsk_demod(struct demod_state *s, buffer_t buffer, int length)
         if (s->l1.fmsfsk.sphase >= 0x10000u) {
             s->l1.fmsfsk.sphase &= 0xffffu;
             curbit = s->l1.fmsfsk.dcd_shreg & 1;
-            //verbprintf(9, "%c", '0'+curbit);
             cir_rxbit(s, curbit);
         }
     }
