@@ -136,21 +136,24 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
     // | bit sync (51bit) | frame sync (31bit) | mode char (8bit) | length = n (8bit) | ..payloads.. | crc16 (16bit) |
     //   101010101...101        0x0DD4259F
     //                                         | <----------------- protected by BCH(26,16) ------------------------>|
-    //                                         | <- every (8+8)data and 10(FEC) = 26bit per unit ->                  |
-    //                                                                                | <- n * 26 bit              ->|
-
+    //                                         | <-        every 16 bits data is followed by 10 bits FEC code      ->|
+    //                       actual length:    |               26 bit                 | <-        n * 26 bit       ->|
+    //
+    // verbose level: 1 - decode failure reason
+    //                2 - general decode process
+    //                3 - detailed decode process
     // Part I Bit Sync
     if (s->l2.cirfsk.rxbitcount == 0) {
         if (bit != last_bit) {
             sync_count++;
         } else {
             if (sync_count >= 44) {
-                verbprintf(1, "CIR> Bit Sync len: %d\n", sync_count);
+                verbprintf(2, "CIR> Bit Sync len:%d\n", sync_count);
                 s->l2.cirfsk.rxbitstream = bit; // reset RX FSM buffer
                 s->l2.cirfsk.rxbitcount = 2;  // > 1 means we have a valid SYNC
                 s->l2.cirfsk.rxptr = s->l2.cirfsk.rxbuf; // reset RX dump buffer
             } else if (sync_count >= 30) {
-                verbprintf(2, "CIR> Bit Sync break at len: %d\n\n", sync_count);
+                verbprintf(1, "CIR> Bit Sync break at len:%d\n\n", sync_count);
             }
             sync_count = 0;
         }
@@ -170,7 +173,7 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
                 }
             }
             if (bit_error < 3) {
-                verbprintf(1, "CIR> Frame Sync OK (bit error:%d)\n", bit_error);
+                verbprintf(2, "CIR> Frame Sync OK (bit error:%d)\n", bit_error);
             } else {
                 verbprintf(1, "CIR> Frame Sync ERR (bit error:%d)\n", bit_error);
                 s->l2.cirfsk.rxbitcount = 0;
@@ -183,7 +186,7 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
             decoded >>= 10u;
             if (errors >= 3) {
                 s->l2.cirfsk.rxbitcount = 0;
-                verbprintf(2, "CIR> %d FEC too many error\n\n", s->l2.cirfsk.rxptr - s->l2.cirfsk.rxbuf);
+                verbprintf(1, "CIR> %d FEC too many error\n\n", s->l2.cirfsk.rxptr - s->l2.cirfsk.rxbuf);
                 return;
             } else {
                 if (s->l2.cirfsk.rxbitcount == 58) {
@@ -196,7 +199,7 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
                         verbprintf(1, "CIR> zero length\n\n");
                         return;
                     }
-                    verbprintf(1, "CIR> rx:%d (%d padding) \n", length, s->l2.cirfsk.padding);
+                    verbprintf(2, "CIR> Length:%d (%d padding) \n", length, s->l2.cirfsk.padding);
                 }
                 // save data
                 for (uint8_t i = 0; i < 2; i++)
@@ -206,17 +209,18 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
                 s->l2.cirfsk.rxbitstream = 0;
                 // if receive completed, check crc
                 if (s->l2.cirfsk.rxptr - s->l2.cirfsk.rxbuf == s->l2.cirfsk.rxbytes) {
-                    verbprintf(3, "CIR> padding:%d\n", s->l2.cirfsk.padding);
+                    verbprintf(2, "CIR> padding:%d\n", s->l2.cirfsk.padding);
                     uint8_t padding = s->l2.cirfsk.padding;
                     uint16_t crc = crc16(s->l2.cirfsk.rxbuf, s->l2.cirfsk.rxbytes - 2 - padding);
-                    verbprintf(2, "CIR> crc:%04x ", crc);
+                    verbprintf(1, "CIR> ");
+                    verbprintf(2, "crc:%04x ", crc);
 
                     if ((((crc >> 8) & 0x00ff) == s->l2.cirfsk.rxbuf[s->l2.cirfsk.rxbytes - 2 - padding]) && \
                         ((crc & 0x00ff) == s->l2.cirfsk.rxbuf[s->l2.cirfsk.rxbytes - 1 - padding])) {
                         verbprintf(2, "crc ok\n");
                         cir_display_package(s->l2.cirfsk.rxbuf, s->l2.cirfsk.rxbytes - padding);
                     } else {
-                        verbprintf(2, "bad crc\n\n");
+                        verbprintf(1, "bad crc\n\n");
                     }
                     s->l2.cirfsk.rxbitcount = 0;
                 }
