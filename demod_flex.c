@@ -262,6 +262,12 @@ int is_tone_page(struct Flex * flex) {
 }
 
 
+int is_binary_page(struct Flex * flex) {
+  if (flex==NULL) return 0;
+  return (flex->Decode.type == FLEX_PAGETYPE_BINARY);
+}
+
+
 unsigned int count_bits(struct Flex * flex, unsigned int data) {
   if (flex==NULL) return 0;
 #ifdef USE_BUILTIN_POPCOUNT
@@ -700,7 +706,7 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, int j) 
   }
 }
 
-static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len) {
+static void parse_binary(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len) {
   if (flex==NULL) return;
   for (unsigned int i = 0; i < len; i++) {
     verbprintf(0, "%08x", phaseptr[mw1 + i]);
@@ -915,9 +921,13 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       verbprintf(0, "TON|");
       parse_tone_only(flex, phaseptr, j);
     }
+    else if (is_binary_page(flex)) {
+      verbprintf(0, "BIN|");
+      parse_binary(flex, phaseptr, mw1, len);
+    }
     else {
       verbprintf(0, "UNK|");
-      parse_unknown(flex, phaseptr, mw1, len);
+      parse_binary(flex, phaseptr, mw1, len);
     }
     verbprintf(0, "\n");
 
