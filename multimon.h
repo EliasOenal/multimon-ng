@@ -79,10 +79,12 @@ struct demod_state {
         } fmsfsk;
 
         struct l2_state_cirfsk {
-            unsigned char rxbuf[2048];
-            unsigned char *rxptr;
-            uint32_t rxbytes; // expected Rx bytes
-            uint8_t  padding;
+            uint8_t rxbuf[258]; // 256 payload + 2 header
+            uint8_t rx_err[129];
+            uint8_t fec_errors;
+            uint16_t rx_buf_pos;
+            uint32_t sync_buffer[2];
+            uint8_t  rxlength;
             uint32_t rxbitstream; // holds RXed bits
             uint32_t rxbitcount; // counts RXed bits
         } cirfsk;
