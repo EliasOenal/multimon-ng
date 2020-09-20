@@ -122,7 +122,7 @@ static char eas_allowed(char data)
    if (data == 13 || data == 10)
       // LF and CR are allowed
       return 1;
-   if (data >= 32 || data <= 126)
+   if (data >= 32 && data <= 126)
       // These text and punctuation characters are allowed
       return 1;
    
