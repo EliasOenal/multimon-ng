@@ -272,10 +272,10 @@ static void clip_disp_packet(struct demod_state *s, unsigned char *bp, unsigned 
 				if ( (i & 0x60) == 0 ) {
 					verbprintf(0, " Current call charge");
 				}
-				else if ( (i & 0x60) == 1 ) {
+				else if ( (i & 0x60) == 0x20 ) {
 					verbprintf(0, " Accumulated charge (last call included)");
 				}
-				else if ( (i & 0x60) == 2 ) {
+				else if ( (i & 0x60) == 0x40 ) {
 					verbprintf(0, " Extra charge cumulated charging, e.g. call forwarded calls.");
 				}
 				else {
@@ -297,13 +297,13 @@ static void clip_disp_packet(struct demod_state *s, unsigned char *bp, unsigned 
 				verbprintf(0, (i & 4)?" Credit/Debit Card Charging":" Normal billing" );
 				verbprintf(0, (i & 8)?" Charging information not available":" Charging information available" );
 				verbprintf(0, (i & 0x10)?" Charged units or, charged units and price per unit":" Currency amount" );
-				if ( (i & 60) == 0 ) {
+				if ( (i & 0x60) == 0 ) {
 					verbprintf(0, " Current call charge");
 				}
-				else if ( (i & 60) == 1 ) {
+				else if ( (i & 0x60) == 0x20 ) {
 					verbprintf(0, " Accumulated charge (last call included)");
 				}
-				else if ( (i & 60) == 2 ) {
+				else if ( (i & 0x60) == 0x40 ) {
 					verbprintf(0, " Extra charge cumulated charging, e.g. call forwarded calls.");
 				}
 				else {
@@ -342,7 +342,7 @@ static void clip_disp_packet(struct demod_state *s, unsigned char *bp, unsigned 
 							break;
 					}
 				}
-				else if ( (i & 0x70) == 7) {
+				else if ( (i & 0x70) == 0x70) {
 					verbprintf(0, " Reserved for network operator use");
 				}
 				else {
