@@ -262,6 +262,12 @@ int is_tone_page(struct Flex * flex) {
 }
 
 
+int is_binary_page(struct Flex * flex) {
+  if (flex==NULL) return 0;
+  return (flex->Decode.type == FLEX_PAGETYPE_BINARY);
+}
+
+
 unsigned int count_bits(struct Flex * flex, unsigned int data) {
   if (flex==NULL) return 0;
 #ifdef USE_BUILTIN_POPCOUNT
@@ -558,6 +564,17 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
         buf[idx + 1] = 'r';
         return 2;
     }
+    // unixinput.c::_verbprintf uses this output as a format string
+    // which introduces an uncontrolled format string vulnerability
+    // and also, generally, risks stack corruption
+    if (ch == '%') {
+        if (idx < (MAX_ALN - 2)) {
+            buf[idx] = '%';
+            buf[idx + 1] = '%';
+            return 2;
+        }
+        return 0;
+    }
     // only store ASCII printable
     if (ch >= 32 && ch <= 126) {
         buf[idx] = ch;
@@ -572,18 +589,14 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
 }
 
 
-static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len, int frag, int cont, int flex_groupmessage, int flex_groupbit) {
+static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len, int frag, int cont, int flex_groupmessage, int flex_groupbit) {
         if (flex==NULL) return;
-        verbprintf(3, "FLEX: Parse Alpha Numeric %u %u\n", mw1, len);
 
-        verbprintf(1, "FLEX: %i/%i/%c %02i.%03i %10" PRId64 " %c%c|%1d|%3d\n", flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode, (flex->Decode.long_address ? 'L' : 'S'), (flex_groupmessage ? 'G' : 'S'), frag, len);
-
-        time_t now=time(NULL);
-        struct tm * gmt=gmtime(&now);
         char frag_flag = '?';
         if (cont == 0 && frag == 3) frag_flag = 'K'; // complete, ready to send
         if (cont == 0 && frag != 3) frag_flag = 'C'; // incomplete until appended to 1 or more 'F's
         if (cont == 1             ) frag_flag = 'F'; // incomplete until a 'C' fragment is appended
+        verbprintf(0, "%1d.%1d.%c|", frag, cont, frag_flag);
 
         unsigned char message[MAX_ALN];
         memset(message, '\0', MAX_ALN);
@@ -599,46 +612,13 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         }
         message[currentChar] = '\0';
 
-/*
-        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", 
-            gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
-        verbprintf(0, "%s\n", message);
-
-        if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-2029568;
-                if(groupbit < 0) return;
-
-                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
-                for(int g = 1; g <= endpoint;g++)
-                {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                        verbprintf(0, "%s\n", message);
-                }
-                // reset the value
-                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
-    flex->GroupHandler.GroupFrame[groupbit] = -1;
-    flex->GroupHandler.GroupCycle[groupbit] = -1;
-        }
-*/
-
 // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
-        static char pt_out[4096] = { 0 };
-        int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%010" PRId64,
-                        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                        flex->Sync.baud, flex->Sync.levels, PhaseNo, frag_flag, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
         if(flex_groupmessage == 1) {
                 int endpoint = flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX];
                 for(int g = 1; g <= endpoint;g++)
                 {
                         verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%010" PRId64 "]\n", flex_groupbit, endpoint, g, flex->GroupHandler.GroupCodes[flex_groupbit][g]);
-                        pt_offset += sprintf(pt_out + pt_offset, " %010" PRId64, flex->GroupHandler.GroupCodes[flex_groupbit][g]);
+                        verbprintf(0, "%010" PRId64 "|", flex->GroupHandler.GroupCodes[flex_groupbit][g]);
                 }
 
                 // reset the value
@@ -646,13 +626,10 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
                 flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
         } 
-        if (message[0] != '\0') {
-            pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s\n", message);
-            verbprintf(0, pt_out);
-        }
+    verbprintf(0, message);
 }
 
-static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
+static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, int j) {
   if (flex==NULL) return;
   unsigned const char flex_bcd[17] = "0123456789 U -][";
 
@@ -660,11 +637,6 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
   int w2 = w1 >> 7;
   w1 = w1 & 0x7f;
   w2 = (w2 & 0x07) + w1;  // numeric message is 7 words max
-
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c  |%02i.%03i|%010" PRId64 "|NUM|", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
   // Get first dataword from message field or from second
   // vector word if long address
@@ -704,26 +676,12 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
     }
     dw = phaseptr[i];
   }
-  verbprintf(0, "\n");
 }
 
 
-//static void parse_tone_only(struct Flex * flex, char PhaseNo) {
-//  if (flex==NULL) return;
-//  time_t now=time(NULL);
-//  struct tm * gmt=gmtime(&now);
-//  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON\n", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-//      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-//}
-
-static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
+static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, int j) {
   if (flex==NULL) return;
   unsigned const char flex_bcd[17] = "0123456789 U -][";
-  
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c  |%02i.%03i|%010" PRId64 "|TON|", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec, flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
   // message type
   // 1=tone-only, 0=short numeric
   int w1 = phaseptr[j] >> 7 & 0x03; 
@@ -746,20 +704,15 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
       }
     }
   }
-  verbprintf(0, "\n");
 }
 
-static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, unsigned int mw1, unsigned int len) {
+static void parse_binary(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len) {
   if (flex==NULL) return;
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c  |%02i.%03i|%010" PRId64 "|UNK|", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
   for (unsigned int i = 0; i < len; i++) {
-    verbprintf(0, " %08x", phaseptr[mw1 + i]);
+    verbprintf(0, "%08x", phaseptr[mw1 + i]);
+    if (i < (len - 1))
+      verbprintf(0, " ");
   }
-  verbprintf(0, "\n");
 }
 
 
@@ -954,15 +907,29 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     if (is_tone_page(flex))
       mw1 = len = 0;
 
+    verbprintf(0, "FLEX|%i/%i|%02i.%03i.%c|%010" PRId64 "|%c%c|%1d|", flex->Sync.baud, flex->Sync.levels, flex->FIW.cycleno, flex->FIW.frameno, PhaseNo, flex->Decode.capcode, (flex->Decode.long_address ? 'L' : 'S'), (flex_groupmessage ? 'G' : 'S'), flex->Decode.type);
     // Check if this is an alpha message
-    if (is_alphanumeric_page(flex))
-      parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, len, frag, cont, flex_groupmessage, flex_groupbit);
-    else if (is_numeric_page(flex))
-      parse_numeric(flex, phaseptr, PhaseNo, j);
-    else if (is_tone_page(flex))
-      parse_tone_only(flex, phaseptr, PhaseNo, j); // parse_tone_only(flex, PhaseNo);
-    else
-      parse_unknown(flex, phaseptr, PhaseNo, mw1, len);
+    if (is_alphanumeric_page(flex)) {
+      verbprintf(0, "ALN|");
+      parse_alphanumeric(flex, phaseptr, mw1, len, frag, cont, flex_groupmessage, flex_groupbit);
+    }
+    else if (is_numeric_page(flex)) {
+      verbprintf(0, "NUM|");
+      parse_numeric(flex, phaseptr, j);
+    }
+    else if (is_tone_page(flex)) {
+      verbprintf(0, "TON|");
+      parse_tone_only(flex, phaseptr, j);
+    }
+    else if (is_binary_page(flex)) {
+      verbprintf(0, "BIN|");
+      parse_binary(flex, phaseptr, mw1, len);
+    }
+    else {
+      verbprintf(0, "UNK|");
+      parse_binary(flex, phaseptr, mw1, len);
+    }
+    verbprintf(0, "\n");
 
     // long addresses eat 2 aw and 2 vw, so skip the next aw-vw pair
     if (flex->Decode.long_address) {
