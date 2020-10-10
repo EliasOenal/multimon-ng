@@ -371,9 +371,11 @@ bool pocsag_init_charset(char *charset)
 	{
 		trtab[0x40] = "Ž";
 		trtab[0x5b] = "Š";
+		trtab[0x5d] = "Ć";
 		trtab[0x5e] = "Č";
 		trtab[0x60] = "ž";
 		trtab[0x7b] = "š";
+		trtab[0x7d] = "ć";
 		trtab[0x7e] = "č";
 	}
 	else if (strcmp(charset,"US")==0) // US charset
