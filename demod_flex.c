@@ -22,6 +22,11 @@
  *      Boston, MA 02110-1301, USA.
  */
 /*
+ *  Modification (to this file) made by Ryan Farley (rfarley3@github)
+ *   - Issue #139 !160 handle edge cases for start and end offsets (long vs short, single vs group)
+ *   - Resolve type ambiguity to improve stability after Raspberry Pi compile
+ *   - Compare algorithms to other open source libraries to reconcile group bit, frag bit, and capcode decode
+ *   - Refactor message printing to single line, only printables, encoded % fmtstr directives
  *  Version 0.9.3v (28 Jan 2020)
  *  Modification made by bierviltje and implemented by Bruce Quinton (Zanoroy@gmail.com)
  *   - Issue #123 created by bierviltje (https://github.com/bierviltje) - Feature request: FLEX: put group messages in an array/list
