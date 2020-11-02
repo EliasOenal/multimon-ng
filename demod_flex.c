@@ -22,6 +22,11 @@
  *      Boston, MA 02110-1301, USA.
  */
 /*
+ *  Modification (to this file) made by Ryan Farley (rfarley3@github)
+ *   - Issue #139 !160 handle edge cases for start and end offsets (long vs short, single vs group)
+ *   - Resolve type ambiguity to improve stability after Raspberry Pi compile
+ *   - Compare algorithms to other open source libraries to reconcile group bit, frag bit, and capcode decode
+ *   - Refactor message printing to single line, only printables, encoded % fmtstr directives
  *  Version 0.9.3v (28 Jan 2020)
  *  Modification made by bierviltje and implemented by Bruce Quinton (Zanoroy@gmail.com)
  *   - Issue #123 created by bierviltje (https://github.com/bierviltje) - Feature request: FLEX: put group messages in an array/list
@@ -102,6 +107,8 @@
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
+#define __STDC_FORMAT_MACROS
+#include <inttypes.h>
 
 /* ---------------------------------------------------------------------- */
 
@@ -118,6 +125,14 @@
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
+#define GROUP_BITS           17            // Centralized maximum of group msg cache
+#define PHASE_WORDS          88            // per spec, there are 88 4B words per frame
+// there are 3 chars per message word (mw)
+// there are at most 88 words per frame's phase buffer of a page
+//   but at least 1 BIW 1 AW 1 VW, so max 85 data words (dw) for text
+// each dw is 3 chars of 7b ASCII (21 bits of text, 11 bits of checksum)
+// this is 256, BUT each char could need to be escaped (%, \n, \r, \t), so double it
+#define MAX_ALN              512           // max possible ALN characters
 
 
 enum Flex_PageTypeEnum {
@@ -156,9 +171,9 @@ struct Flex_Demodulator {
 };
 
 struct Flex_GroupHandler {
-  int64_t                     GroupCodes[17][1000];
-  int                     GroupCycle[17];
-  int             GroupFrame[17];
+  int64_t                     GroupCodes[GROUP_BITS][1000];
+  int                         GroupCycle[GROUP_BITS];
+  int                         GroupFrame[GROUP_BITS];
 };
 
 struct Flex_Modulation {
@@ -196,7 +211,7 @@ struct Flex_FIW {
 
 
 struct Flex_Phase {
-  unsigned int                buf[88];
+  unsigned int                buf[PHASE_WORDS];
   int                         idle_count;
 };
 
@@ -249,6 +264,12 @@ int is_numeric_page(struct Flex * flex) {
 int is_tone_page(struct Flex * flex) {
   if (flex==NULL) return 0;
   return (flex->Decode.type == FLEX_PAGETYPE_TONE);
+}
+
+
+int is_binary_page(struct Flex * flex) {
+  if (flex==NULL) return 0;
+  return (flex->Decode.type == FLEX_PAGETYPE_BINARY);
 }
 
 
@@ -360,6 +381,10 @@ static unsigned int flex_sync(struct Flex * flex, unsigned char sym) {
 static void decode_mode(struct Flex * flex, unsigned int sync_code) {
   if (flex==NULL) return;
 
+  // Something is off with these modes:
+  //   * Where is 6400/4?
+  //   * Why are there two 3200/4?
+  //   * Why is there a 1600/4?
   struct {
     int sync;
     unsigned int baud;
@@ -432,8 +457,7 @@ static int decode_fiw(struct Flex * flex) {
         timeseconds/60,
         timeseconds%60);
     // Lets check the FrameNo against the expected group message frames, if we have 'Missed a group message' tell the user and clear the Cap Codes
-                for(int g = 0; g < 17 ;g++)
-                {
+    for(int g = 0; g < GROUP_BITS ;g++) {
       // Do we have a group message pending for this groupbit?
       if(flex->GroupHandler.GroupFrame[g] >= 0)
       {
@@ -480,7 +504,7 @@ static int decode_fiw(struct Flex * flex) {
           {
             if(REPORT_GROUP_CODES == 0)
             {
-              verbprintf(3,"FLEX: Group messages seem to have been missed; Groupbit: %i; Clearing data; Capcode: [%09lld]\n", g, flex->GroupHandler.GroupCodes[g][capIndex]);
+              verbprintf(3,"FLEX: Group messages seem to have been missed; Groupbit: %i; Clearing data; Capcode: [%010" PRId64 "]\n", g, flex->GroupHandler.GroupCodes[g][capIndex]);
             }
             else
             {
@@ -488,7 +512,7 @@ static int decode_fiw(struct Flex * flex) {
               {
                 verbprintf(3,",");
               }
-              verbprintf(3,"[%09lld]", flex->GroupHandler.GroupCodes[g][capIndex]);
+              verbprintf(3,"[%010" PRId64 "]", flex->GroupHandler.GroupCodes[g][capIndex]);
             }
           }
 
@@ -512,109 +536,105 @@ static int decode_fiw(struct Flex * flex) {
   }
 }
 
-static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int flex_groupmessage) {
+
+/* Add a character to ALN messages, but avoid buffer overflows and special characters */
+unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
+    // avoid buffer overflow that has been happening
+    if (idx >= MAX_ALN) {
+        verbprintf(3, "FLEX: idx %u >= MAX_ALN %u\n", idx, MAX_ALN);
+        return 0;
+    }
+    // TODO sanitize % or you will have uncontrolled format string vuln
+    // Originally, this only avoided storing ETX (end of text, 0x03).
+    // At minimum you'll also want to avoid storing NULL (str term, 0x00),
+    // otherwise verbprintf will truncate the message.
+    //   ex: if (ch != 0x03 && ch != 0x00) { buf[idx] = ch; return 1; }
+    // But while we are here, make it print friendly and get it onto a single line
+    //   * remove awkward ctrl chars (del, bs, bell, vertical tab, etc)
+    //   * encode valuable ctrl chars (new line/line feed, carriage ret, tab)
+    // NOTE: if you post process FLEX ALN output by sed/grep/awk etc on non-printables
+    //   then double check this doesn't mess with your pipeline
+    if (ch == 0x09 && idx < (MAX_ALN - 2)) {  // '\t'
+        buf[idx] = '\\';
+        buf[idx + 1] = 't';
+        return 2;
+    }
+    if (ch == 0x0a && idx < (MAX_ALN - 2)) {  // '\n'
+        buf[idx] = '\\';
+        buf[idx + 1] = 'n';
+        return 2;
+    }
+    if (ch == 0x0d && idx < (MAX_ALN - 2)) {  // '\r'
+        buf[idx] = '\\';
+        buf[idx + 1] = 'r';
+        return 2;
+    }
+    // unixinput.c::_verbprintf uses this output as a format string
+    // which introduces an uncontrolled format string vulnerability
+    // and also, generally, risks stack corruption
+    if (ch == '%') {
+        if (idx < (MAX_ALN - 2)) {
+            buf[idx] = '%';
+            buf[idx + 1] = '%';
+            return 2;
+        }
+        return 0;
+    }
+    // only store ASCII printable
+    if (ch >= 32 && ch <= 126) {
+        buf[idx] = ch;
+        return 1;
+    }
+    // if you want all non-printables, show as hex, but also make MAX_ALN 1024
+    /* if (idx < (MAX_ALN - 4)) {
+        sprintf(buf + idx, "\\x%02x", ch);
+        return 4;
+    }*/
+    return 0;
+}
+
+
+static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len, int frag, int cont, int flex_groupmessage, int flex_groupbit) {
         if (flex==NULL) return;
-        verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
-        int i;
-        time_t now=time(NULL);
-        struct tm * gmt=gmtime(&now);
-        // char buf[1024], *message;
-        char message[1024];
-        int  currentChar = 0; 
         char frag_flag = '?';
-        
-        int frag = (phaseptr[mw1] >> 11) & 0x03;
-        int cont = (phaseptr[mw1] >> 0x0A) & 0x01;
-
         if (cont == 0 && frag == 3) frag_flag = 'K'; // complete, ready to send
         if (cont == 0 && frag != 3) frag_flag = 'C'; // incomplete until appended to 1 or more 'F's
         if (cont == 1             ) frag_flag = 'F'; // incomplete until a 'C' fragment is appended
-    
-  mw1++;
-        
-        for (i = mw1; i <= mw2; i++) {
-            unsigned int dw =  phaseptr[i];
-            unsigned char ch;
+        verbprintf(0, "%1d.%1d.%c|", frag, cont, frag_flag);
 
-            if (i > mw1 || frag != 0x03) {
-                    ch = dw & 0x7F;
-                    if (ch != 0x03) {
-                        message[currentChar] = ch;      
-                        currentChar++;
-                    }
+        unsigned char message[MAX_ALN];
+        memset(message, '\0', MAX_ALN);
+        int  currentChar = 0;
+        // (mw + i) < PHASE_WORDS (aka mw+len<=PW) enforced within decode_phase
+        for (unsigned int i = 0; i < len; i++) {
+            unsigned int dw =  phaseptr[mw1 + i];
+            if (i > 0 || frag != 0x03) {
+                currentChar += add_ch(dw & 0x7Fl, message, currentChar);
             }
-
-            ch = (dw >> 7) & 0x7F;
-            if (ch != 0x03) {
-                message[currentChar] = ch;      
-                currentChar++;
-            }
-
-            ch = (dw >> 14) & 0x7F;
-            if (ch != 0x03) {
-                message[currentChar] = ch;      
-                currentChar++;
-            }
+            currentChar += add_ch((dw >> 7) & 0x7Fl, message, currentChar);
+            currentChar += add_ch((dw >> 14) & 0x7Fl, message, currentChar);
         }
-
         message[currentChar] = '\0';
 
-/*
-        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", 
-            gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
-        verbprintf(0, "%s\n", message);
-
-        if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-2029568;
-                if(groupbit < 0) return;
-
-                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
-                for(int g = 1; g <= endpoint;g++)
-                {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                        verbprintf(0, "%s\n", message);
-                }
-                // reset the value
-                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
-    flex->GroupHandler.GroupFrame[groupbit] = -1;
-    flex->GroupHandler.GroupCycle[groupbit] = -1;
-        }
-*/
-
 // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
-        static char pt_out[4096] = { 0 };
-        int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
-                        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
         if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-2029568;
-                if(groupbit < 0) return;
-
-                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
+                int endpoint = flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX];
                 for(int g = 1; g <= endpoint;g++)
                 {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-                        pt_offset += sprintf(pt_out + pt_offset, " %09lld", flex->GroupHandler.GroupCodes[groupbit][g]);
+                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%010" PRId64 "]\n", flex_groupbit, endpoint, g, flex->GroupHandler.GroupCodes[flex_groupbit][g]);
+                        verbprintf(0, "%010" PRId64 "|", flex->GroupHandler.GroupCodes[flex_groupbit][g]);
                 }
 
                 // reset the value
-                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
-                flex->GroupHandler.GroupFrame[groupbit] = -1;
-                flex->GroupHandler.GroupCycle[groupbit] = -1;
+                flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
+                flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
+                flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
         } 
-        pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s\n", message);
-        verbprintf(0, pt_out);
+    verbprintf(0, message);
 }
 
-static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
+static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, int j) {
   if (flex==NULL) return;
   unsigned const char flex_bcd[17] = "0123456789 U -][";
 
@@ -622,11 +642,6 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
   int w2 = w1 >> 7;
   w1 = w1 & 0x7f;
   w2 = (w2 & 0x07) + w1;  // numeric message is 7 words max
-
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
   // Get first dataword from message field or from second
   // vector word if long address
@@ -666,26 +681,12 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
     }
     dw = phaseptr[i];
   }
-  verbprintf(0, "\n");
 }
 
 
-//static void parse_tone_only(struct Flex * flex, char PhaseNo) {
-//  if (flex==NULL) return;
-//  time_t now=time(NULL);
-//  struct tm * gmt=gmtime(&now);
-//  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON\n", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-//      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-//}
-
-static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
+static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, int j) {
   if (flex==NULL) return;
   unsigned const char flex_bcd[17] = "0123456789 U -][";
-  
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec, flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
   // message type
   // 1=tone-only, 0=short numeric
   int w1 = phaseptr[j] >> 7 & 0x03; 
@@ -708,44 +709,23 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
       }
     }
   }
-  verbprintf(0, "\n");
 }
 
-static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2) {
+static void parse_binary(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len) {
   if (flex==NULL) return;
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
-  int i;
-  for (i = mw1; i <= mw2; i++) {
-    verbprintf(0, " %08x", phaseptr[i]);
+  for (unsigned int i = 0; i < len; i++) {
+    verbprintf(0, "%08x", phaseptr[mw1 + i]);
+    if (i < (len - 1))
+      verbprintf(0, " ");
   }
-  verbprintf(0, "\n");
-}
-
-
-//static void parse_capcode(struct Flex * flex, uint32_t aw1, uint32_t aw2) {
-static void parse_capcode(struct Flex * flex, uint32_t aw1) {
-  if (flex==NULL) return;
-
-  flex->Decode.long_address = (aw1 < 0x008001L) ||
-    (aw1 > 0x1E0000L) ||
-    (aw1 > 0x1E7FFEL);
-
-  ///if (flex->Decode.long_address)
-  //  flex->Decode.capcode = (int64_t)aw1+((int64_t)(aw2^0x001FFFFFul)<<15)+0x1F9000ull;  // Don't ask
-  //else
-  flex->Decode.capcode = aw1-0x8000;
 }
 
 
 static void decode_phase(struct Flex * flex, char PhaseNo) {
   if (flex==NULL) return;
+  verbprintf(3, "FLEX: Decoding phase %c\n", PhaseNo);
 
   uint32_t *phaseptr=NULL;
-  int i, j;
 
   switch (PhaseNo) {
     case 'A': phaseptr=flex->Data.PhaseA.buf; break;
@@ -754,11 +734,11 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     case 'D': phaseptr=flex->Data.PhaseD.buf; break;
   }
 
-  for (i=0; i<88; i++) {
+  for (unsigned int i = 0; i < PHASE_WORDS; i++) {
     int decode_error=bch3121_fix_errors(flex, &phaseptr[i], PhaseNo);
 
     if (decode_error) {
-      verbprintf(3, "FLEX: Garbled message at block %i\n", i);
+      verbprintf(3, "FLEX: Garbled message at block %u\n", i);
 
                         // If the previous frame was a short message then we need to Null out the Group Message pointer
                         // this issue and sugested resolution was presented by 'bertinholland'
@@ -768,67 +748,115 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     }
 
     /*Extract just the message bits*/
-    phaseptr[i]&=0x001FFFFF;
+    phaseptr[i]&=0x1FFFFFL;
   }
 
   // Block information word is the first data word in frame
   uint32_t biw = phaseptr[0];
 
   // Nothing to see here, please move along
-  if (biw == 0 || biw == 0x001FFFFF) {
+  if (biw == 0 || (biw & 0x1FFFFFL) == 0x1FFFFFL) {
     verbprintf(3, "FLEX: Nothing to see here, please move along\n");
     return;
   }
 
+  // Address start address is bits 9-8, plus one for offset (to account for biw)
+  unsigned int aoffset = ((biw >> 8) & 0x3L) + 1;
   // Vector start index is bits 15-10
-  // Address start address is bits 9-8, plus one for offset
-  int voffset = (biw >> 10) & 0x3f;
-  int aoffset = ((biw >> 8) & 0x03) + 1;
-
-  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW:%02i-%02i (%i pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
+  unsigned int voffset = (biw >> 10) & 0x3fL;
+  if (voffset < aoffset) {
+      verbprintf(3, "FLEX: Invalid biw");
+      return;
+  }
+  // long addresses use double AW and VW, so there are anywhere between ceil(v-a/2) to v-a pages in this frame
+  verbprintf(3, "FLEX: BlockInfoWord: (Phase %c) BIW:%08X AW %02u VW %02u (up to %u pages)\n", PhaseNo, biw, aoffset, voffset, voffset-aoffset);
 
   int flex_groupmessage = 0;
+  int flex_groupbit = 0;
 
   // Iterate through pages and dispatch to appropriate handler
-  for (i = aoffset; i < voffset; i++) {
-    j = voffset+i-aoffset;    // Start of vector field for address @ i
-
-    if (phaseptr[i] == 0x00000000 ||
-        phaseptr[i] == 0x001FFFFF) {
+  for (unsigned int i = aoffset; i < voffset; i++) {
+    verbprintf(3, "FLEX: Processing page offset #%u AW:%08X VW:%08X\n", i - aoffset + 1, phaseptr[i], phaseptr[voffset + i - aoffset]);
+    if (phaseptr[i] == 0 ||
+        (phaseptr[i] & 0x1FFFFFL) == 0x1FFFFFL) {
       verbprintf(3, "FLEX: Idle codewords, invalid address\n");
-      continue;       // Idle codewords, invalid address
-    }
-
-    parse_capcode(flex, phaseptr[i]);
-    // parse_capcode(flex, phaseptr[i], phaseptr[i+1]); // Older version maybe still needed so I'm not removing it (yet)
-    if (flex->Decode.long_address)
-    {
-      verbprintf(4, "FLEX: Found 'Long Address' bit, ignoring as I think this is handled incorrectly at the moment issue#79\n");
-      // i++;
-    }
-
-          if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
-             flex_groupmessage = 1;
-          }
-
-    if (flex->Decode.capcode > 4297068542ll || flex->Decode.capcode < 0) {    // Invalid address (by spec, maximum address)
-      verbprintf(3, "FLEX: Invalid address\n");
       continue;
     }
+    /*********************
+     * Parse AW
+     */
+    uint32_t aiw = phaseptr[i];
+    flex->Decode.long_address = (aiw < 0x8001L) ||
+      (aiw > 0x1E0000L && aiw < 0x1F0001L) ||
+      (aiw > 0x1F7FFEL);
 
-    verbprintf(3, "FLEX: CAPCODE:%016lx\n", flex->Decode.capcode);
+    flex->Decode.capcode = aiw - 0x8000L;  // if short address
+    if (flex->Decode.long_address) {
+      // Couldn't find spec on this, credit to PDW
+      flex->Decode.capcode = phaseptr[i + 1] ^ 0x1FFFFFL;
+      // 0x8000 or 32768 is 16b, use as upper part of 64b capcode
+      flex->Decode.capcode = flex->Decode.capcode << 15;
+      // add in 2068480 and first word, credit to PDW
+      // NOTE per PDW: this is not number given (2067456) in the patent for FLEX
+      flex->Decode.capcode += 2068480L + aiw;
+    }
+    if (flex->Decode.capcode > 4297068542LL || flex->Decode.capcode < 0) {
+      // Invalid address (by spec, maximum address)
+      verbprintf(3, "FLEX: Invalid address, capcode out of range %" PRId64 "\n", flex->Decode.capcode);
+      continue;
+    }
+    verbprintf(3, "FLEX: CAPCODE:%016" PRIx64 " %" PRId64 "\n", flex->Decode.capcode, flex->Decode.capcode);
 
+    flex_groupmessage = 0;
+    flex_groupbit = 0;
+          if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
+             flex_groupmessage = 1;
+             flex_groupbit = flex->Decode.capcode - 2029568;
+             if(flex_groupbit < 0) continue;
+          }
+    if (flex_groupmessage && flex->Decode.long_address) {
+      // Invalid (by spec)
+      verbprintf(3, "FLEX: Don't process group messages if a long address\n");
+      return;
+    }
+    verbprintf(3, "FLEX: AIW %u: capcode:%" PRId64 " long:%d group:%d groupbit:%d\n", i, flex->Decode.capcode, flex->Decode.long_address, flex_groupmessage, flex_groupbit);
+
+    /*********************
+     * Parse VW
+     */
     // Parse vector information word for address @ offset 'i'
+    unsigned int j = voffset+i-aoffset;    // Start of vector field for address @ i
     uint32_t viw = phaseptr[j];
-    flex->Decode.type = ((viw >> 4) & 0x00000007);
-    int mw1 = (viw >> 7) & 0x00000007F;
-    int len = (viw >> 14) & 0x0000007F;
-
-                int w1 = (int)(viw >> 7);
-                int w2 = w1 >> 7;
-                w1 = w1 & 0x7f;
-                w2 = (w2 & 0x7f) + w1 - 1;
-                // int wL = w2 - w1;
+    flex->Decode.type = ((viw >> 4) & 0x7L);
+    unsigned int mw1 = (viw >> 7) & 0x7FL;
+    unsigned int len = (viw >> 14) & 0x7FL;
+    unsigned int hdr;
+    if (flex->Decode.long_address) {
+      // the header is within the next VW
+      hdr = j + 1;
+      if (len >= 1) {
+        // per PDW
+        len--;
+      }
+    } else {  // if short address
+      // the header is within the message
+      hdr = mw1;
+      mw1++;
+      if (!flex_groupmessage && len >= 1) {
+        // not in spec, possible decode issue, but this fixed repeatedly observed len issues
+        len--;
+      }
+    }
+    if (hdr >= PHASE_WORDS) {
+      verbprintf(3, "FLEX: Invalid VIW\n");
+      continue;
+    }
+    // get message fragment number (bits 11 and 12) from first header word
+    // if frag != 3 then this is a continued message
+    int frag = (int) (phaseptr[hdr] >> 11) & 0x3L;
+    // which spec documents a cont flag? it is used to derive the K/F/C frag_flag
+    int cont = (int) (phaseptr[hdr] >> 10) & 0x1L;;
+    verbprintf(3, "FLEX: VIW %u: type:%d mw1:%u len:%u frag:%i\n", j, flex->Decode.type, mw1, len, frag);
 
     if (flex->Decode.type == FLEX_PAGETYPE_SHORT_INSTRUCTION)
                 {
@@ -840,7 +868,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
         ////////#############################################################################                 
                     flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]++;
                     int CapcodePlacement = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
-                    verbprintf(1, "FLEX: Found Short Instruction, Group bit: %i capcodes in group so far %i, adding Capcode: [%09lld]\n", groupbit, CapcodePlacement, flex->Decode.capcode);
+                    verbprintf(1, "FLEX: Found Short Instruction, Group bit: %i capcodes in group so far %i, adding Capcode: [%010" PRId64 "]\n", groupbit, CapcodePlacement, flex->Decode.capcode);
 
                     flex->GroupHandler.GroupCodes[groupbit][CapcodePlacement] = flex->Decode.capcode;
                     flex->GroupHandler.GroupFrame[groupbit] = iAssignedFrame;
@@ -871,31 +899,47 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
                     continue;
                 }
 
-    int mw2 = mw1+(len - 1);
-
-    if (mw1 == 0 && mw2 == 0){
+    // mw1 == 0, or anything less than the offset after all the VIW, is bad
+    if (len < 1 || mw1 < (voffset + (voffset - aoffset)) || mw1 >= PHASE_WORDS) {
       verbprintf(3, "FLEX: Invalid VIW\n");
-      continue;  // Invalid VIW
+      continue;
+    }
+    // mw1 + len == 89 was observed, but still contained valid page, so truncate
+    if ((mw1 + len) > PHASE_WORDS){
+      len = PHASE_WORDS - mw1;
     }
 
     if (is_tone_page(flex))
-      mw1 = mw2 = 0;
+      mw1 = len = 0;
 
+    verbprintf(0, "FLEX|%i/%i|%02i.%03i.%c|%010" PRId64 "|%c%c|%1d|", flex->Sync.baud, flex->Sync.levels, flex->FIW.cycleno, flex->FIW.frameno, PhaseNo, flex->Decode.capcode, (flex->Decode.long_address ? 'L' : 'S'), (flex_groupmessage ? 'G' : 'S'), flex->Decode.type);
+    // Check if this is an alpha message
+    if (is_alphanumeric_page(flex)) {
+      verbprintf(0, "ALN|");
+      parse_alphanumeric(flex, phaseptr, mw1, len, frag, cont, flex_groupmessage, flex_groupbit);
+    }
+    else if (is_numeric_page(flex)) {
+      verbprintf(0, "NUM|");
+      parse_numeric(flex, phaseptr, j);
+    }
+    else if (is_tone_page(flex)) {
+      verbprintf(0, "TON|");
+      parse_tone_only(flex, phaseptr, j);
+    }
+    else if (is_binary_page(flex)) {
+      verbprintf(0, "BIN|");
+      parse_binary(flex, phaseptr, mw1, len);
+    }
+    else {
+      verbprintf(0, "UNK|");
+      parse_binary(flex, phaseptr, mw1, len);
+    }
+    verbprintf(0, "\n");
 
-                // Check if this is an alpha message
-                if (is_alphanumeric_page(flex)) { 
-          if (mw1 > 87 || mw2 > 87){
-        verbprintf(3, "FLEX: Invalid Offsets\n");
-        continue;       // Invalid offsets
-      }
-      parse_alphanumeric(flex, phaseptr, PhaseNo, mw1, mw2, flex_groupmessage);
-                }
-    else if (is_numeric_page(flex))
-      parse_numeric(flex, phaseptr, PhaseNo, j);
-    else if (is_tone_page(flex))
-      parse_tone_only(flex, phaseptr, PhaseNo, j); // parse_tone_only(flex, PhaseNo);
-    else
-      parse_unknown(flex, phaseptr, PhaseNo, mw1, mw2);
+    // long addresses eat 2 aw and 2 vw, so skip the next aw-vw pair
+    if (flex->Decode.long_address) {
+      i++;
+    }
   }
 }
 
@@ -903,7 +947,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 static void clear_phase_data(struct Flex * flex) {
   if (flex==NULL) return;
   int i;
-  for (i=0; i<88; i++) {
+  for (i = 0; i < PHASE_WORDS; i++) {
     flex->Data.PhaseA.buf[i]=0;
     flex->Data.PhaseB.buf[i]=0;
     flex->Data.PhaseC.buf[i]=0;
@@ -1338,7 +1382,7 @@ struct Flex * Flex_New(unsigned int SampleFrequency) {
       flex=NULL;
     }
 
-    for(int g = 0; g < 17; g++)
+    for(int g = 0; g < GROUP_BITS; g++)
     {
       flex->GroupHandler.GroupFrame[g] = -1;
           flex->GroupHandler.GroupCycle[g] = -1;
