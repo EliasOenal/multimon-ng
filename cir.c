@@ -24,6 +24,7 @@
 #include <string.h>
 #include <byteswap.h>
 
+#define MIN(a,b) (((a)<(b))?(a):(b))
 unsigned int CheckMatrix[26][2] = {
         {119, 33554432},
         {743, 16777216},
@@ -162,6 +163,7 @@ void cir_rxbit(struct demod_state *s, unsigned char bit) {
         // use last 64 bits
         static uint32_t sync_header[2] = {0x55555555, 0x0DD4259F};
         uint8_t preamble_errors = __builtin_popcountll(sync_buffer[1] ^ sync_header[0]);
+        preamble_errors = MIN(preamble_errors, __builtin_popcountll(sync_buffer[1] ^ (sync_header[0] << 1)));
         uint8_t frame_sync_errors = __builtin_popcountll(sync_buffer[0] ^ sync_header[1]);
         if ((preamble_errors + frame_sync_errors <= 4) || (preamble_errors <= 6 && frame_sync_errors <= 2)) {
             verbprintf(2, "CIR> SYNC OK error:%d %d\n", preamble_errors, frame_sync_errors);
