@@ -7,6 +7,9 @@
  *      Copyright (C) 2012-2014
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
+ *      Copyright (C) 2022
+ *          Tobias Girstmair (https://gir.st/)
+ *
  *      POCSAG (Post Office Code Standard Advisory Group)
  *      Radio Paging Decoder
  *
@@ -448,38 +451,33 @@ static unsigned int print_msg_numeric(struct l2_state_pocsag *rx, char* buff, un
     return guesstimate;
 }
 
+static unsigned char get7(const unsigned char *buf, int n)
+{
+    /* returns the n-th seven bit word */
+    return ( buf[(n*7)/8]<<8 | buf[(n*7+6)/8] ) >> (n+1)%8;
+}
+
+static unsigned char rev7(unsigned char b)
+{
+    /* reverses the bit order of a seven bit word */
+    return ((b << 6) & 64) | ((b >> 6) & 1) |
+           ((b << 4) & 32) | ((b >> 4) & 2) |
+           ((b << 2) & 16) | ((b >> 2) & 4) |
+           ((b << 0) & 8);
+}
+
 static int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int size)
 {
-    uint32_t data = 0;
-    int datalen = 0;
-    unsigned char *bp = rx->buffer;
-    int len = rx->numnibbles;
+    int len = rx->numnibbles * 4 / 7;
     char* cp = buff;
     int buffree = size-1;
     unsigned char curchr;
     char *tstr;
     int guesstimate = 0;
 
-    while (len > 0)
+    for (int i = 0; i < len; i++)
     {
-        while (datalen < 7 && len > 0) {
-            if (len == 1) {
-                data = (data << 4) | ((*bp >> 4) & 0xf);
-                datalen += 4;
-                len = 0;
-            } else {
-                data = (data << 8) | *bp++;
-                datalen += 8;
-                len -= 2;
-            }
-        }
-        if (datalen < 7)
-            continue;
-        datalen -= 7;
-        curchr = ((data >> datalen) & 0x7f) << 1;
-        curchr = ((curchr & 0xf0) >> 4) | ((curchr & 0x0f) << 4);
-        curchr = ((curchr & 0xcc) >> 2) | ((curchr & 0x33) << 2);
-        curchr = ((curchr & 0xaa) >> 1) | ((curchr & 0x55) << 1);
+        curchr = rev7(get7(rx->buffer, i));
 
         guesstimate += guesstimate_alpha(curchr);
 
@@ -507,35 +505,15 @@ static int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int 
 
 static int print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned int size)
 {
-    uint32_t data = 0;
-    int datalen = 0;
-    unsigned char *bp = rx->buffer;
-    int len = rx->numnibbles;
+    int len = rx->numnibbles * 4 / 7;
     char* cp = buff;
     int buffree = size-1;
     unsigned char curchr;
     char *tstr;
     unsigned int guesstimate = 0;
 
-    while (len > 0) {
-        while (datalen < 7 && len > 0) {
-            if (len == 1) {
-                data = (data << 4) | ((*bp >> 4) & 0xf);
-                datalen += 4;
-                len = 0;
-            } else {
-                data = (data << 8) | *bp++;
-                datalen += 8;
-                len -= 2;
-            }
-        }
-        if (datalen < 7)
-            continue;
-        datalen -= 7;
-        curchr = ((data >> datalen) & 0x7f) << 1;
-        curchr = ((curchr & 0xf0) >> 4) | ((curchr & 0x0f) << 4);
-        curchr = ((curchr & 0xcc) >> 2) | ((curchr & 0x33) << 2);
-        curchr = ((curchr & 0xaa) >> 1) | ((curchr & 0x55) << 1);
+    for (int i = 0; i < len; i++) {
+        curchr = rev7(get7(rx->buffer, i));
 
         guesstimate += guesstimate_alpha(curchr-1);
 
