@@ -57,6 +57,9 @@
 
 #define POCSAG_MESSAGE_DETECTION 0x80000000 // Most significant bit is a one
 
+#define CAESAR_ALPHA 0
+#define CAESAR_SKYPER 1 // skyper messages are ROT-1 enciphered
+
 #define POSCAG
 /* ---------------------------------------------------------------------- */
 
@@ -466,7 +469,7 @@ static unsigned char rev7(unsigned char b)
            ((b << 0) & 8);
 }
 
-static int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int size)
+static int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int size, int caesar)
 {
     int len = rx->numnibbles * 4 / 7;
     char* cp = buff;
@@ -477,7 +480,7 @@ static int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int 
 
     for (int i = 0; i < len; i++)
     {
-        curchr = rev7(get7(rx->buffer, i));
+        curchr = rev7(get7(rx->buffer, i)) - caesar;
 
         guesstimate += guesstimate_alpha(curchr);
 
@@ -498,39 +501,6 @@ static int print_msg_alpha(struct l2_state_pocsag *rx, char* buff, unsigned int 
     }
     *cp = '\0';
 
-    return guesstimate;
-}
-
-/* ---------------------------------------------------------------------- */
-
-static int print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned int size)
-{
-    int len = rx->numnibbles * 4 / 7;
-    char* cp = buff;
-    int buffree = size-1;
-    unsigned char curchr;
-    char *tstr;
-    int guesstimate = 0;
-
-    for (int i = 0; i < len; i++) {
-        curchr = rev7(get7(rx->buffer, i));
-
-        guesstimate += guesstimate_alpha(curchr-1);
-
-        tstr = translate_alpha(curchr-1);
-        if (tstr) {
-            int tlen = strlen(tstr);
-            if (buffree >= tlen) {
-                memcpy(cp, tstr, tlen);
-                cp += tlen;
-                buffree -= tlen;
-            }
-        } else if (buffree > 0) {
-            *cp++ = curchr-1;
-            buffree--;
-        }
-    }
-    *cp = '\0';
     return guesstimate;
 }
 
@@ -564,8 +534,8 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
             int func = 0;
 
             guess_num = print_msg_numeric(&s->l2.pocsag, num_string, sizeof(num_string));
-            guess_alpha = print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string));
-            guess_skyper = print_msg_skyper(&s->l2.pocsag, skyper_string, sizeof(skyper_string));
+            guess_alpha = print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string), CAESAR_ALPHA);
+            guess_skyper = print_msg_alpha(&s->l2.pocsag, skyper_string, sizeof(skyper_string), CAESAR_SKYPER);
 
             func = s->l2.pocsag.function;
 
