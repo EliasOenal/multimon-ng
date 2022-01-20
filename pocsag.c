@@ -428,13 +428,13 @@ static int guesstimate_numeric(const unsigned char cp, int pos)
         return 0;
 }
 
-static unsigned int print_msg_numeric(struct l2_state_pocsag *rx, char* buff, unsigned int size)
+static int print_msg_numeric(struct l2_state_pocsag *rx, char* buff, unsigned int size)
 {
     static const char *conv_table = "084 2.6]195-3U7[";
     unsigned char *bp = rx->buffer;
     int len = rx->numnibbles;
     char* cp = buff;
-    unsigned int guesstimate = 0;
+    int guesstimate = 0;
 
     if ( (unsigned int) len >= size)
         len = size-1;
@@ -510,7 +510,7 @@ static int print_msg_skyper(struct l2_state_pocsag *rx, char* buff, unsigned int
     int buffree = size-1;
     unsigned char curchr;
     char *tstr;
-    unsigned int guesstimate = 0;
+    int guesstimate = 0;
 
     for (int i = 0; i < len; i++) {
         curchr = rev7(get7(rx->buffer, i));
