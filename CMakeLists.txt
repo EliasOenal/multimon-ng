@@ -112,6 +112,7 @@ set( SOURCES ${SOURCES}
 	demod_afsk24_3.c
 	demod_afsk24_2.c
 	demod_afsk12.c
+	demod_flex.c
 	demod_flex_next.c
 	costabi.c
 	costabf.c
