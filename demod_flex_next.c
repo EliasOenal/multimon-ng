@@ -234,7 +234,7 @@ struct Flex_Decode {
 };
 
 
-struct Flex {
+struct Flex_Next {
   struct Flex_Demodulator     Demodulator;
   struct Flex_Modulation      Modulation;
   struct Flex_State           State;
@@ -246,14 +246,14 @@ struct Flex {
 };
 
 
-int is_alphanumeric_page(struct Flex * flex) {
+int is_alphanumeric_page(struct Flex_Next * flex) {
   if (flex==NULL) return 0;
   return (flex->Decode.type == FLEX_PAGETYPE_ALPHANUMERIC ||
       flex->Decode.type == FLEX_PAGETYPE_SECURE);
 }
 
 
-int is_numeric_page(struct Flex * flex) {
+int is_numeric_page(struct Flex_Next * flex) {
   if (flex==NULL) return 0;
   return (flex->Decode.type == FLEX_PAGETYPE_STANDARD_NUMERIC ||
       flex->Decode.type == FLEX_PAGETYPE_SPECIAL_NUMERIC  ||
@@ -261,19 +261,19 @@ int is_numeric_page(struct Flex * flex) {
 }
 
 
-int is_tone_page(struct Flex * flex) {
+int is_tone_page(struct Flex_Next * flex) {
   if (flex==NULL) return 0;
   return (flex->Decode.type == FLEX_PAGETYPE_TONE);
 }
 
 
-int is_binary_page(struct Flex * flex) {
+int is_binary_page(struct Flex_Next * flex) {
   if (flex==NULL) return 0;
   return (flex->Decode.type == FLEX_PAGETYPE_BINARY);
 }
 
 
-unsigned int count_bits(struct Flex * flex, unsigned int data) {
+unsigned int count_bits(struct Flex_Next * flex, unsigned int data) {
   if (flex==NULL) return 0;
 #ifdef USE_BUILTIN_POPCOUNT
   return __builtin_popcount(data);
@@ -290,7 +290,7 @@ unsigned int count_bits(struct Flex * flex, unsigned int data) {
 #endif
 }
 
-static int bch3121_fix_errors(struct Flex * flex, uint32_t * data_to_fix, char PhaseNo) {
+static int bch3121_fix_errors(struct Flex_Next * flex, uint32_t * data_to_fix, char PhaseNo) {
   if (flex==NULL) return -1;
   int i=0;
   int recd[31];
@@ -329,7 +329,7 @@ static int bch3121_fix_errors(struct Flex * flex, uint32_t * data_to_fix, char P
   return decode_error;
 }
 
-static unsigned int flex_sync_check(struct Flex * flex, uint64_t buf) {
+static unsigned int flex_sync_check(struct Flex_Next * flex, uint64_t buf) {
   if (flex==NULL) return 0;
   // 64-bit FLEX sync code:
   // AAAA:BBBBBBBB:CCCC
@@ -358,7 +358,7 @@ static unsigned int flex_sync_check(struct Flex * flex, uint64_t buf) {
 }
 
 
-static unsigned int flex_sync(struct Flex * flex, unsigned char sym) {
+static unsigned int flex_sync(struct Flex_Next * flex, unsigned char sym) {
   if (flex==NULL) return 0;
   int retval=0;
   flex->Sync.syncbuf = (flex->Sync.syncbuf << 1) | ((sym < 2)?1:0);
@@ -378,7 +378,7 @@ static unsigned int flex_sync(struct Flex * flex, unsigned char sym) {
 }
 
 
-static void decode_mode(struct Flex * flex, unsigned int sync_code) {
+static void decode_mode(struct Flex_Next * flex, unsigned int sync_code) {
   if (flex==NULL) return;
 
   // Something is off with these modes:
@@ -416,13 +416,13 @@ static void decode_mode(struct Flex * flex, unsigned int sync_code) {
 }
 
 
-static void read_2fsk(struct Flex * flex, unsigned int sym, unsigned int * dat) {
+static void read_2fsk(struct Flex_Next * flex, unsigned int sym, unsigned int * dat) {
   if (flex==NULL) return;
   *dat = (*dat >> 1) | ((sym > 1)?0x80000000:0);
 }
 
 
-static int decode_fiw(struct Flex * flex) {
+static int decode_fiw(struct Flex_Next * flex) {
   if (flex==NULL) return -1;
   unsigned int fiw = flex->FIW.rawdata;
   int decode_error = bch3121_fix_errors(flex, &fiw, 'F');
@@ -594,7 +594,7 @@ unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int idx) {
 }
 
 
-static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len, int frag, int cont, int flex_groupmessage, int flex_groupbit) {
+static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len, int frag, int cont, int flex_groupmessage, int flex_groupbit) {
         if (flex==NULL) return;
 
         char frag_flag = '?';
@@ -634,7 +634,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, unsi
     verbprintf(0, message);
 }
 
-static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, int j) {
+static void parse_numeric(struct Flex_Next * flex, unsigned int * phaseptr, int j) {
   if (flex==NULL) return;
   unsigned const char flex_bcd[17] = "0123456789 U -][";
 
@@ -684,7 +684,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, int j) {
 }
 
 
-static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, int j) {
+static void parse_tone_only(struct Flex_Next * flex, unsigned int * phaseptr, int j) {
   if (flex==NULL) return;
   unsigned const char flex_bcd[17] = "0123456789 U -][";
   // message type
@@ -711,7 +711,7 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, int j) 
   }
 }
 
-static void parse_binary(struct Flex * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len) {
+static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, unsigned int mw1, unsigned int len) {
   if (flex==NULL) return;
   for (unsigned int i = 0; i < len; i++) {
     verbprintf(0, "%08x", phaseptr[mw1 + i]);
@@ -721,7 +721,7 @@ static void parse_binary(struct Flex * flex, unsigned int * phaseptr, unsigned i
 }
 
 
-static void decode_phase(struct Flex * flex, char PhaseNo) {
+static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
   if (flex==NULL) return;
   verbprintf(3, "FLEX: Decoding phase %c\n", PhaseNo);
 
@@ -944,7 +944,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
 }
 
 
-static void clear_phase_data(struct Flex * flex) {
+static void clear_phase_data(struct Flex_Next * flex) {
   if (flex==NULL) return;
   int i;
   for (i = 0; i < PHASE_WORDS; i++) {
@@ -965,7 +965,7 @@ static void clear_phase_data(struct Flex * flex) {
 }
 
 
-static void decode_data(struct Flex * flex) {
+static void decode_data(struct Flex_Next * flex) {
   if (flex==NULL) return;
 
   if (flex->Sync.baud == 1600) {
@@ -989,7 +989,7 @@ static void decode_data(struct Flex * flex) {
 }
 
 
-static int read_data(struct Flex * flex, unsigned char sym) {
+static int read_data(struct Flex_Next * flex, unsigned char sym) {
   if (flex==NULL) return -1;
   // Here is where we output a 1 or 0 on each phase according
   // to current FLEX mode and symbol value.  Unassigned phases
@@ -1079,7 +1079,7 @@ static int read_data(struct Flex * flex, unsigned char sym) {
 }
 
 
-static void report_state(struct Flex * flex) {
+static void report_state(struct Flex_Next * flex) {
   if (flex->State.Current != flex->State.Previous) {
     flex->State.Previous = flex->State.Current;
 
@@ -1106,7 +1106,7 @@ static void report_state(struct Flex * flex) {
 }
 
 //Called for each received symbol
-static void flex_sym(struct Flex * flex, unsigned char sym) {
+static void flex_sym(struct Flex_Next * flex, unsigned char sym) {
   if (flex==NULL) return;
   /*If the signal has a negative polarity, the symbols must be inverted*/
   /*Polarity is determined during the IDLE/sync word checking phase*/
@@ -1197,7 +1197,7 @@ static void flex_sym(struct Flex * flex, unsigned char sym) {
   }
 }
 
-int buildSymbol(struct Flex * flex, double sample) {
+int buildSymbol(struct Flex_Next * flex, double sample) {
         if (flex == NULL) return 0;
 
         const int64_t phase_max = 100 * flex->Demodulator.sample_freq;                           // Maximum value for phase (calculated to divide by sample frequency without remainder)
@@ -1296,7 +1296,7 @@ int buildSymbol(struct Flex * flex, double sample) {
 
 }
 
-void Flex_Demodulate(struct Flex * flex, double sample) {
+void Flex_Demodulate(struct Flex_Next * flex, double sample) {
   if(flex == NULL) return;
 
   if (buildSymbol(flex, sample) == 1) {
@@ -1351,7 +1351,7 @@ void Flex_Demodulate(struct Flex * flex, double sample) {
   report_state(flex);
 }
 
-void Flex_Delete(struct Flex * flex) {
+void Flex_Delete(struct Flex_Next * flex) {
   if (flex==NULL) return;
 
   if (flex->Decode.BCHCode!=NULL) {
@@ -1363,10 +1363,10 @@ void Flex_Delete(struct Flex * flex) {
 }
 
 
-struct Flex * Flex_New(unsigned int SampleFrequency) {
-  struct Flex *flex=(struct Flex *)malloc(sizeof(struct Flex));
+struct Flex_Next * Flex_New(unsigned int SampleFrequency) {
+  struct Flex_Next *flex=(struct Flex_Next *)malloc(sizeof(struct Flex_Next));
   if (flex!=NULL) {
-    memset(flex, 0, sizeof(struct Flex));
+    memset(flex, 0, sizeof(struct Flex_Next));
 
     flex->Demodulator.sample_freq=SampleFrequency;
     // The baud rate of first syncword and FIW is always 1600, so set that
@@ -1393,31 +1393,31 @@ struct Flex * Flex_New(unsigned int SampleFrequency) {
 }
 
 
-static void flex_demod(struct demod_state *s, buffer_t buffer, int length) {
+static void flex_next_demod(struct demod_state *s, buffer_t buffer, int length) {
   if (s==NULL) return;
-  if (s->l1.flex==NULL) return;
+  if (s->l1.flex_next==NULL) return;
   int i;
   for (i=0; i<length; i++) {
-    Flex_Demodulate(s->l1.flex, buffer.fbuffer[i]);
+    Flex_Demodulate(s->l1.flex_next, buffer.fbuffer[i]);
   }
 }
 
 
-static void flex_init(struct demod_state *s) {
+static void flex_next_init(struct demod_state *s) {
   if (s==NULL) return;
-  s->l1.flex=Flex_New(FREQ_SAMP);
+  s->l1.flex_next=Flex_New(FREQ_SAMP);
 }
 
 
-static void flex_deinit(struct demod_state *s) {
+static void flex_next_deinit(struct demod_state *s) {
   if (s==NULL) return;
-  if (s->l1.flex==NULL) return;
+  if (s->l1.flex_next==NULL) return;
 
-  Flex_Delete(s->l1.flex);
-  s->l1.flex=NULL;
+  Flex_Delete(s->l1.flex_next);
+  s->l1.flex_next=NULL;
 }
 
 
-const struct demod_param demod_flex = {
-  "FLEX", true, FREQ_SAMP, FILTLEN, flex_init, flex_demod, flex_deinit
+const struct demod_param demod_flex_next = {
+  "FLEX_NEXT", true, FREQ_SAMP, FILTLEN, flex_next_init, flex_next_demod, flex_next_deinit
 };
