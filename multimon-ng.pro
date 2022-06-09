@@ -47,6 +47,7 @@ SOURCES += \
     demod_afsk24_2.c \
     demod_afsk12.c \
     demod_flex.c \
+    demod_flex_next.c \
     BCHCode.c \
     costabi.c \
     costabf.c \
