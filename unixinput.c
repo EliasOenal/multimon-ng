@@ -499,6 +499,7 @@ static void input_file(unsigned int sample_rate, unsigned int overlap,
                 perror("dup2");
             close(pipedes[1]); /* close writing pipe end */
             execlp("sox", "sox", repeatable_sox?"-R":"-V2", mute_sox?"-V1":"-V2",
+                   "--ignore-length",
                    "-t", type, fname,
                    "-t", "raw", "-esigned-integer", "-b16", "-r", srate, "-", "remix", "1",
                    NULL);
