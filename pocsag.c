@@ -327,6 +327,34 @@ bool pocsag_init_charset(char *charset)
 			trtab[0x7e] = "ss";
 		#endif
 	}
+	else if (strcmp(charset,"DK")==0) // Danish charset /JT Ref. https://www.ascii-code.com
+	{
+		#ifdef CHARSET_UTF8
+			trtab[0x5b] = "Æ";
+			trtab[0x5c] = "Ø";
+			trtab[0x5d] = "Å";
+
+			trtab[0x7b] = "æ";
+			trtab[0x7c] = "ø";
+			trtab[0x7d] = "å";
+		#elif defined CHARSET_LATIN1
+			trtab[0x5b] = "\306";
+			trtab[0x5c] = "\330";
+			trtab[0x5d] = "\305";
+
+			trtab[0x7b] = "\346";
+			trtab[0x7c] = "\370";
+			trtab[0x7d] = "\345";
+		#else
+			trtab[0x5b] = "AE";
+			trtab[0x5c] = "OE";
+			trtab[0x5d] = "Aa";
+
+			trtab[0x7b] = "ae";
+			trtab[0x7c] = "oe";
+			trtab[0x7d] = "aa";
+		#endif
+	}
 	else if (strcmp(charset,"SE")==0) // Swedish charset
 	{
 		#ifdef CHARSET_UTF8
@@ -391,7 +419,7 @@ bool pocsag_init_charset(char *charset)
 	else
 	{
 		fprintf(stderr, "Error: invalid POCSAG charset %s\n", charset);
-		fprintf(stderr, "Use: US,FR,DE,SE,SI\n");
+		fprintf(stderr, "Use: US,FR,DE,DK,SE,SI\n");
 		charset = "US";
 		return false; 
 	}
