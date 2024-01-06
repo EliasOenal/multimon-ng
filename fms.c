@@ -264,8 +264,9 @@ static void fms_disp_packet(uint64_t message)
     uint8_t crc;         // Redundanz
 
     fms_print_message_hex(message);
-
-    verbprintf(0, "FMS: %08x%04x", message >> 32, ((uint32_t)message >> 16));
+    
+    verbprintf(0, "FMS: %0x", message >> 48);
+    verbprintf(0, "%x", message >> 16);
 
     if(!fms_justhex)
     {
