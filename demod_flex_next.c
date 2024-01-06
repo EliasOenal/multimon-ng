@@ -631,7 +631,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                 flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
                 flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
         } 
-    verbprintf(0, message);
+    verbprintf(0, "%s", message);
 }
 
 static void parse_numeric(struct Flex_Next * flex, unsigned int * phaseptr, int j) {
