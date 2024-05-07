@@ -54,16 +54,15 @@ static void poc12_init(struct demod_state *s)
 static void poc12_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	if (s->l1.poc12.subsamp) {
-		int numfill = SUBSAMP - s->l1.poc12.subsamp;
-		if (length < numfill) {
-			s->l1.poc12.subsamp += length;
+		if (length <= (int)s->l1.poc12.subsamp) {
+			s->l1.poc12.subsamp -= length;
 			return;
 		}
-		buffer.fbuffer += numfill;
-		length -= numfill;
+		buffer.fbuffer += s->l1.poc12.subsamp;
+		length -= s->l1.poc12.subsamp;
 		s->l1.poc12.subsamp = 0;
 	}
-	for (; length >= SUBSAMP; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
+	for (; length > 0; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
 		s->l1.poc12.dcd_shreg <<= 1;
 		s->l1.poc12.dcd_shreg |= ((*buffer.fbuffer) > 0);
 		verbprintf(10, "%c", '0'+(s->l1.poc12.dcd_shreg & 1));
@@ -82,7 +81,7 @@ static void poc12_demod(struct demod_state *s, buffer_t buffer, int length)
 			pocsag_rxbit(s, s->l1.poc12.dcd_shreg & 1);
 		}
 	}
-	s->l1.poc12.subsamp = length;
+	s->l1.poc12.subsamp = -length;
 }
 
 static void poc12_deinit(struct demod_state *s)
