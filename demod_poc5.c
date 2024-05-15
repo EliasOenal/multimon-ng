@@ -1,8 +1,10 @@
 /*
  *      demod_poc5.c -- 512 baud POCSAG demodulator
  *
- *      Copyright (C) 1996  
+ *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
+ *      Copyright (C) 2024
+ *          Marat Fayzullin (luarvique@gmail.com)
  *
  *      POCSAG (Post Office Code Standard Advisory Group)
  *      Radio Paging Decoder

@@ -1,7 +1,7 @@
 /*
  *      demod_afsk12.c -- 1200 baud AFSK demodulator
  *
- *      Copyright (C) 1996  
+ *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
  *      This program is free software; you can redistribute it and/or modify
