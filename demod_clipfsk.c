@@ -1,7 +1,7 @@
 /*
  *      demod_clipfsk.c -- 1200 baud FSK demodulator
  *
- *      Copyright (C) 2007  
+ *      Copyright (C) 2007, 2024
  *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
@@ -78,16 +78,15 @@ static void clipfsk_demod(struct demod_state *s, buffer_t buffer, int length)
 	unsigned char curbit;
 
 	if (s->l1.clipfsk.subsamp) {
-		int numfill = SUBSAMP - s->l1.clipfsk.subsamp;
-		if (length < numfill) {
-			s->l1.clipfsk.subsamp += length;
+		if (length <= (int)s->l1.clipfsk.subsamp) {
+			s->l1.clipfsk.subsamp -= length;
 			return;
 		}
-		buffer.fbuffer += numfill;
-		length -= numfill;
+		buffer.fbuffer += s->l1.clipfsk.subsamp;
+		length -= s->l1.clipfsk.subsamp;
 		s->l1.clipfsk.subsamp = 0;
 	}
-	for (; length >= SUBSAMP; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
+	for (; length > 0; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
 		f = 	fsqr(mac(buffer.fbuffer, corr_mark_i, CORRLEN)) +
 			fsqr(mac(buffer.fbuffer, corr_mark_q, CORRLEN)) -
 			fsqr(mac(buffer.fbuffer, corr_space_i, CORRLEN)) -
@@ -112,7 +111,7 @@ static void clipfsk_demod(struct demod_state *s, buffer_t buffer, int length)
 			clip_rxbit(s, curbit);
 		}
 	}
-	s->l1.clipfsk.subsamp = length;
+	s->l1.clipfsk.subsamp = -length;
 }
 
 /* ---------------------------------------------------------------------- */

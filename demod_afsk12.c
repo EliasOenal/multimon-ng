@@ -3,6 +3,8 @@
  *
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
+ *      Copyright (C) 2024
+ *          Marat Fayzullin (luarvique@gmail.com)
  *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
@@ -79,16 +81,15 @@ static void afsk12_demod(struct demod_state *s, buffer_t buffer, int length)
 	unsigned char curbit;
 
 	if (s->l1.afsk12.subsamp) {
-		int numfill = SUBSAMP - s->l1.afsk12.subsamp;
-		if (length < numfill) {
-			s->l1.afsk12.subsamp += length;
+		if (length <= (int)s->l1.afsk12.subsamp) {
+			s->l1.afsk12.subsamp -= length;
 			return;
 		}
-		buffer.fbuffer += numfill;
-		length -= numfill;
+		buffer.fbuffer += s->l1.afsk12.subsamp;
+		length -= s->l1.afsk12.subsamp;
 		s->l1.afsk12.subsamp = 0;
 	}
-	for (; length >= SUBSAMP; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
+	for (; length > 0; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
 		f = fsqr(mac(buffer.fbuffer, corr_mark_i, CORRLEN)) +
 			fsqr(mac(buffer.fbuffer, corr_mark_q, CORRLEN)) -
 			fsqr(mac(buffer.fbuffer, corr_space_i, CORRLEN)) -
@@ -116,7 +117,7 @@ static void afsk12_demod(struct demod_state *s, buffer_t buffer, int length)
 			hdlc_rxbit(s, curbit);
 		}
 	}
-	s->l1.afsk12.subsamp = length;
+	s->l1.afsk12.subsamp = -length;
 }
 
 /* ---------------------------------------------------------------------- */
