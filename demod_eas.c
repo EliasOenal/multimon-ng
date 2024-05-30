@@ -5,6 +5,8 @@
 *
 *      Copyright (C) 2000
 *          A. Maitland Bottoms <bottoms@debian.org>
+*      Copyright (C) 2024
+*          Marat Fayzullin <luarvique@gmail.com>
 *
 *      Licensed under same terms and based upon the
 *         demod_afsk12.c -- 1200 baud AFSK demodulator
@@ -253,20 +255,19 @@ static void eas_demod(struct demod_state *s, buffer_t buffer, int length)
     float f;
     unsigned char curbit;
     float dll_gain;
-    
+
     if (s->l1.eas.subsamp) {
-        int numfill = SUBSAMP - s->l1.eas.subsamp;
-        if (length < numfill) {
-            s->l1.eas.subsamp += length;
+        if (length <= (int)s->l1.eas.subsamp) {
+            s->l1.eas.subsamp -= length;
             return;
         }
-        buffer.fbuffer += numfill;
-        length -= numfill;
+        buffer.fbuffer += s->l1.eas.subsamp;
+        length -= s->l1.eas.subsamp;
         s->l1.eas.subsamp = 0;
     }
     // We use a sliding window correlator which advances by SUBSAMP
     // each time. One correlator sample is output for each SUBSAMP symbols
-    for (; length >= SUBSAMP; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
+    for (; length > 0; length -= SUBSAMP, buffer.fbuffer += SUBSAMP) {
         f = fsqr(mac(buffer.fbuffer, eascorr_mark_i, CORRLEN)) +
             fsqr(mac(buffer.fbuffer, eascorr_mark_q, CORRLEN)) -
             fsqr(mac(buffer.fbuffer, eascorr_space_i, CORRLEN)) -
@@ -286,14 +287,13 @@ static void eas_demod(struct demod_state *s, buffer_t buffer, int length)
         {
             s->l1.eas.dcd_integrator -= 1;
         }
-           
+
         verbprintf(9, "%c", '0'+(s->l1.afsk12.dcd_shreg & 1));
-        
-        
+
         /*
          * check if transition occurred on time
          */
-        
+
         if (s->l2.eas.state != EAS_L2_IDLE)
         dll_gain = DLL_GAIN_SYNC;
         else
@@ -313,7 +313,6 @@ static void eas_demod(struct demod_state *s, buffer_t buffer, int length)
             else
             {
                 // after center; check for increment
-                
                 if (s->l1.eas.sphase < (0x10000u - SPHASEINC/2))
                 {
                     s->l1.eas.sphase += MIN((int)((0x10000u - s->l1.eas.sphase)*
@@ -325,20 +324,20 @@ static void eas_demod(struct demod_state *s, buffer_t buffer, int length)
         }
 
         s->l1.eas.sphase += SPHASEINC;
-        
+
         if (s->l1.eas.sphase >= 0x10000u) {
             // end of bit period. 
             s->l1.eas.sphase = 1;      //was &= 0xffffu;
             s->l1.eas.lasts >>= 1;
-            
+
             // if at least half of the values in the integrator are 1, 
             // declare a 1 received
             s->l1.afsk12.lasts |= ((s->l1.eas.dcd_integrator >= 0) << 7) & 0x80u;
-            
+
             curbit = (s->l1.eas.lasts >> 7) & 0x1u;
             verbprintf(9, "  ");
             verbprintf(7, "%c", '0'+curbit);
-            
+
             // check for sync sequence
             // do not resync when we're reading a message!
             if (s->l1.eas.lasts == PREAMBLE
@@ -369,12 +368,11 @@ static void eas_demod(struct demod_state *s, buffer_t buffer, int length)
                   s->l1.eas.byte_counter = 0;
                }
             }
-            
-            
+
             verbprintf(9, "\n");
         }
     }
-    s->l1.eas.subsamp = length;
+    s->l1.eas.subsamp = -length;
 }
 
 /* ---------------------------------------------------------------------- */
