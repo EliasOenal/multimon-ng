@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2023
+ *      Copyright (C) 2012-2024
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      This program is free software; you can redistribute it and/or modify
@@ -802,9 +802,9 @@ intypefound:
 
     if ( !quietflg )
     { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng 1.3.0\n"
+    fprintf(stderr, "multimon-ng 1.3.1\n"
         "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-        "  (C) 2012-2023 by Elias Oenal\n"
+        "  (C) 2012-2024 by Elias Oenal\n"
         "Available demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
         fprintf(stderr, " %s", dem[i]->name);
