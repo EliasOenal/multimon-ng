@@ -91,6 +91,12 @@ rtl_fm -s 22050 -f 123.456M -g -9.9 | tee >(flac -8 --endian=little --channels=1
 2. Flac uses `-8` here, if you run an a resource constraint device you may want to lower this value
 3. The Flac `-o` argument value contains `$EPOCHSECONDS` to make unique files when this gets restarted
 
+To replay the recorded flac file to multimon-ng (requires sox):
+
+```sg
+flac -d --stdout ~/recordings/rtlf/rtlfm.1725033204.flac | multimon-ng -v 0 -a FLEX_NEXT -t flac -
+```
+
 ## Packaging
 
 ```
