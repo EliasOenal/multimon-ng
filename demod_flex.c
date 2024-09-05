@@ -22,7 +22,8 @@
  *      Boston, MA 02110-1301, USA.
  */
 /*
- *  Version 0.9.3v (28 Jan 2020)
+ *  Modification made by Ramon Smits (ramon@ramonsmits.com)
+ *   - PR #221 Estimate the total offset based on the estimated passed full cycles
  *  Modification made by bierviltje and implemented by Bruce Quinton (Zanoroy@gmail.com)
  *   - Issue #123 created by bierviltje (https://github.com/bierviltje) - Feature request: FLEX: put group messages in an array/list
  *   - This also changed the delimiter to a | rather than a space
@@ -157,8 +158,8 @@ struct Flex_Demodulator {
 
 struct Flex_GroupHandler {
   int64_t                     GroupCodes[17][1000];
-  int                     GroupCycle[17];
-  int             GroupFrame[17];
+  int                         GroupCycle[17];
+  int                         GroupFrame[17];
 };
 
 struct Flex_Modulation {
@@ -227,7 +228,7 @@ struct Flex {
   struct Flex_FIW             FIW;
   struct Flex_Data            Data;
   struct Flex_Decode          Decode;
-        struct Flex_GroupHandler    GroupHandler;
+  struct Flex_GroupHandler    GroupHandler;
 };
 
 
@@ -396,6 +397,8 @@ static void read_2fsk(struct Flex * flex, unsigned int sym, unsigned int * dat) 
   *dat = (*dat >> 1) | ((sym > 1)?0x80000000:0);
 }
 
+int estimatedPassedHourlySeconds = 0;
+int lastTimeseconds = -1;
 
 static int decode_fiw(struct Flex * flex) {
   if (flex==NULL) return -1;
@@ -425,12 +428,36 @@ static int decode_fiw(struct Flex * flex) {
 
   if (checksum == 0xF) {
     int timeseconds = flex->FIW.cycleno*4*60 + flex->FIW.frameno*4*60/128;
-    verbprintf(2, "FLEX: FrameInfoWord: cycleno=%02i frameno=%03i fix3=0x%02x time=%02i:%02i\n",
+
+    if(lastTimeseconds == -1) // Initialize
+    {
+      // Estimate the offset based on first detected frame, calculate hour offset of first frame
+      estimatedPassedHourlySeconds -= timeseconds;
+    }
+
+    bool isHourlyRollover = lastTimeseconds > timeseconds;
+    lastTimeseconds = timeseconds;
+    if(isHourlyRollover) estimatedPassedHourlySeconds += 3600;
+
+    int estimatedOffset = estimatedPassedHourlySeconds + timeseconds;
+
+    int seconds = estimatedOffset;
+    int days = seconds/86400; seconds -= 86400*days;
+    int hours = seconds/3600; seconds -= 3600*hours;
+    int minutes = seconds/60; seconds -= 60*minutes;
+
+    verbprintf(2, "FLEX: FrameInfoWord: cycleno=%02i frameno=%03i fix3=0x%02x time=%02i:%02i offset=%i.%02i:%02i:%02i\n",
         flex->FIW.cycleno,
         flex->FIW.frameno,
         flex->FIW.fix3,
         timeseconds/60,
-        timeseconds%60);
+        timeseconds%60,
+        days,
+        hours,
+        minutes,
+        seconds
+        );
+
     // Lets check the FrameNo against the expected group message frames, if we have 'Missed a group message' tell the user and clear the Cap Codes
                 for(int g = 0; g < 17 ;g++)
                 {
