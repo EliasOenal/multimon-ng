@@ -23,6 +23,8 @@
  */
 /*
  *  Modification made by Ramon Smits (ramon@ramonsmits.com)
+ *   - PR #222 Suppress timestamp with argument `--flex-no-ts` which is useful when comparing output of this and future versions based on the same input file
+ *  Modification made by Ramon Smits (ramon@ramonsmits.com)
  *   - PR #221 Estimate the total offset based on the estimated passed full cycles
  *  Modification made by bierviltje and implemented by Bruce Quinton (Zanoroy@gmail.com)
  *   - Issue #123 created by bierviltje (https://github.com/bierviltje) - Feature request: FLEX: put group messages in an array/list
@@ -119,6 +121,8 @@
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
+
+int flex_disable_timestamp;
 
 
 enum Flex_PageTypeEnum {
@@ -615,12 +619,23 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         }
 */
 
-// Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         static char pt_out[4096] = { 0 };
-        int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
+
+        int pt_offset;
+
+        if(flex_disable_timestamp)
+        {
+          pt_offset = sprintf(pt_out, "FLEX|%i/%i/%c/%c|%02i.%03i|%09lld",
+                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+        }
+        else
+        {
+          pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
                         gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                         flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+        }
 
+        // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         if(flex_groupmessage == 1) {
                 int groupbit = flex->Decode.capcode-2029568;
                 if(groupbit < 0) return;
