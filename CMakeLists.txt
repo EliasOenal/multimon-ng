@@ -65,7 +65,7 @@ else( PULSE_AUDIO_SUPPORT )
 endif( PULSE_AUDIO_SUPPORT )
 
 if( NOT MSVC )
-	add_definitions( "-std=gnu99" )
+	add_definitions( "-std=gnu11" )
 endif( NOT MSVC )
 add_definitions( "-DMAX_VERBOSE_LEVEL=3" "-DCHARSET_UTF8" )
 
