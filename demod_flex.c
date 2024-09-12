@@ -122,7 +122,7 @@
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
 
-int flex_disable_timestamp;
+int flex_disable_timestamp = 0;
 
 
 enum Flex_PageTypeEnum {
