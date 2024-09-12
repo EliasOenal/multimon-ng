@@ -23,6 +23,8 @@
  */
 /*
  *  Modification made by Ramon Smits (ramon@ramonsmits.com)
+ *   - PR #222 Suppress timestamp with argument `--flex-no-ts` which is useful when comparing output of this and future versions based on the same input file
+ *  Modification made by Ramon Smits (ramon@ramonsmits.com)
  *   - PR #221 Estimate the total offset based on the estimated passed full cycles
  *  Modification made by bierviltje and implemented by Bruce Quinton (Zanoroy@gmail.com)
  *   - Issue #123 created by bierviltje (https://github.com/bierviltje) - Feature request: FLEX: put group messages in an array/list
@@ -119,6 +121,8 @@
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
+
+int flex_disable_timestamp = 0;
 
 
 enum Flex_PageTypeEnum {
@@ -615,12 +619,23 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         }
 */
 
-// Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         static char pt_out[4096] = { 0 };
-        int pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
+
+        int pt_offset;
+
+        if(flex_disable_timestamp)
+        {
+          pt_offset = sprintf(pt_out, "FLEX|%i/%i/%c/%c|%02i.%03i|%09lld",
+                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+        }
+        else
+        {
+          pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
                         gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                         flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+        }
 
+        // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         if(flex_groupmessage == 1) {
                 int groupbit = flex->Decode.capcode-2029568;
                 if(groupbit < 0) return;
@@ -652,9 +667,19 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
+  if(flex_disable_timestamp)
+  {
+    verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|NUM ",
+        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  }
+  else
+  {
+    verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM ",
+        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  }
+  
   // Get first dataword from message field or from second
   // vector word if long address
   int dw;
@@ -711,7 +736,18 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
   
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec, flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+
+  if(flex_disable_timestamp)
+  {
+    verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|TON ",
+      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  }
+  else
+  {
+    verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON ",
+      gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  }
 
   // message type
   // 1=tone-only, 0=short numeric
@@ -742,9 +778,19 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
   if (flex==NULL) return;
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
 
+  if(flex_disable_timestamp)
+  {
+    verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|UNK",
+        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  }
+  else
+  {
+    verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK",
+        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  }
+  
   int i;
   for (i = mw1; i <= mw2; i++) {
     verbprintf(0, " %08x", phaseptr[i]);

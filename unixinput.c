@@ -110,6 +110,8 @@ extern int cw_threshold;
 extern bool cw_disable_auto_threshold;
 extern bool cw_disable_auto_timing;
 
+extern int flex_disable_timestamp;
+
 void quit(void);
 
 /* ---------------------------------------------------------------------- */
@@ -569,35 +571,37 @@ static const char usage_str[] = "\n"
         "Usage: %s [file] [file] [file] ...\n"
         "  If no [file] is given, input will be read from your default sound\n"
         "  hardware. A filename of \"-\" denotes standard input.\n"
-        "  -t <type>  : Input file type (any other type than raw requires sox)\n"
-        "  -a <demod> : Add demodulator\n"
-        "  -s <demod> : Subtract demodulator\n"
-        "  -c         : Remove all demodulators (must be added with -a <demod>)\n"
-        "  -q         : Quiet\n"
-        "  -v <level> : Level of verbosity (e.g. '-v 3')\n"
-        "               For POCSAG and MORSE_CW '-v1' prints decoding statistics.\n"
-        "  -h         : This help\n"
-        "  -A         : APRS mode (TNC2 text output)\n"
-        "  -m         : Mute SoX warnings\n"
-        "  -r         : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
-        "  -n         : Don't flush stdout, increases performance.\n"
-        "  -j         : FMS: Just output hex data and CRC, no parsing.\n"
-        "  -e         : POCSAG: Hide empty messages.\n"
-        "  -u         : POCSAG: Heuristically prune unlikely decodes.\n"
-        "  -i         : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
-        "  -p         : POCSAG: Show partially received messages.\n"
-        "  -f <mode>  : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
-        "                       (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
-        "  -b <level> : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
-        "                       Lower levels increase performance and lower false positives.\n"
-        "  -C <cs>    : POCSAG: Set Charset.\n"
-        "  -o         : CW: Set threshold for dit detection (default: 500)\n"
-        "  -d         : CW: Dit length in ms (default: 50)\n"
-        "  -g         : CW: Gap length in ms (default: 50)\n"
-        "  -x         : CW: Disable auto threshold detection\n"
-        "  -y         : CW: Disable auto timing detection\n"
-        "  --timestamp: Add a time stamp in front of every printed line\n"
-        "  --label    : Add a label to the front of every printed line\n"
+        "  -t <type>    : Input file type (any other type than raw requires sox)\n"
+        "  -a <demod>   : Add demodulator\n"
+        "  -s <demod>   : Subtract demodulator\n"
+        "  -c           : Remove all demodulators (must be added with -a <demod>)\n"
+        "  -q           : Quiet\n"
+        "  -v <level>   : Level of verbosity (e.g. '-v 3')\n"
+        "                 For POCSAG and MORSE_CW '-v1' prints decoding statistics.\n"
+        "  -h           : This help\n"
+        "  -A           : APRS mode (TNC2 text output)\n"
+        "  -m           : Mute SoX warnings\n"
+        "  -r           : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
+        "  -n           : Don't flush stdout, increases performance.\n"
+        "  -j           : FMS: Just output hex data and CRC, no parsing.\n"
+        "  -e           : POCSAG: Hide empty messages.\n"
+        "  -u           : POCSAG: Heuristically prune unlikely decodes.\n"
+        "  -i           : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
+        "  -p           : POCSAG: Show partially received messages.\n"
+        "  -f <mode>    : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
+        "                         (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
+        "  -b <level>   : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
+        "                         Lower levels increase performance and lower false positives.\n"
+        "  -C <cs>      : POCSAG: Set Charset.\n"
+        "  -o           : CW: Set threshold for dit detection (default: 500)\n"
+        "  -d           : CW: Dit length in ms (default: 50)\n"
+        "  -g           : CW: Gap length in ms (default: 50)\n"
+        "  -x           : CW: Disable auto threshold detection\n"
+        "  -y           : CW: Disable auto timing detection\n"
+        "  --timestamp  : Add a time stamp in front of every printed line\n"
+        "  --label      : Add a label to the front of every printed line\n"
+        "  --flex-no-ts : FLEX: Do not add a timestamp to the FLEX demodulator output\n"
+        "\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
         "   usually 22050 Hz. Raw input is assumed and required if piped input is used.\n";
@@ -617,6 +621,7 @@ int main(int argc, char *argv[])
     static struct option long_options[] =
       {
         {"timestamp", no_argument, &timestamp, 1},
+        {"flex-no-ts", no_argument, &flex_disable_timestamp, 1},
         {"label", required_argument, NULL, 'l'},
         {"charset", required_argument, NULL, 'C'},
         {0, 0, 0, 0}
