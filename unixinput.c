@@ -91,6 +91,7 @@ static int integer_only = true;
 static bool dont_flush = false;
 static bool is_startline = true;
 static int timestamp = 0;
+static int iso8601 = 0;
 static char *label = NULL;
 
 extern bool fms_justhex;
@@ -119,8 +120,6 @@ void quit(void);
 void _verbprintf(int verb_level, const char *fmt, ...)
 {
 	char time_buf[20];
-	time_t t;
-	struct tm* tm_info;
 
     if (verb_level > verbose_level)
         return;
@@ -133,10 +132,22 @@ void _verbprintf(int verb_level, const char *fmt, ...)
             fprintf(stdout, "%s: ", label);
         
         if (timestamp) {
-            t = time(NULL);
-            tm_info = localtime(&t);
-            strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
-            fprintf(stdout, "%s: ", time_buf);
+            if(iso8601)
+            {
+                struct timespec ts;
+                timespec_get(&ts, TIME_UTC);
+                strftime(time_buf, sizeof time_buf, "%FT%T", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
+                fprintf(stdout, "%s.%06ld: ", time_buf, ts.tv_nsec/1000); //2024-09-13T20:35:30.156337
+            }
+            else
+            {
+                time_t t;
+                struct tm* tm_info;
+                t = time(NULL);
+                tm_info = localtime(&t);
+                strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", tm_info);
+                fprintf(stdout, "%s: ", time_buf);
+            }
         }
 
         is_startline = false;
@@ -599,6 +610,7 @@ static const char usage_str[] = "\n"
         "  -x           : CW: Disable auto threshold detection\n"
         "  -y           : CW: Disable auto timing detection\n"
         "  --timestamp  : Add a time stamp in front of every printed line\n"
+        "  --iso8601    : Use UTC timestamp in ISO 8601 format that includes microseconds\n"
         "  --label      : Add a label to the front of every printed line\n"
         "  --flex-no-ts : FLEX: Do not add a timestamp to the FLEX demodulator output\n"
         "\n"
@@ -622,6 +634,7 @@ int main(int argc, char *argv[])
       {
         {"timestamp", no_argument, &timestamp, 1},
         {"flex-no-ts", no_argument, &flex_disable_timestamp, 1},
+        {"iso8601", no_argument, &iso8601, 1},
         {"label", required_argument, NULL, 'l'},
         {"charset", required_argument, NULL, 'C'},
         {0, 0, 0, 0}
