@@ -652,8 +652,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 flex->GroupHandler.GroupFrame[groupbit] = -1;
                 flex->GroupHandler.GroupCycle[groupbit] = -1;
         } 
-        pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s\n", message);
-        verbprintf(0, "%s", pt_out);
+        pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s", message);
+        verbprintf(0, "%s\n", pt_out);
 }
 
 static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
