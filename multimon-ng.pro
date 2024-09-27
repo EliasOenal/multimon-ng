@@ -17,7 +17,8 @@ HEADERS += \
     multimon.h \
     gen.h \
     filter.h \
-    filter-i386.h
+    filter-i386.h \
+    cJSON.h
 
 SOURCES += \
     unixinput.c \
@@ -56,7 +57,8 @@ SOURCES += \
     demod_eas.c \
     demod_morse.c \
     demod_dumpcsv.c \
-    demod_x10.c
+    demod_x10.c \
+    cJSON.c
 
 macx{
 DEFINES += DUMMY_AUDIO
