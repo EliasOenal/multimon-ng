@@ -368,5 +368,7 @@ void xdisp_terminate(int cnum);
 int xdisp_start(void);
 int xdisp_update(int cnum, float *f);
 
+void print_json(int argc, char **argv);
+
 /* ---------------------------------------------------------------------- */
 #endif /* _MULTIMON_H */

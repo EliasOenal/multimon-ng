@@ -71,6 +71,8 @@ int pocsag_show_partial_decodes = 0;
 int pocsag_heuristic_pruning = 0;
 int pocsag_prune_empty = 0;
 
+extern int json_mode;
+
 /* ---------------------------------------------------------------------- */
 
 
@@ -542,14 +544,27 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
     if(pocsag_prune_empty && (s->l2.pocsag.numnibbles == 0))
         return;
 
+    cJSON *json_output = cJSON_CreateObject();
+//    if (json_mode) {
+//    }
+
     if((s->l2.pocsag.address != -1) || (s->l2.pocsag.function != -1))
     {
         if(s->l2.pocsag.numnibbles == 0)
         {
-            verbprintf(0, "%s: Address: %7lu  Function: %1hhi ",s->dem_par->name,
-                       s->l2.pocsag.address, s->l2.pocsag.function);
-            if(!sync) verbprintf(2,"<LOST SYNC>");
-            verbprintf(0,"\n");
+            if (!json_mode) {
+                verbprintf(0, "%s: Address: %7lu  Function: %1hhi ",s->dem_par->name,
+                           s->l2.pocsag.address, s->l2.pocsag.function);
+                if(!sync) verbprintf(2,"<LOST SYNC>");
+                verbprintf(0,"\n");
+            }
+            else {
+                cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                cJSON_AddNumberToObject(json_output, "address", s->l2.pocsag.address);
+                cJSON_AddNumberToObject(json_output, "function", s->l2.pocsag.function);
+                fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                cJSON_Delete(json_output);
+            }
         }
         else
         {
@@ -561,7 +576,6 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
             int guess_skyper = 0;
             int unsure = 0;
             int func = 0;
-            cJSON *json_output = cJSON_CreateObject();
 
             guess_num = print_msg_numeric(&s->l2.pocsag, num_string, sizeof(num_string));
             guess_alpha = print_msg_alpha(&s->l2.pocsag, alpha_string, sizeof(alpha_string), CAESAR_ALPHA);
@@ -580,66 +594,107 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                 {
-                    verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
-                           s->l2.pocsag.address, s->l2.pocsag.function);
-                    cJSON_AddNumberToObject(json_output, "address", s->l2.pocsag.address);
-                    cJSON_AddNumberToObject(json_output, "function", s->l2.pocsag.function);
+                    if (!json_mode)
+                        verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
+                               s->l2.pocsag.address, s->l2.pocsag.function);
+                    else {
+                        cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                        cJSON_AddNumberToObject(json_output, "address", s->l2.pocsag.address);
+                        cJSON_AddNumberToObject(json_output, "function", s->l2.pocsag.function);
+                    }
                 }
                 else
                 {
-                    verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
-                    cJSON_AddNullToObject(json_output, "address");
-                    cJSON_AddNullToObject(json_output, "function");
+                    if (!json_mode)
+                        verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
+                    else {
+                        cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                        cJSON_AddNullToObject(json_output, "address");
+                        cJSON_AddNullToObject(json_output, "function");
+                    }
                 }
                 if(pocsag_mode == POCSAG_MODE_AUTO)
                     verbprintf(3, "Certainty: %5i  ", guess_num);
-                verbprintf(0, "Numeric: %s", num_string);
-                if(!sync) verbprintf(2,"<LOST SYNC>");
-                verbprintf(0,"\n");
-                cJSON_AddStringToObject(json_output, "numeric", num_string);
-                verbprintf(0, cJSON_PrintUnformatted(json_output));
-                verbprintf(0,"\n");
-                cJSON_Delete(json_output);
+                if (!json_mode) {
+                    verbprintf(0, "Numeric: %s", num_string);
+                    if(!sync) verbprintf(2,"<LOST SYNC>");
+                    verbprintf(0,"\n");
+                }
+                else {
+                    cJSON_AddStringToObject(json_output, "numeric", num_string);
+                    fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                    cJSON_Delete(json_output);
+                }
             }
 
             if((pocsag_mode == POCSAG_MODE_ALPHA) || ((pocsag_mode == POCSAG_MODE_STANDARD) && (func != 0)) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_alpha >= guess_skyper || unsure)))
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
                 {
-                    verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
-                           s->l2.pocsag.address, s->l2.pocsag.function);
-                    cJSON_AddNumberToObject(json_output, "address", s->l2.pocsag.address);
-                    cJSON_AddNumberToObject(json_output, "function", s->l2.pocsag.function);
+                    if (!json_mode)
+                        verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
+                               s->l2.pocsag.address, s->l2.pocsag.function);
+                    else {
+                        cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                        cJSON_AddNumberToObject(json_output, "address", s->l2.pocsag.address);
+                        cJSON_AddNumberToObject(json_output, "function", s->l2.pocsag.function);
+                    }
                 }
                 else
                 {
-                    verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
-                    cJSON_AddNullToObject(json_output, "address");
-                    cJSON_AddNullToObject(json_output, "function");
+                    if (!json_mode)
+                        verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
+                    else {
+                        cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                        cJSON_AddNullToObject(json_output, "address");
+                        cJSON_AddNullToObject(json_output, "function");
+                    }
                 }
                 if(pocsag_mode == POCSAG_MODE_AUTO)
                     verbprintf(3, "Certainty: %5i  ", guess_alpha);
-                verbprintf(0, "Alpha:   %s", alpha_string);
-                if(!sync) verbprintf(2,"<LOST SYNC>");
-                verbprintf(0,"\n");
-                cJSON_AddStringToObject(json_output, "alpha", alpha_string);
-                verbprintf(0, cJSON_PrintUnformatted(json_output));
-                verbprintf(0,"\n");
-                cJSON_Delete(json_output);
+                if (!json_mode) {
+                    verbprintf(0, "Alpha:   %s", alpha_string);
+                    if(!sync) verbprintf(2,"<LOST SYNC>");
+                    verbprintf(0,"\n");
+                }
+                else {
+                    cJSON_AddStringToObject(json_output, "alpha", alpha_string);
+                    fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                    cJSON_Delete(json_output);
+                }
             }
 
             if((pocsag_mode == POCSAG_MODE_SKYPER) || ((pocsag_mode == POCSAG_MODE_AUTO) && (guess_skyper >= guess_alpha || unsure))) // Only output SKYPER if we're explicitly asking for it or we're auto guessing! (because it's not part of one of the standards, right?!)
             {
                 if((s->l2.pocsag.address != -2) || (s->l2.pocsag.function != -2))
-                    verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
-                           s->l2.pocsag.address, s->l2.pocsag.function);
+                    if (!json_mode)
+                        verbprintf(0, "%s: Address: %7lu  Function: %1hhi  ",s->dem_par->name,
+                               s->l2.pocsag.address, s->l2.pocsag.function);
+                    else {
+                        cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                        cJSON_AddNumberToObject(json_output, "address", s->l2.pocsag.address);
+                        cJSON_AddNumberToObject(json_output, "function", s->l2.pocsag.function);
+                    }
                 else
-                    verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
+                    if (!json_mode)
+                        verbprintf(0, "%s: Address:       -  Function: -  ",s->dem_par->name);
+                    else {
+                        cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                        cJSON_AddNullToObject(json_output, "address");
+                        cJSON_AddNullToObject(json_output, "function");
+                    }
                 if(pocsag_mode == POCSAG_MODE_AUTO)
                     verbprintf(3, "Certainty: %5i  ", guess_skyper);
-                verbprintf(0, "Skyper:  %s", skyper_string);
-                if(!sync) verbprintf(2,"<LOST SYNC>");
-                verbprintf(0,"\n");
+                if (!json_mode) {
+                    verbprintf(0, "Skyper:  %s", skyper_string);
+                    if(!sync) verbprintf(2,"<LOST SYNC>");
+                    verbprintf(0,"\n");
+                }
+                else {
+                    cJSON_AddStringToObject(json_output, "skyper", skyper_string);
+                    fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                    cJSON_Delete(json_output);
+                }
             }
         }
     }
