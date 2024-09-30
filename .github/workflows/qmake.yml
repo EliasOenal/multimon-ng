@@ -1,0 +1,14 @@
+name: C/C++ CI qmake
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    - uses: jurplel/install-qt-action@v4
+    - name: qmake
+      run: mkdir build && cd build && qmake ../multimon-ng.pro
