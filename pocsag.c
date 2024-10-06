@@ -623,6 +623,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 else {
                     cJSON_AddStringToObject(json_output, "numeric", num_string);
                     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                    fflush(stdout);
                     cJSON_Delete(json_output);
                 }
             }
@@ -660,6 +661,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 else {
                     cJSON_AddStringToObject(json_output, "alpha", alpha_string);
                     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                    fflush(stdout);
                     cJSON_Delete(json_output);
                 }
             }
@@ -693,6 +695,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 else {
                     cJSON_AddStringToObject(json_output, "skyper", skyper_string);
                     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                    fflush(stdout);
                     cJSON_Delete(json_output);
                 }
             }
