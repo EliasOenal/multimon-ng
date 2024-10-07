@@ -1090,8 +1090,13 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
                 }
 
                 if (s->l2.pocsag.numnibbles > sizeof(s->l2.pocsag.buffer)*2 - 5) {
-                    verbprintf(0, "%s: Warning: Message too long\n",
-                               s->dem_par->name);
+                    if (!json_mode) {
+                        verbprintf(0, "%s: Warning: Message too long\n",
+                                   s->dem_par->name);
+                    } else {
+                        fprintf(stdout, "{\"error\": \"%s: Warning: Message too long\n\"}", s->dem_par->name);
+                        fflush(stdout);
+                    }
                     s->l2.pocsag.state = END_OF_MESSAGE;
                     break;
                 }
