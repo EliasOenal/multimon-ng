@@ -558,6 +558,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         int  currentChar = 0; 
         char frag_flag = '?';
         cJSON *json_output = cJSON_CreateObject();
+        static char json_temp[100];
 
         int frag = (phaseptr[mw1] >> 11) & 0x03;
         int cont = (phaseptr[mw1] >> 0x0A) & 0x01;
@@ -627,16 +628,30 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
         int pt_offset;
 
-        if(flex_disable_timestamp)
-        {
-          pt_offset = sprintf(pt_out, "FLEX|%i/%i/%c/%c|%02i.%03i|%09lld",
-                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+        if (!json_mode) {
+          if(flex_disable_timestamp)
+          {
+            pt_offset = sprintf(pt_out, "FLEX|%i/%i/%c/%c|%02i.%03i|%09lld",
+                          flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+          }
+          else
+          {
+            pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
+                          gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                          flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+          }
         }
-        else
-        {
-          pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
-                        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+        else {
+            // Lets just always send timestamp, the user can discard
+            sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
+                    gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
+            cJSON_AddStringToObject(json_output, "timestamp", json_temp);
+            cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
+            cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
+            cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+            cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
+            cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
+            cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
         }
 
         // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
@@ -656,15 +671,16 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 flex->GroupHandler.GroupFrame[groupbit] = -1;
                 flex->GroupHandler.GroupCycle[groupbit] = -1;
         } 
-        pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s", message);
         if (!json_mode) {
+          pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s", message);
           verbprintf(0, "%s\n", pt_out);
         }
         else {
             cJSON_AddStringToObject(json_output, "demod_name", "flex_alphanumeric");
-            cJSON_AddStringToObject(json_output, "aln", message);
+            cJSON_AddStringToObject(json_output, "message", message);
             fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
         }
+  verbprintf(1, "Delete json_output\n");
   cJSON_Delete(json_output);
 }
 
