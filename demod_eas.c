@@ -34,7 +34,10 @@
 #include "multimon.h"
 #include "filter.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
+
+#include "cJSON.h"
 
 /* ---------------------------------------------------------------------- */
 
@@ -90,6 +93,8 @@ static float eascorr_space_q[CORRLEN];
 #define MAX(a,b) (((a)>(b))?(a):(b))
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
+extern int json_mode;
+
 /* ---------------------------------------------------------------------- */
 
 static void eas_init(struct demod_state *s)
@@ -136,7 +141,8 @@ static void eas_frame(struct demod_state *s, char data)
 {
     int i,j = 0;
     char * ptr = 0;
-    
+    cJSON *json_output = cJSON_CreateObject();
+
     if (data)
     {
        // if we're idle, now we're looking for a header
@@ -229,8 +235,16 @@ static void eas_frame(struct demod_state *s, char data)
                   
                   // raise the alert and discontinue processing
                   verbprintf(7, "\n");
-                  verbprintf(0, "%s: %s%s\n", s->dem_par->name, HEADER_BEGIN,
-                              s->l2.eas.last_message);
+                  if (!json_mode) {
+                      verbprintf(0, "%s: %s%s\n", s->dem_par->name, HEADER_BEGIN,
+                                  s->l2.eas.last_message);
+                  }
+                  else {
+                      cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+                      cJSON_AddStringToObject(json_output, "header_begin", HEADER_BEGIN);
+                      cJSON_AddStringToObject(json_output, "last_message", s->l2.eas.last_message);
+                      fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+                  }
                   i = MAX_STORE_MSG;
                   break;
                }
@@ -241,13 +255,21 @@ static void eas_frame(struct demod_state *s, char data)
        else if (s->l2.eas.state == EAS_L2_READING_EOM)
        {
          // raise the EOM
-         verbprintf(0, "%s: %s\n", s->dem_par->name, EOM);
+         if (!json_mode) {
+             verbprintf(0, "%s: %s\n", s->dem_par->name, EOM);
+         }
+         else {
+             cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
+             cJSON_AddStringToObject(json_output, "end_of_message", EOM);
+             fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+         }
        }
        // go back to idle
        s->l2.eas.state = EAS_L2_IDLE;
        s->l2.eas.msglen = 0;
        s->l2.eas.headlen = 0;
     }
+    cJSON_Delete(json_output);
 }
 
 static void eas_demod(struct demod_state *s, buffer_t buffer, int length)
