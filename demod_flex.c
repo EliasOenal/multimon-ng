@@ -106,6 +106,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+#include "cJSON.h"
+
 /* ---------------------------------------------------------------------- */
 
 #define FREQ_SAMP            22050
@@ -235,6 +237,7 @@ struct Flex {
   struct Flex_GroupHandler    GroupHandler;
 };
 
+extern int json_mode;
 
 static int is_alphanumeric_page(struct Flex * flex) {
   if (flex==NULL) return 0;
@@ -554,7 +557,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         char message[1024];
         int  currentChar = 0; 
         char frag_flag = '?';
-        
+        cJSON *json_output = cJSON_CreateObject();
+
         int frag = (phaseptr[mw1] >> 11) & 0x03;
         int cont = (phaseptr[mw1] >> 0x0A) & 0x01;
 
@@ -653,7 +657,15 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 flex->GroupHandler.GroupCycle[groupbit] = -1;
         } 
         pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s", message);
-        verbprintf(0, "%s\n", pt_out);
+        if (!json_mode) {
+          verbprintf(0, "%s\n", pt_out);
+        }
+        else {
+            cJSON_AddStringToObject(json_output, "demod_name", "flex_alphanumeric");
+            cJSON_AddStringToObject(json_output, "aln", message);
+            fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+        }
+  cJSON_Delete(json_output);
 }
 
 static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
@@ -667,19 +679,34 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
+  cJSON *json_output = cJSON_CreateObject();
+  static char json_temp[100];
 
-  if(flex_disable_timestamp)
-  {
-    verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|NUM ",
-        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  if (!json_mode) {
+    if(flex_disable_timestamp)
+    {
+      verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|NUM ",
+                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+    }
+    else {
+      verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM ",
+                 gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+    }
   }
-  else
-  {
-    verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM ",
-        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  else {
+      // Lets just always send timestamp, the user can discard
+      sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
+              gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
+      cJSON_AddStringToObject(json_output, "timestamp", json_temp);
+      cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
+      cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
+      cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+      cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
+      cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
+      cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
   }
-  
+
   // Get first dataword from message field or from second
   // vector word if long address
   int dw;
@@ -699,6 +726,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
     count += 2;        // Otherwise skip 2
   }
   int i;
+  json_temp[0] = '\0';
   for(i = w1; i <= w2; i++) {
     int k;
     for(k = 0; k < 21; k++) {
@@ -711,14 +739,26 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
       if(--count == 0) {
         // The following if statement removes spaces between the numbers
         if(digit != 0x0C) {// Fill
-          verbprintf(0, "%c", flex_bcd[digit]);
+          if (!json_mode) {
+            verbprintf(0, "%c", flex_bcd[digit]);
+          }
+          else {
+            strncat(json_temp, (char*)&flex_bcd[digit], 1);
+          }
         }
         count = 4;
       }
     }
     dw = phaseptr[i];
   }
-  verbprintf(0, "\n");
+  if (!json_mode) {
+    verbprintf(0, "\n");
+  }
+  else {
+    cJSON_AddStringToObject(json_output, "message", json_temp);
+    fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+    cJSON_Delete(json_output);
+  }
 }
 
 
@@ -736,17 +776,33 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
   
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
+  cJSON *json_output = cJSON_CreateObject();
+  static char json_temp[100];
 
-  if(flex_disable_timestamp)
-  {
-    verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|TON ",
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  if (!json_mode) {
+    if(flex_disable_timestamp)
+    {
+      verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|TON ",
+                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+    }
+    else
+    {
+      verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON ",
+                 gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+    }
   }
-  else
-  {
-    verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON ",
-      gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-      flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  else {
+      // Lets just always send timestamp, the user can discard
+      sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
+              gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
+      cJSON_AddStringToObject(json_output, "timestamp", json_temp);
+      cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
+      cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
+      cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+      cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
+      cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
+      cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
   }
 
   // message type
@@ -756,46 +812,99 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
   {
     unsigned char digit = 0;
     int i;
+    json_temp[0] = '\0';
     for (i=9; i<=17; i+=4)
     {
       digit = (phaseptr[j] >> i) & 0x0f;
-      verbprintf(0, "%c", flex_bcd[digit]);
+      if (!json_mode) {
+        verbprintf(0, "%c", flex_bcd[digit]);
+      }
+      else {
+        strncat(json_temp, (char*)&flex_bcd[digit], 1);
+      }
     }
-    
+    if(json_mode) {
+      cJSON_AddStringToObject(json_output, "tone", json_temp);
+      json_temp[0] = '\0';
+    }
+
     if (flex->Decode.long_address)
     {
       for (i=0; i<=16; i+=4)
       {
         digit = (phaseptr[j+1] >> i) & 0x0f;
-        verbprintf(0, "%c", flex_bcd[digit]);
+        if (!json_mode) {
+          verbprintf(0, "%c", flex_bcd[digit]);
+        }
+        else {
+          strncat(json_temp, (char*)&flex_bcd[digit], 1);
+        }
+      }
+      if(json_mode) {
+        cJSON_AddStringToObject(json_output, "tone_long", json_temp);
       }
     }
   }
-  verbprintf(0, "\n");
+  if (!json_mode) {
+    verbprintf(0, "\n");
+  }
+  else {
+    fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+    cJSON_Delete(json_output);
+  }
 }
 
 static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2) {
   if (flex==NULL) return;
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
+  cJSON *json_output = cJSON_CreateObject();
+  static char json_temp[100];
 
-  if(flex_disable_timestamp)
-  {
-    verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|UNK",
-        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  if (!json_mode) {
+    if(flex_disable_timestamp)
+    {
+      verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|UNK",
+          flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+    }
+    else
+    {
+      verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK",
+          gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+          flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+    }
   }
-  else
-  {
-    verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK",
-        gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-        flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+  else {
+      // Lets just always send timestamp, the user can discard
+      sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
+              gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
+      cJSON_AddStringToObject(json_output, "timestamp", json_temp);
+      cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
+      cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
+      cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+      cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
+      cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
+      cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
   }
-  
+
   int i;
+  json_temp[0] = '\0';
   for (i = mw1; i <= mw2; i++) {
-    verbprintf(0, " %08x", phaseptr[i]);
+    if (!json_mode) {
+      verbprintf(0, " %08x", phaseptr[i]);
+    }
+    else {
+      strncat(json_temp, (char*)&phaseptr[i], 1);
+    }
   }
-  verbprintf(0, "\n");
+  if (!json_mode) {
+    verbprintf(0, "\n");
+  }
+  else {
+    cJSON_AddStringToObject(json_output, "message", json_temp);
+    fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+    cJSON_Delete(json_output);
+  }
 }
 
 
