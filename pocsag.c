@@ -545,8 +545,6 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
         return;
 
     cJSON *json_output = cJSON_CreateObject();
-//    if (json_mode) {
-//    }
 
     if((s->l2.pocsag.address != -1) || (s->l2.pocsag.function != -1))
     {

@@ -166,36 +166,6 @@ void _verbprintf(int verb_level, const char *fmt, ...)
 
 /* ---------------------------------------------------------------------- */
 
-/*
-void print_json(int argc, char **argv) {
-    cJSON *root;
-
-    root = cJSON_CreateObject();
-
-    for (int i = 0; i < argc; i++) {
-        // Create a new JSON object
-        cJSON *item = cJSON_CreateObject();
-
-        cJSON_AddItemToArray(root, item);
-
-        // Add each variable's key-value pair to the JSON object
-        cJSON_AddStringToObject(item, argv[i], argv[argc + i]);
-    }
-
-    // Convert the JSON object to a string
-    char *json = cJSON_PrintUnformatted(root);
-
-    if (json != NULL) {
-        printf("JSON:\n%s\n", json);
-        cJSON_free(json);
-    }
-
-    // Clean up
-    cJSON_Delete(root);
-}
-*/
-/* ---------------------------------------------------------------------- */
-
 void process_buffer(float *float_buf, short *short_buf, unsigned int len)
 {
     for (int i = 0; (unsigned int) i <  NUMDEMOD; i++)

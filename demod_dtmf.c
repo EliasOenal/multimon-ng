@@ -24,7 +24,10 @@
 #include "multimon.h"
 #include "filter.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
+
+#include "cJSON.h"
 
 /* ---------------------------------------------------------------------- */
 
@@ -52,6 +55,8 @@ static const unsigned int dtmf_phinc[8] = {
 	PHINC(1209), PHINC(1336), PHINC(1477), PHINC(1633),
 	PHINC(697), PHINC(770), PHINC(852), PHINC(941)
 };
+
+extern int json_mode;
 
 /* ---------------------------------------------------------------------- */
 	
@@ -127,6 +132,7 @@ static void dtmf_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float s_in;
 	int i;
+    cJSON *json_output = cJSON_CreateObject();
 
 	for (; length > 0; length--, buffer.fbuffer++) {
 		s_in = *buffer.fbuffer;
@@ -139,11 +145,20 @@ static void dtmf_demod(struct demod_state *s, buffer_t buffer, int length)
 		if ((s->l1.dtmf.blkcount--) <= 0) {
 			s->l1.dtmf.blkcount = BLOCKLEN;
 			i = process_block(s);
-			if (i != s->l1.dtmf.lastch && i >= 0)
-				verbprintf(0, "DTMF: %c\n", dtmf_transl[i]);
+			if (i != s->l1.dtmf.lastch && i >= 0) {
+				if (!json_mode) {
+					verbprintf(0, "DTMF: %c\n", dtmf_transl[i]);
+				}
+				else {
+					cJSON_AddStringToObject(json_output, "demod_name", "DTMF");
+					cJSON_AddStringToObject(json_output, "digit", &dtmf_transl[i]);
+					fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+				}
+			}
 			s->l1.dtmf.lastch = i;
 		}
 	}
+	cJSON_Delete(json_output);
 }
 				
 /* ---------------------------------------------------------------------- */
