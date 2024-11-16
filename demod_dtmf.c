@@ -132,7 +132,6 @@ static void dtmf_demod(struct demod_state *s, buffer_t buffer, int length)
 {
 	float s_in;
 	int i;
-    cJSON *json_output = cJSON_CreateObject();
 
 	for (; length > 0; length--, buffer.fbuffer++) {
 		s_in = *buffer.fbuffer;
@@ -150,15 +149,17 @@ static void dtmf_demod(struct demod_state *s, buffer_t buffer, int length)
 					verbprintf(0, "DTMF: %c\n", dtmf_transl[i]);
 				}
 				else {
+					cJSON *json_output = cJSON_CreateObject();
 					cJSON_AddStringToObject(json_output, "demod_name", "DTMF");
-					cJSON_AddStringToObject(json_output, "digit", &dtmf_transl[i]);
+					char digit[2] = {dtmf_transl[i], '\0'};
+					cJSON_AddStringToObject(json_output, "digit", digit);
 					fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+					cJSON_Delete(json_output);
 				}
 			}
 			s->l1.dtmf.lastch = i;
 		}
 	}
-	cJSON_Delete(json_output);
 }
 				
 /* ---------------------------------------------------------------------- */
