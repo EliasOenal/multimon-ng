@@ -648,7 +648,9 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
             cJSON_AddStringToObject(json_output, "timestamp", json_temp);
             cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
             cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-            cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+            char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
+            snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
+            cJSON_AddStringToObject(json_output, "phase_number", buffer);
             cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
             cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
             cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
@@ -717,7 +719,9 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
       cJSON_AddStringToObject(json_output, "timestamp", json_temp);
       cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
       cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-      cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+      char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
+      snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
+      cJSON_AddStringToObject(json_output, "phase_number", buffer);
       cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
       cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
       cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
@@ -771,6 +775,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
     verbprintf(0, "\n");
   }
   else {
+    cJSON_AddStringToObject(json_output, "demod_name", "flex_numeric");
     cJSON_AddStringToObject(json_output, "message", json_temp);
     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
     cJSON_Delete(json_output);
@@ -815,7 +820,9 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
       cJSON_AddStringToObject(json_output, "timestamp", json_temp);
       cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
       cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-      cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+      char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
+      snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
+      cJSON_AddStringToObject(json_output, "phase_number", buffer);
       cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
       cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
       cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
@@ -865,6 +872,7 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
     verbprintf(0, "\n");
   }
   else {
+    cJSON_AddStringToObject(json_output, "demod_name", "flex_tone_only");
     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
     cJSON_Delete(json_output);
   }
@@ -897,7 +905,9 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
       cJSON_AddStringToObject(json_output, "timestamp", json_temp);
       cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
       cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-      cJSON_AddStringToObject(json_output, "phase_number", &PhaseNo);
+      char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
+      snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
+      cJSON_AddStringToObject(json_output, "phase_number", buffer);
       cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
       cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
       cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
@@ -917,6 +927,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
     verbprintf(0, "\n");
   }
   else {
+    cJSON_AddStringToObject(json_output, "demod_name", "flex_unknown");
     cJSON_AddStringToObject(json_output, "message", json_temp);
     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
     cJSON_Delete(json_output);
