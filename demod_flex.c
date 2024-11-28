@@ -4,6 +4,9 @@
  *      Copyright 2004,2006,2010 Free Software Foundation, Inc.
  *      Copyright (C) 2015 Craig Shelley (craig@microtron.org.uk)
  *
+ *      Copyright (C) 2024
+ *          Jason Lingohr (jason@lucid.net.au)
+ *
  *      FLEX Radio Paging Decoder - Adapted from GNURadio for use with Multimon
  *
  *      GNU Radio is free software; you can redistribute it and/or modify

@@ -10,6 +10,9 @@
  *      Copyright (C) 2022
  *          Tobias Girstmair (https://gir.st/)
  *
+ *      Copyright (C) 2024
+ *          Jason Lingohr (jason@lucid.net.au)
+ *
  *      POCSAG (Post Office Code Standard Advisory Group)
  *      Radio Paging Decoder
  *

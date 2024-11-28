@@ -8,6 +8,9 @@
 *      Copyright (C) 2024
 *          Marat Fayzullin <luarvique@gmail.com>
 *
+ *      Copyright (C) 2024
+ *          Jason Lingohr (jason@lucid.net.au)
+ *
 *      Licensed under same terms and based upon the
 *         demod_afsk12.c -- 1200 baud AFSK demodulator
 *
