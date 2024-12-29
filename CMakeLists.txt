@@ -83,7 +83,8 @@ set( HEADERS ${HEADERS}
     	gen.h
     	filter.h
     	filter-i386.h
-	)
+		cJSON.h
+)
 
 set( SOURCES ${SOURCES}
 	unixinput.c
@@ -122,7 +123,8 @@ set( SOURCES ${SOURCES}
 	demod_morse.c
 	demod_dumpcsv.c
 	demod_x10.c
-	)
+	cJSON.c
+)
 
 
 add_executable( "${TARGET}" ${SOURCES} ${HEADERS} )

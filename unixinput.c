@@ -7,6 +7,9 @@
  *      Copyright (C) 2012-2024
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
+ *      Copyright (C) 2024
+ *          Jason Lingohr (jason@lucid.net.au)
+ *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
  *      the Free Software Foundation; either version 2 of the License, or
@@ -82,6 +85,8 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 #define MASK_RESET(n) dem_mask[(n)>>5] &= ~(1<<((n)&0x1f))
 #define MASK_ISSET(n) (dem_mask[(n)>>5] & 1<<((n)&0x1f))
 
+#define MAX_VAR_ARGS 100
+
 /* ---------------------------------------------------------------------- */
 
 static int verbose_level = 0;
@@ -93,6 +98,7 @@ static bool is_startline = true;
 static int timestamp = 0;
 static int iso8601 = 0;
 static char *label = NULL;
+int json_mode = 0;
 
 extern bool fms_justhex;
 
@@ -613,6 +619,7 @@ static const char usage_str[] = "\n"
         "  --iso8601    : Use UTC timestamp in ISO 8601 format that includes microseconds\n"
         "  --label      : Add a label to the front of every printed line\n"
         "  --flex-no-ts : FLEX: Do not add a timestamp to the FLEX demodulator output\n"
+        "  --json       : Format output as JSON\n"
         "\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
@@ -637,6 +644,7 @@ int main(int argc, char *argv[])
         {"iso8601", no_argument, &iso8601, 1},
         {"label", required_argument, NULL, 'l'},
         {"charset", required_argument, NULL, 'C'},
+        {"json", no_argument, &json_mode, 1},
         {0, 0, 0, 0}
       };
 
@@ -818,16 +826,16 @@ intypefound:
     }
 
 
-    if ( !quietflg )
-    { // pay heed to the quietflg
-    fprintf(stderr, "multimon-ng 1.3.1\n"
-        "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-        "  (C) 2012-2024 by Elias Oenal\n"
-        "Available demodulators:");
-    for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
-        fprintf(stderr, " %s", dem[i]->name);
-    }
-    fprintf(stderr, "\n");
+    if ( !quietflg && !json_mode)
+    { // pay heed to the quietflg or JSON mode
+        fprintf(stderr, "multimon-ng 1.3.1\n"
+            "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
+            "  (C) 2012-2024 by Elias Oenal\n"
+            "Available demodulators:");
+        for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
+            fprintf(stderr, " %s", dem[i]->name);
+        }
+        fprintf(stderr, "\n");
     }
 
     if (errflg) {
@@ -837,11 +845,11 @@ intypefound:
     if (mask_first)
         memset(dem_mask, 0xff, sizeof(dem_mask));
     
-    if (!quietflg)
+    if (!quietflg && !json_mode)
         fprintf(stdout, "Enabled demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++)
         if (MASK_ISSET(i)) {
-            if (!quietflg)
+            if (!quietflg && !json_mode)
                 fprintf(stdout, " %s", dem[i]->name);       //Print demod name
             if(dem[i]->float_samples) integer_only = false; //Enable float samples on demand
             memset(dem_st+i, 0, sizeof(dem_st[i]));
@@ -851,7 +859,7 @@ intypefound:
             if (sample_rate == -1)
                 sample_rate = dem[i]->samplerate;
             else if ( (unsigned int) sample_rate != dem[i]->samplerate) {
-                if (!quietflg)
+                if (!quietflg && !json_mode)
                     fprintf(stdout, "\n");
                 fprintf(stderr, "Error: Current sampling rate %d, "
                         " demodulator \"%s\" requires %d\n",
@@ -861,7 +869,7 @@ intypefound:
             if (dem[i]->overlap > overlap)
                 overlap = dem[i]->overlap;
         }
-    if (!quietflg)
+    if (!quietflg && !json_mode)
         fprintf(stdout, "\n");
     
     if (optind < argc && !strcmp(argv[optind], "-"))

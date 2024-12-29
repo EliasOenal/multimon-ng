@@ -4,6 +4,9 @@
  *      Copyright (C) 1996  
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
+ *      Copyright (C) 2024
+ *          Jason Lingohr (jason@lucid.net.au)
+ *
  *      This program is free software; you can redistribute it and/or modify
  *      it under the terms of the GNU General Public License as published by
  *      the Free Software Foundation; either version 2 of the License, or
@@ -24,7 +27,10 @@
 #include "multimon.h"
 #include "filter.h"
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
+
+#include "cJSON.h"
 
 /* ---------------------------------------------------------------------- */
 
@@ -52,6 +58,8 @@ static const unsigned int dtmf_phinc[8] = {
 	PHINC(1209), PHINC(1336), PHINC(1477), PHINC(1633),
 	PHINC(697), PHINC(770), PHINC(852), PHINC(941)
 };
+
+extern int json_mode;
 
 /* ---------------------------------------------------------------------- */
 	
@@ -139,8 +147,19 @@ static void dtmf_demod(struct demod_state *s, buffer_t buffer, int length)
 		if ((s->l1.dtmf.blkcount--) <= 0) {
 			s->l1.dtmf.blkcount = BLOCKLEN;
 			i = process_block(s);
-			if (i != s->l1.dtmf.lastch && i >= 0)
-				verbprintf(0, "DTMF: %c\n", dtmf_transl[i]);
+			if (i != s->l1.dtmf.lastch && i >= 0) {
+				if (!json_mode) {
+					verbprintf(0, "DTMF: %c\n", dtmf_transl[i]);
+				}
+				else {
+					cJSON *json_output = cJSON_CreateObject();
+					cJSON_AddStringToObject(json_output, "demod_name", "DTMF");
+					char digit[2] = {dtmf_transl[i], '\0'};
+					cJSON_AddStringToObject(json_output, "digit", digit);
+					fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
+					cJSON_Delete(json_output);
+				}
+			}
 			s->l1.dtmf.lastch = i;
 		}
 	}
