@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2024
+ *      Copyright (C) 2012-2025
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      Copyright (C) 2024
@@ -829,9 +829,9 @@ intypefound:
 
     if ( !quietflg && !json_mode)
     { // pay heed to the quietflg or JSON mode
-        fprintf(stderr, "multimon-ng 1.3.1\n"
+        fprintf(stderr, "multimon-ng 1.4.0\n"
             "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-            "  (C) 2012-2024 by Elias Oenal\n"
+            "  (C) 2012-2025 by Elias Oenal\n"
             "Available demodulators:");
         for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
             fprintf(stderr, " %s", dem[i]->name);
