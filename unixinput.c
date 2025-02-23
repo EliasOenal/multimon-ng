@@ -829,7 +829,7 @@ intypefound:
 
     if ( !quietflg && !json_mode)
     { // pay heed to the quietflg or JSON mode
-        fprintf(stderr, "multimon-ng 1.4.0\n"
+        fprintf(stderr, "multimon-ng 1.4.1\n"
             "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
             "  (C) 2012-2025 by Elias Oenal\n"
             "Available demodulators:");
