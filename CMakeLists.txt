@@ -1,4 +1,4 @@
-cmake_minimum_required( VERSION 2.8.8 )
+cmake_minimum_required( VERSION 2.8.12...3.10 )
 
 # The "MSVC" flag isn't set until the "project" command
 # is called.  Let's just check the operating system.
