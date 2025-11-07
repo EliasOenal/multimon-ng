@@ -169,6 +169,33 @@ void _verbprintf(int verb_level, const char *fmt, ...)
 
 /* ---------------------------------------------------------------------- */
 
+void addJsonTimestamp(cJSON *json_output)
+{
+    if (json_output==NULL) return;
+    if (!timestamp) return;
+
+    char json_temp[100];
+    if(iso8601)
+    {
+        struct timespec ts;
+        timespec_get(&ts, TIME_UTC);
+        strftime(json_temp, sizeof json_temp, "%FT%T", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
+        snprintf(json_temp + strlen(json_temp), sizeof json_temp - strlen(json_temp), ".%06ld", ts.tv_nsec/1000); //2024-09-13T20:35:30.156337
+    }
+    else
+    {
+        time_t t;
+        struct tm* tm_info;
+        t = time(NULL);
+        tm_info = localtime(&t);
+        strftime(json_temp, sizeof(json_temp), "%Y-%m-%d %H:%M:%S", tm_info);
+    }
+    cJSON_AddStringToObject(json_output, "timestamp", json_temp);
+
+}
+
+/* ---------------------------------------------------------------------- */
+
 void process_buffer(float *float_buf, short *short_buf, unsigned int len)
 {
     for (int i = 0; (unsigned int) i <  NUMDEMOD; i++)

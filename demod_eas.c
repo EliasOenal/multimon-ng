@@ -246,6 +246,7 @@ static void eas_frame(struct demod_state *s, char data)
                       cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
                       cJSON_AddStringToObject(json_output, "header_begin", HEADER_BEGIN);
                       cJSON_AddStringToObject(json_output, "last_message", s->l2.eas.last_message);
+                      addJsonTimestamp(json_output);
                       fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
                   }
                   i = MAX_STORE_MSG;
@@ -264,6 +265,7 @@ static void eas_frame(struct demod_state *s, char data)
          else {
              cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
              cJSON_AddStringToObject(json_output, "end_of_message", EOM);
+             addJsonTimestamp(json_output);
              fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
          }
        }
