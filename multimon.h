@@ -34,6 +34,7 @@
 
 #include <stdint.h>
 #include <stdbool.h>
+#include "cJSON.h"
 
 #ifdef _MSC_VER
 #include "msvc_support.h"
@@ -372,6 +373,7 @@ int xdisp_start(void);
 int xdisp_update(int cnum, float *f);
 
 void print_json(int argc, char **argv);
+void addJsonTimestamp(cJSON *json_output);
 
 /* ---------------------------------------------------------------------- */
 #endif /* _MULTIMON_H */
