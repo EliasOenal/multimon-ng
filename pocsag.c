@@ -409,14 +409,31 @@ bool pocsag_init_charset(char *charset)
 	}
 	else if (strcmp(charset,"SI")==0) // Slovenian charset
 	{
-		trtab[0x40] = "Ž";
-		trtab[0x5b] = "Š";
-		trtab[0x5d] = "Ć";
-		trtab[0x5e] = "Č";
-		trtab[0x60] = "ž";
-		trtab[0x7b] = "š";
-		trtab[0x7d] = "ć";
-		trtab[0x7e] = "č";
+		#ifdef CHARSET_UTF8
+			trtab[0x40] = "Ž";
+			trtab[0x5b] = "Š";
+			trtab[0x5c] = "Đ";
+			trtab[0x5d] = "Ć";
+			trtab[0x5e] = "Č";
+
+			trtab[0x60] = "ž";
+			trtab[0x7b] = "š";
+			trtab[0x7c] = "đ";
+			trtab[0x7d] = "ć";
+			trtab[0x7e] = "č";
+		#else
+			trtab[0x40] = "Z";
+			trtab[0x5b] = "S";
+			trtab[0x5c] = "Dj";
+			trtab[0x5d] = "C";
+			trtab[0x5e] = "C";
+
+			trtab[0x60] = "z";
+			trtab[0x7b] = "s";
+			trtab[0x7c] = "dj";
+			trtab[0x7d] = "c";
+			trtab[0x7e] = "c";
+		#endif
 	}
 	else if (strcmp(charset,"US")==0) // US charset
 	{
