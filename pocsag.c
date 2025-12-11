@@ -580,6 +580,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
                 cJSON_AddNumberToObject(json_output, "address", s->l2.pocsag.address);
                 cJSON_AddNumberToObject(json_output, "function", s->l2.pocsag.function);
+                addJsonTimestamp(json_output);
                 fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
                 cJSON_Delete(json_output);
             }
@@ -640,6 +641,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 }
                 else {
                     cJSON_AddStringToObject(json_output, "numeric", num_string);
+                    addJsonTimestamp(json_output);
                     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
                     fflush(stdout);
                     cJSON_Delete(json_output);
@@ -678,6 +680,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 }
                 else {
                     cJSON_AddStringToObject(json_output, "alpha", alpha_string);
+                    addJsonTimestamp(json_output);
                     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
                     fflush(stdout);
                     cJSON_Delete(json_output);
@@ -712,6 +715,7 @@ static void pocsag_printmessage(struct demod_state *s, bool sync)
                 }
                 else {
                     cJSON_AddStringToObject(json_output, "skyper", skyper_string);
+                    addJsonTimestamp(json_output);
                     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
                     fflush(stdout);
                     cJSON_Delete(json_output);

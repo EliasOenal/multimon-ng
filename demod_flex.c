@@ -683,6 +683,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         else {
             cJSON_AddStringToObject(json_output, "demod_name", "flex_alphanumeric");
             cJSON_AddStringToObject(json_output, "message", message);
+            addJsonTimestamp(json_output);
             fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
         }
   verbprintf(1, "Delete json_output\n");
@@ -780,6 +781,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
   else {
     cJSON_AddStringToObject(json_output, "demod_name", "flex_numeric");
     cJSON_AddStringToObject(json_output, "message", json_temp);
+    addJsonTimestamp(json_output);
     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
     cJSON_Delete(json_output);
   }
@@ -876,6 +878,7 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
   }
   else {
     cJSON_AddStringToObject(json_output, "demod_name", "flex_tone_only");
+    addJsonTimestamp(json_output);
     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
     cJSON_Delete(json_output);
   }
@@ -932,6 +935,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
   else {
     cJSON_AddStringToObject(json_output, "demod_name", "flex_unknown");
     cJSON_AddStringToObject(json_output, "message", json_temp);
+    addJsonTimestamp(json_output);
     fprintf(stdout, "%s\n", cJSON_PrintUnformatted(json_output));
     cJSON_Delete(json_output);
   }
