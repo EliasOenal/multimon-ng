@@ -25,6 +25,16 @@ jobs:
         cd build-mingw32
         make
     
+    - name: Install Wine
+      run: |
+        sudo dpkg --add-architecture i386
+        sudo apt-get update
+        sudo apt-get install -y wine32:i386
+    
+    - name: Run tests with Wine
+      run: |
+        WINE_CMD=wine MULTIMON=./build-mingw32/multimon-ng.exe ./test/run_tests.sh
+    
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
