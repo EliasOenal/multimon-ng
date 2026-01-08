@@ -59,9 +59,20 @@ run_test() {
         else
             # Non-raw input: use sox on Linux side to convert to raw, then pipe to Wine
             # This matches how multimon-ng internally calls sox (see unixinput.c)
+            # Create a temporary file to capture sox errors for better debugging
+            local sox_err
+            sox_err=$(mktemp)
             output=$(sox -V1 --ignore-length -t "$input_type" "$input_file" \
-                -t raw -esigned-integer -b16 -r 22050 - remix 1 2>/dev/null | \
+                -t raw -esigned-integer -b16 -r 22050 - remix 1 2>"$sox_err" | \
                 $WINE_CMD "$MULTIMON" -t raw -q -a "$decoder" - 2>&1 | filter_wine_output)
+            local sox_errors
+            sox_errors=$(cat "$sox_err")
+            rm -f "$sox_err"
+            # If sox produced errors (not just info messages), include them in output for debugging
+            if [ -n "$sox_errors" ] && echo "$sox_errors" | grep -qiE "error|fail|cannot|unable"; then
+                output="sox error: $sox_errors
+$output"
+            fi
         fi
     else
         output=$("$MULTIMON" -t "$input_type" -q -a "$decoder" "$input_file" 2>&1)
