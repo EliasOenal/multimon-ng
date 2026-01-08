@@ -1,7 +1,0 @@
-/home/runner/work/multimon-ng/multimon-ng/build-mingw32/CMakeFiles/multimon-ng.dir
-/home/runner/work/multimon-ng/multimon-ng/build-mingw32/CMakeFiles/edit_cache.dir
-/home/runner/work/multimon-ng/multimon-ng/build-mingw32/CMakeFiles/rebuild_cache.dir
-/home/runner/work/multimon-ng/multimon-ng/build-mingw32/CMakeFiles/list_install_components.dir
-/home/runner/work/multimon-ng/multimon-ng/build-mingw32/CMakeFiles/install.dir
-/home/runner/work/multimon-ng/multimon-ng/build-mingw32/CMakeFiles/install/local.dir
-/home/runner/work/multimon-ng/multimon-ng/build-mingw32/CMakeFiles/install/strip.dir

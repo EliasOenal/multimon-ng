@@ -1,3 +1,0 @@
-/usr/local/bin/cmake -E rm -f CMakeFiles/multimon-ng.dir/objects.a
-/usr/bin/x86_64-w64-mingw32-ar qc CMakeFiles/multimon-ng.dir/objects.a @CMakeFiles/multimon-ng.dir/objects1.rsp
-/usr/bin/x86_64-w64-mingw32-gcc  -Wall -Wextra -Wl,--whole-archive CMakeFiles/multimon-ng.dir/objects.a -Wl,--no-whole-archive -o multimon-ng.exe -Wl,--out-implib,libmultimon-ng.dll.a -Wl,--major-image-version,0,--minor-image-version,0 @CMakeFiles/multimon-ng.dir/linkLibs.rsp
