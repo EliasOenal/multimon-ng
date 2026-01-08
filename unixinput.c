@@ -53,6 +53,7 @@
 #endif
 
 /* Provide timespec_get for MinGW if not available */
+#ifndef timespec_get
 static inline int timespec_get(struct timespec *ts, int base)
 {
     if (base != TIME_UTC) return 0;
@@ -74,6 +75,14 @@ static inline int timespec_get(struct timespec *ts, int base)
     
     return TIME_UTC;
 }
+#endif
+
+/* MinGW doesn't support %F and %T format specifiers for strftime */
+#define MINGW_ISO8601_FORMAT "%Y-%m-%dT%H:%M:%S"
+#define PORTABLE_ISO8601_FORMAT "%FT%T"
+#else
+#define MINGW_ISO8601_FORMAT "%FT%T"
+#define PORTABLE_ISO8601_FORMAT "%FT%T"
 #endif
 
 #ifdef SUN_AUDIO
@@ -174,12 +183,7 @@ void _verbprintf(int verb_level, const char *fmt, ...)
             {
                 struct timespec ts;
                 timespec_get(&ts, TIME_UTC);
-#if defined(__MINGW32__) || defined(__MINGW64__)
-                /* MinGW doesn't support %F and %T format specifiers */
-                strftime(time_buf, sizeof time_buf, "%Y-%m-%dT%H:%M:%S", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
-#else
-                strftime(time_buf, sizeof time_buf, "%FT%T", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
-#endif
+                strftime(time_buf, sizeof time_buf, MINGW_ISO8601_FORMAT, gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
                 fprintf(stdout, "%s.%06ld: ", time_buf, ts.tv_nsec/1000); //2024-09-13T20:35:30.156337
             }
             else
@@ -216,12 +220,7 @@ void addJsonTimestamp(cJSON *json_output)
     {
         struct timespec ts;
         timespec_get(&ts, TIME_UTC);
-#if defined(__MINGW32__) || defined(__MINGW64__)
-        /* MinGW doesn't support %F and %T format specifiers */
-        strftime(json_temp, sizeof json_temp, "%Y-%m-%dT%H:%M:%S", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
-#else
-        strftime(json_temp, sizeof json_temp, "%FT%T", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
-#endif
+        strftime(json_temp, sizeof json_temp, MINGW_ISO8601_FORMAT, gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
         snprintf(json_temp + strlen(json_temp), sizeof json_temp - strlen(json_temp), ".%06ld", ts.tv_nsec/1000); //2024-09-13T20:35:30.156337
     }
     else
