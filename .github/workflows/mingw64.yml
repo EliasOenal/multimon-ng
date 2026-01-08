@@ -1,13 +1,13 @@
 name: MinGW64 Cross-Compile
 
-on: [push, pull_request]
+on: [push]
 
 jobs:
   build-mingw64:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     
     - name: Install MinGW-w64 for 64-bit
       run: |
