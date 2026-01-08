@@ -116,7 +116,7 @@ ZVEI - The German Electrical and Electronic Manufacturers' Association - paging 
 .TP
 .B  \-t <type>
 Input file type (any other type than raw requires sox).
-Allowed types: raw aiff au hcom sf voc cdr dat smp wav maud vwe.
+Allowed types: raw aiff au hcom sf voc cdr dat smp wav maud vwe mp3 mp4 ogg flac.
 .TP
 .B  \-a <demod>
 Add demodulator (see below).
@@ -143,7 +143,7 @@ APRS mode (TNC2 text output).
 .B  \-m
 Mute SoX warnings.
 .TP
-.B  \-m
+.B  \-r
 Call SoX in repeatable mode (e.g. fixed random seed for dithering).
 .TP
 .B  \-n
@@ -208,7 +208,7 @@ Format output as JSON. Supported by the following demodulators:
 DTMF, EAS, FLEX, POCSAG. (Other demodulators will silently ignore this flag.)
 .PP
 Where <demod> is one of:
-POCSAG512 POCSAG1200 POCSAG2400 FLEX EAS UFSK1200 CLIPFSK FMSFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3 HAPN4800 FSK9600 DTMF ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI EEA EIA CCIR MORSE_CW DUMPCSV X10 SCOPE
+POCSAG512 POCSAG1200 POCSAG2400 FLEX FLEX_NEXT EAS UFSK1200 CLIPFSK FMSFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3 HAPN4800 FSK9600 DTMF ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI EEA EIA CCIR MORSE_CW DUMPCSV X10 SCOPE
 .br
 The \-a and \-s options may be given multiple times to specify the desired list of demodulators.
 .SH EXAMPLE

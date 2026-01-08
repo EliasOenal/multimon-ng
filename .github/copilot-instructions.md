@@ -67,13 +67,14 @@ rm -rf build && mkdir build && cd build && cmake .. && make -j$(nproc)
 
 ## Testing Changes
 
-There is no automated test suite. Validate changes manually:
+Validate changes using the automated test suite:
 
 ```bash
-# Test with example raw file (UFSK1200 protocol)
-./build/multimon-ng -t raw -q -a UFSK1200 ./example/ufsk1200.raw
+# Run all tests (requires sox for non-raw formats)
+./test/run_tests.sh
 
-# Show help and available demodulators
+# Or test manually with example files
+./build/multimon-ng -t raw -q -a UFSK1200 ./example/ufsk1200.raw
 ./build/multimon-ng -h
 ```
 
@@ -150,8 +151,8 @@ mkdir build-mingw64 && cd build-mingw64
 cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw64.cmake
 make
 # Test with Wine
-wine64 ./multimon-ng.exe -h
-wine64 ./multimon-ng.exe -t raw -q -a UFSK1200 ../example/ufsk1200.raw
+wine ./multimon-ng.exe -h
+wine ./multimon-ng.exe -t raw -q -a UFSK1200 ../example/ufsk1200.raw
 ```
 
 ## Trust These Instructions
