@@ -131,3 +131,14 @@ qmake multimon-ng.pro PREFIX=/usr/local
 make
 make install INSTALL_ROOT=/
 ```
+
+## Testing
+
+After building, run the test suite:
+
+```
+./test/run_tests.sh
+```
+
+> [!NOTE]
+> Testing non-raw sample files (flac, wav) requires [SoX](https://sourceforge.net/projects/sox/) to be installed.
