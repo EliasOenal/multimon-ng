@@ -29,7 +29,7 @@ jobs:
       run: |
         sudo dpkg --add-architecture i386
         sudo apt-get update
-        sudo apt-get install -y wine32:i386
+        sudo apt-get install -y wine32:i386 sox
     
     - name: Run tests with Wine
       run: |

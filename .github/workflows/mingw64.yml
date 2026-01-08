@@ -27,7 +27,7 @@ jobs:
     
     - name: Install Wine
       run: |
-        sudo apt-get install -y wine64
+        sudo apt-get install -y wine64 sox
     
     - name: Run tests with Wine
       run: |
