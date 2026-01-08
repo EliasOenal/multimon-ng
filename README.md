@@ -39,6 +39,33 @@ sudo make install
 The installation prefix can be set by passing a 'PREFIX' parameter to qmake. e.g:
 ```qmake multimon-ng.pro PREFIX=/usr/local```
 
+### Windows MinGW Builds
+
+#### On Windows (MSYS2/MinGW)
+Install MSYS2, then from the MinGW64 or MinGW32 shell:
+```
+mkdir build
+cd build
+cmake ..
+make
+```
+
+#### Cross-compiling from Linux
+Install MinGW cross-compiler, then use the provided toolchain files:
+```
+# For 64-bit Windows
+mkdir build-mingw64
+cd build-mingw64
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw64.cmake
+make
+
+# For 32-bit Windows
+mkdir build-mingw32
+cd build-mingw32
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw32.cmake
+make
+```
+
 ### Environments
 
 So far multimon-ng has been successfully built on:

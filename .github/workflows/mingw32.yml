@@ -1,0 +1,33 @@
+name: MinGW32 Cross-Compile
+
+on: [push]
+
+jobs:
+  build-mingw32:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Install MinGW-w64 for 32-bit
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-mingw-w64-i686 g++-mingw-w64-i686
+    
+    - name: Configure with CMake
+      run: |
+        mkdir build-mingw32
+        cd build-mingw32
+        cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw32.cmake
+    
+    - name: Build
+      run: |
+        cd build-mingw32
+        make
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: multimon-ng-win32
+        path: build-mingw32/multimon-ng.exe
+        retention-days: 30

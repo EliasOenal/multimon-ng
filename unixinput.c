@@ -44,6 +44,45 @@
 #include <time.h>
 #include <getopt.h>
 
+/* MinGW compatibility for timespec_get */
+#if defined(__MINGW32__) || defined(__MINGW64__)
+#include <windows.h>
+
+#ifndef TIME_UTC
+#define TIME_UTC 1
+#endif
+
+/* Provide timespec_get for MinGW if not available */
+#ifndef timespec_get
+static inline int timespec_get(struct timespec *ts, int base)
+{
+    if (base != TIME_UTC) return 0;
+    
+    /* Get current time using Windows-specific functions */
+    FILETIME ft;
+    ULARGE_INTEGER ui;
+    
+    GetSystemTimeAsFileTime(&ft);
+    ui.LowPart = ft.dwLowDateTime;
+    ui.HighPart = ft.dwHighDateTime;
+    
+    /* Convert from 100-nanosecond intervals since 1601-01-01 to Unix epoch */
+    const uint64_t EPOCH_DIFF = 116444736000000000ULL;
+    uint64_t tmp = ui.QuadPart - EPOCH_DIFF;
+    
+    ts->tv_sec = (time_t)(tmp / 10000000ULL);
+    ts->tv_nsec = (long)((tmp % 10000000ULL) * 100);
+    
+    return TIME_UTC;
+}
+#endif
+
+/* MinGW doesn't support %F and %T format specifiers for strftime */
+#define ISO8601_FORMAT "%Y-%m-%dT%H:%M:%S"
+#else
+#define ISO8601_FORMAT "%FT%T"
+#endif
+
 #ifdef SUN_AUDIO
 #include <sys/audioio.h>
 #include <stropts.h>
@@ -142,7 +181,7 @@ void _verbprintf(int verb_level, const char *fmt, ...)
             {
                 struct timespec ts;
                 timespec_get(&ts, TIME_UTC);
-                strftime(time_buf, sizeof time_buf, "%FT%T", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
+                strftime(time_buf, sizeof time_buf, ISO8601_FORMAT, gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
                 fprintf(stdout, "%s.%06ld: ", time_buf, ts.tv_nsec/1000); //2024-09-13T20:35:30.156337
             }
             else
@@ -179,7 +218,7 @@ void addJsonTimestamp(cJSON *json_output)
     {
         struct timespec ts;
         timespec_get(&ts, TIME_UTC);
-        strftime(json_temp, sizeof json_temp, "%FT%T", gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
+        strftime(json_temp, sizeof json_temp, ISO8601_FORMAT, gmtime(&ts.tv_sec)); //2024-09-13T20:35:30
         snprintf(json_temp + strlen(json_temp), sizeof json_temp - strlen(json_temp), ".%06ld", ts.tv_nsec/1000); //2024-09-13T20:35:30.156337
     }
     else

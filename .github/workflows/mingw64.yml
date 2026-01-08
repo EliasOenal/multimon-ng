@@ -1,0 +1,33 @@
+name: MinGW64 Cross-Compile
+
+on: [push]
+
+jobs:
+  build-mingw64:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Install MinGW-w64 for 64-bit
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+    
+    - name: Configure with CMake
+      run: |
+        mkdir build-mingw64
+        cd build-mingw64
+        cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw64.cmake
+    
+    - name: Build
+      run: |
+        cd build-mingw64
+        make
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: multimon-ng-win64
+        path: build-mingw64/multimon-ng.exe
+        retention-days: 30
