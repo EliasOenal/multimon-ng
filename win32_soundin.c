@@ -1,4 +1,4 @@
-#include <Windows.h>
+#include <windows.h>
 #include <stdio.h>
 
 #define BUFFER_LEN_IN_MS 20 
