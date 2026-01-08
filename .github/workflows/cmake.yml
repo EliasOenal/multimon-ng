@@ -13,3 +13,7 @@ jobs:
       run: mkdir build && cd build && cmake ..
     - name: make
       run: cd build && make
+    - name: Install sox
+      run: sudo apt-get update && sudo apt-get install -y sox
+    - name: Run tests
+      run: ./test/run_tests.sh
