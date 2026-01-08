@@ -46,8 +46,14 @@ run_test() {
     
     # Run the command, with Wine if specified
     if [ -n "$WINE_CMD" ]; then
-        # Suppress Wine debug output (stderr) but capture program output
-        output=$($WINE_CMD "$MULTIMON" -t "$input_type" -q -a "$decoder" "$input_file" 2>/dev/null)
+        # Run with Wine and filter out common Wine debug/informational messages
+        # Keep actual program output and real Wine errors
+        output=$($WINE_CMD "$MULTIMON" -t "$input_type" -q -a "$decoder" "$input_file" 2>&1 | \
+            grep -v "^it looks like wine32 is missing" | \
+            grep -v "^multiarch needs to be enabled" | \
+            grep -v "^execute \"dpkg --add-architecture" | \
+            grep -v "^[0-9a-f]*:err:" | \
+            grep -v "^wine: ")
     else
         output=$("$MULTIMON" -t "$input_type" -q -a "$decoder" "$input_file" 2>&1)
     fi
@@ -84,21 +90,20 @@ skip_test() {
     echo -e "Testing $name... ${YELLOW}SKIPPED${NC} ($reason)"
 }
 
+# Helper function to display binary not found error
+binary_not_found_error() {
+    echo "Error: multimon-ng binary not found at $MULTIMON"
+    echo "Build the project first or set MULTIMON environment variable"
+    exit 1
+}
+
 # Check if multimon-ng binary exists
 if [ -z "$WINE_CMD" ]; then
     # Native binary - check if executable
-    if [ ! -x "$MULTIMON" ]; then
-        echo "Error: multimon-ng binary not found at $MULTIMON"
-        echo "Build the project first or set MULTIMON environment variable"
-        exit 1
-    fi
+    [ -x "$MULTIMON" ] || binary_not_found_error
 else
     # Windows binary via Wine - check if file exists
-    if [ ! -f "$MULTIMON" ]; then
-        echo "Error: multimon-ng binary not found at $MULTIMON"
-        echo "Build the project first or set MULTIMON environment variable"
-        exit 1
-    fi
+    [ -f "$MULTIMON" ] || binary_not_found_error
 fi
 
 # Check if example directory exists
