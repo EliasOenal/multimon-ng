@@ -8,7 +8,24 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
+
+    # Cache Qt installation
+    - name: Cache Qt
+      id: cache-qt
+      uses: actions/cache@v4
+      with:
+        path: ~/Qt
+        key: ${{ runner.os }}-qt-v1
+        restore-keys: |
+          ${{ runner.os }}-qt-
+
     - uses: jurplel/install-qt-action@v4
+      with:
+        cached: ${{ steps.cache-qt.outputs.cache-hit }}
+
     - name: qmake
       run: mkdir build && cd build && qmake ../multimon-ng.pro
+
+    - name: make
+      run: cd build && make -j$(nproc)

@@ -8,8 +8,38 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v4
+
+    # Cache apt packages
+    - name: Cache apt packages
+      id: apt-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/apt-cache
+        key: ${{ runner.os }}-apt-cmake-v1
+        restore-keys: |
+          ${{ runner.os }}-apt-cmake-
+
+    - name: Restore apt cache
+      if: steps.apt-cache.outputs.cache-hit == 'true'
+      run: |
+        if [ -d ~/apt-cache ]; then
+          sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+        fi
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential cmake libx11-dev libpulse-dev
+
+    - name: Save apt cache
+      if: steps.apt-cache.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p ~/apt-cache
+        cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+
     - name: cmake
       run: mkdir build && cd build && cmake ..
+
     - name: make
-      run: cd build && make
+      run: cd build && make -j$(nproc)

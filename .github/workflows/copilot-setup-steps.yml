@@ -1,0 +1,104 @@
+name: "Copilot Setup Steps"
+
+# Automatically run the setup steps when they are changed to allow for easy validation, and
+# allow manual testing through the repository's "Actions" tab
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+
+    # Set the permissions to the lowest permissions possible needed for your steps.
+    # Copilot will be given its own token for its operations.
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Cache apt packages to speed up subsequent runs
+      - name: Cache apt packages
+        id: apt-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/apt-cache
+          key: ${{ runner.os }}-apt-multimon-ng-v1
+          restore-keys: |
+            ${{ runner.os }}-apt-multimon-ng-
+
+      # Restore cached apt packages if available
+      - name: Restore apt cache
+        if: steps.apt-cache.outputs.cache-hit == 'true'
+        run: |
+          if [ -d ~/apt-cache ]; then
+            sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+          fi
+
+      # Install all required packages for multimon-ng development
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            sox \
+            libx11-dev \
+            libpulse-dev \
+            qtbase5-dev \
+            qt5-qmake \
+            gcc-mingw-w64-i686 \
+            g++-mingw-w64-i686 \
+            gcc-mingw-w64-x86-64 \
+            g++-mingw-w64-x86-64 \
+            wine64
+
+      # Save apt packages to cache for future runs
+      - name: Save apt cache
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/apt-cache
+          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+
+      # Verify installation by building the project
+      - name: Verify native build
+        run: |
+          mkdir build && cd build && cmake .. && make -j$(nproc)
+
+      # Verify MinGW cross-compilation works
+      - name: Verify MinGW64 cross-build
+        run: |
+          mkdir build-mingw64 && cd build-mingw64
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw64.cmake
+          make -j$(nproc)
+
+      # Verify MinGW32 cross-compilation works
+      - name: Verify MinGW32 cross-build
+        run: |
+          mkdir build-mingw32 && cd build-mingw32
+          cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw32.cmake
+          make -j$(nproc)
+
+      # Initialize Wine and verify it can run the Windows builds
+      - name: Verify Wine can run Windows builds
+        run: |
+          # Initialize Wine prefix
+          WINEDEBUG=-all wineboot --init 2>/dev/null || true
+          # Test running the 64-bit Windows executable
+          WINEDEBUG=-all wine64 ./build-mingw64/multimon-ng.exe -h || true
+
+      # Verify sox is available for audio file conversion
+      - name: Verify sox installation
+        run: |
+          sox --version
+          # Test raw file processing
+          ./build/multimon-ng -t raw -q -a UFSK1200 ./example/ufsk1200.raw

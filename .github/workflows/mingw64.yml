@@ -7,24 +7,47 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v6
-    
+    - uses: actions/checkout@v4
+
+    # Cache apt packages
+    - name: Cache apt packages
+      id: apt-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/apt-cache
+        key: ${{ runner.os }}-apt-mingw64-v1
+        restore-keys: |
+          ${{ runner.os }}-apt-mingw64-
+
+    - name: Restore apt cache
+      if: steps.apt-cache.outputs.cache-hit == 'true'
+      run: |
+        if [ -d ~/apt-cache ]; then
+          sudo cp -r ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
+        fi
+
     - name: Install MinGW-w64 for 64-bit
       run: |
         sudo apt-get update
         sudo apt-get install -y gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
-    
+
+    - name: Save apt cache
+      if: steps.apt-cache.outputs.cache-hit != 'true'
+      run: |
+        mkdir -p ~/apt-cache
+        cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+
     - name: Configure with CMake
       run: |
         mkdir build-mingw64
         cd build-mingw64
         cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw64.cmake
-    
+
     - name: Build
       run: |
         cd build-mingw64
-        make
-    
+        make -j$(nproc)
+
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
