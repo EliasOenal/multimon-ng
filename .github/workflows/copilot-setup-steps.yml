@@ -1,0 +1,31 @@
+# Copilot Setup Steps
+# This workflow prepares the environment for GitHub Copilot coding agent sessions.
+# It installs all necessary dependencies for building, testing, and cross-compiling multimon-ng.
+
+name: "Copilot Setup Steps"
+
+on: workflow_dispatch
+
+jobs:
+ setup:
+   runs-on: ubuntu-latest
+   steps:
+     - name: Checkout repository
+       uses: actions/checkout@v6
+
+     - name: Install build dependencies
+       run: |
+         sudo apt-get update
+         sudo apt-get install -y \
+           build-essential \
+           cmake \
+           sox \
+           libpulse-dev \
+           libx11-dev \
+           gcc-mingw-w64-i686 \
+           g++-mingw-w64-i686 \
+           gcc-mingw-w64-x86-64 \
+           g++-mingw-w64-x86-64 \
+           wine \
+           wine64 \
+           qt5-qmake

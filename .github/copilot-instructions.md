@@ -122,6 +122,38 @@ Four GitHub Actions workflows run on every push:
 2. **Missing PulseAudio/X11**: These are optional; the build uses DUMMY_AUDIO if not found.
 3. **Format warnings in demod_flex.c**: These are known issues with `%lld` format specifiers and are harmless.
 
+## Pre-installed Environment
+The Copilot coding agent environment has the following tools pre-installed via `.github/workflows/copilot-setup-steps.yml`:
+| Category | Tools |
+|----------|-------|
+| **Build Tools** | `cmake`, `build-essential` (gcc, g++, make) |
+| **Audio Processing** | `sox` (for wav/flac to raw conversion) |
+| **Development Libraries** | `libpulse-dev` (PulseAudio headers), `libx11-dev` (X11 headers) |
+| **Cross-Compilation** | `gcc-mingw-w64-i686`, `g++-mingw-w64-i686` (32-bit Windows), `gcc-mingw-w64-x86-64`, `g++-mingw-w64-x86-64` (64-bit Windows) |
+| **Windows Testing** | `wine`, `wine64` (for running Windows executables on Linux) |
+| **Alternative Build** | `qt5-qmake` (for qmake builds) |
+### Testing with SoX
+With SoX installed, you can test with various audio formats:
+```bash
+# Test with wav file (requires sox)
+./build/multimon-ng -t wav -q -a X10 ./example/x10rf.wav
+# Test with flac file (requires sox)
+./build/multimon-ng -t flac -q -a POCSAG1200 ./example/POCSAG_sample_-_1200_bps.flac
+# Convert wav to raw for direct input
+sox -t wav input.wav -esigned-integer -b16 -r 22050 -t raw output.raw
+```
+### Testing Windows Builds with Wine
+After cross-compiling, you can test Windows executables using Wine:
+```bash
+# Build 64-bit Windows executable
+mkdir build-mingw64 && cd build-mingw64
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw64.cmake
+make
+# Test with Wine
+wine64 ./multimon-ng.exe -h
+wine64 ./multimon-ng.exe -t raw -q -a UFSK1200 ../example/ufsk1200.raw
+```
+
 ## Trust These Instructions
 
 These instructions have been validated by running the actual build commands. Only search for additional information if these instructions appear incomplete or produce unexpected errors.
