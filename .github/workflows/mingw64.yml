@@ -25,6 +25,14 @@ jobs:
         cd build-mingw64
         make
     
+    - name: Install Wine
+      run: |
+        sudo apt-get install -y wine64
+    
+    - name: Run tests with Wine
+      run: |
+        WINE_CMD=wine MULTIMON=./build-mingw64/multimon-ng.exe ./test/run_tests.sh
+    
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
