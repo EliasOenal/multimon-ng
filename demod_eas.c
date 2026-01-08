@@ -85,13 +85,14 @@
 #define MIN_IDENTICAL_MSGS 2              // # of msgs which must be identical
 
 /* ---------------------------------------------------------------------- */
+#define CORRLEN_SIZE 42                   // = (int)(FREQ_SAMP/BAUD) = (int)(22050/520.83)
 #define CORRLEN ((int)(FREQ_SAMP/BAUD))
 #define SPHASEINC (0x10000u*BAUD*SUBSAMP/FREQ_SAMP)
 
-static float eascorr_mark_i[CORRLEN];
-static float eascorr_mark_q[CORRLEN];
-static float eascorr_space_i[CORRLEN];
-static float eascorr_space_q[CORRLEN];
+static float eascorr_mark_i[CORRLEN_SIZE];
+static float eascorr_mark_q[CORRLEN_SIZE];
+static float eascorr_space_i[CORRLEN_SIZE];
+static float eascorr_space_q[CORRLEN_SIZE];
 
 #define MAX(a,b) (((a)>(b))?(a):(b))
 #define MIN(a,b) (((a)<(b))?(a):(b))
