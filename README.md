@@ -3,16 +3,16 @@
 multimon-ng is the successor of multimon. It decodes the following digital transmission modes:
 
 - POCSAG512 POCSAG1200 POCSAG2400
-- FLEX
+- FLEX FLEX_NEXT
 - EAS
-- UFSK1200 CLIPFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3
+- UFSK1200 CLIPFSK FMSFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3
 - HAPN4800
-- FSK9600 
+- FSK9600
 - DTMF
 - ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI
 - EEA EIA CCIR
-- MORSE CW
-- X10
+- MORSE_CW
+- DUMPCSV X10 SCOPE
 
 ## Building
 
@@ -85,7 +85,7 @@ So far multimon-ng has been successfully built on:
 
 Files can be easily converted into multimon-ng's native raw format using *sox*. e.g:
 
-    sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw pocsag_short.raw
+    sox -R -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw pocsag_short.raw
 
 GNURadio can also generate the format using the file sink in input mode *short*. 
 
@@ -93,7 +93,7 @@ GNURadio can also generate the format using the file sink in input mode *short*.
 
 You can also "pipe" raw samples into multimon-ng using something like:
 
-    sox -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw - | ./multimon-ng -
+    sox -R -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw - | ./multimon-ng -
 
 > [!NOTE]
 > Note the trailing dash, means write/read to/from stdin
@@ -120,8 +120,8 @@ rtl_fm -s 22050 -f 123.456M -g -9.9 | tee >(flac -8 --endian=little --channels=1
 
 To replay the recorded flac file to multimon-ng (requires sox):
 
-```sg
-flac -d --stdout ~/recordings/rtlf/rtlfm.1725033204.flac | multimon-ng -v 0 -a FLEX_NEXT -t flac -
+```sh
+flac -d --stdout ~/recordings/rtlf/rtlfm.1725033204.flac | multimon-ng -r -v 0 -a FLEX_NEXT -t flac -
 ```
 
 ## Packaging
