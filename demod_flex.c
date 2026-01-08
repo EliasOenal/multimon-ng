@@ -108,6 +108,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <inttypes.h>
 
 #include "cJSON.h"
 
@@ -634,12 +635,12 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         if (!json_mode) {
           if(flex_disable_timestamp)
           {
-            pt_offset = sprintf(pt_out, "FLEX|%i/%i/%c/%c|%02i.%03i|%09lld",
+            pt_offset = sprintf(pt_out, "FLEX|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
                           flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
           }
           else
           {
-            pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09lld",
+            pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
                           gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                           flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
           }
@@ -667,8 +668,8 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
                 for(int g = 1; g <= endpoint;g++)
                 {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-                        pt_offset += sprintf(pt_out + pt_offset, " %09lld", flex->GroupHandler.GroupCodes[groupbit][g]);
+                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09" PRId64 "]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
+                        pt_offset += sprintf(pt_out + pt_offset, " %09" PRId64, flex->GroupHandler.GroupCodes[groupbit][g]);
                 }
 
                 // reset the value
