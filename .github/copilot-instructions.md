@@ -137,11 +137,11 @@ The Copilot coding agent environment has the following tools pre-installed via `
 With SoX installed, you can test with various audio formats:
 ```bash
 # Test with wav file (requires sox)
-./build/multimon-ng -t wav -q -a X10 ./example/x10rf.wav
+./build/multimon-ng -r -t wav -q -a X10 ./example/x10rf.wav
 # Test with flac file (requires sox)
-./build/multimon-ng -t flac -q -a POCSAG1200 ./example/POCSAG_sample_-_1200_bps.flac
+./build/multimon-ng -r -t flac -q -a POCSAG1200 ./example/POCSAG_sample_-_1200_bps.flac
 # Convert wav to raw for direct input
-sox -t wav input.wav -esigned-integer -b16 -r 22050 -t raw output.raw
+sox -R -t wav input.wav -esigned-integer -b16 -r 22050 -t raw output.raw
 ```
 ### Testing Windows Builds with Wine
 After cross-compiling, you can test Windows executables using Wine:
