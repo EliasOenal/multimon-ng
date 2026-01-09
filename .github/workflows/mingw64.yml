@@ -34,7 +34,7 @@ jobs:
         WINE_CMD=wine MULTIMON=./build-mingw64/multimon-ng.exe ./test/run_tests.sh
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v6
       with:
         name: multimon-ng-win64
         path: build-mingw64/multimon-ng.exe
