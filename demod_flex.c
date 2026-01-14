@@ -582,39 +582,6 @@ static void parse_alphanumeric(struct Flex* flex, unsigned int* phaseptr, char P
 
     message[currentChar] = '\0';
 
-    /*
-            verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN
-       ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                            flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo,
-       flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-
-            verbprintf(0, "%s\n", message);
-
-            if(flex_groupmessage == 1) {
-                    int groupbit = flex->Decode.capcode-2029568;
-                    if(groupbit < 0) return;
-
-                    int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
-                    for(int g = 1; g <= endpoint;g++)
-                    {
-                            verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes;
-       %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g,
-       flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                            verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c
-       %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour,
-       gmt->tm_min, gmt->tm_sec, flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo,
-       flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                            verbprintf(0, "%s\n", message);
-                    }
-                    // reset the value
-                    flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
-        flex->GroupHandler.GroupFrame[groupbit] = -1;
-        flex->GroupHandler.GroupCycle[groupbit] = -1;
-            }
-    */
-
     static char pt_out[4096] = {0};
 
     int pt_offset;
@@ -776,16 +743,6 @@ static void parse_numeric(struct Flex* flex, unsigned int* phaseptr, char PhaseN
     }
 }
 
-// static void parse_tone_only(struct Flex * flex, char PhaseNo) {
-//   if (flex==NULL) return;
-//   time_t now=time(NULL);
-//   struct tm * gmt=gmtime(&now);
-//   verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON\n",
-//   gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-//       flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno,
-//       flex->Decode.capcode);
-// }
-
 static void parse_tone_only(struct Flex* flex, unsigned int* phaseptr, char PhaseNo, int j) {
     if (flex == NULL) return;
     unsigned const char flex_bcd[17] = "0123456789 U -][";
@@ -921,16 +878,10 @@ static void parse_unknown(struct Flex* flex, unsigned int* phaseptr, char PhaseN
     }
 }
 
-// static void parse_capcode(struct Flex * flex, uint32_t aw1, uint32_t aw2) {
 static void parse_capcode(struct Flex* flex, uint32_t aw1) {
     if (flex == NULL) return;
 
     flex->Decode.long_address = (aw1 < 0x008001L) || (aw1 > 0x1E0000L) || (aw1 > 0x1E7FFEL);
-
-    /// if (flex->Decode.long_address)
-    //  flex->Decode.capcode = (int64_t)aw1+((int64_t)(aw2^0x001FFFFFul)<<15)+0x1F9000ull;  // Don't
-    //  ask
-    // else
     flex->Decode.capcode = aw1 - 0x8000;
 }
 
@@ -1038,8 +989,6 @@ static void decode_phase(struct Flex* flex, char PhaseNo) {
             unsigned int iAssignedFrame = (int)((viw >> 10) & 0x7f);  // Frame with groupmessage
             int groupbit = (int)((viw >> 17) & 0x7f);                 // Listen to this groupcode
 
-            ////////#############################################################################
-            ////////#############################################################################
             flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]++;
             int CapcodePlacement = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
             verbprintf(1,
