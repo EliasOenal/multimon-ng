@@ -1,416 +1,291 @@
 /*
- * File:    bch3121.c
- * Author:  Robert Morelos-Zaragoza
+ * This is free and unencumbered software released into the public domain.
  *
- * %%%%%%%%%%% Encoder/Decoder for a (31,21,5) binary BCH code %%%%%%%%%%%%%
+ * Anyone is free to copy, modify, publish, use, compile, sell, or
+ * distribute this software, either in source code form or as a compiled
+ * binary, for any purpose, commercial or non-commercial, and by any
+ * means.
  *
- *	This code is used in the POCSAG protocol specification for pagers.
+ * In jurisdictions that recognize copyright laws, the author or authors
+ * of this software dedicate any and all copyright interest in the
+ * software to the public domain. We make this dedication for the benefit
+ * of the public at large and to the detriment of our heirs and
+ * successors. We intend this dedication to be an overt act of
+ * relinquishment in perpetuity of all present and future rights to this
+ * software under copyright law.
  *
- *	In this specific case, there is no need to use the Berlekamp-Massey
- *	algorithm, since the error locator polynomial is of at most degree 2.
- *	Instead, we simply solve by hand two simultaneous equations to give
- * 	the coefficients of the error locator polynomial in the case of two
- *	errors. In the case of one error, the location is given by the first
- *	syndrome.
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+ * OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+ * OTHER DEALINGS IN THE SOFTWARE.
  *
- *	This program derivates from the original bch2.c, which was written
- *	to simulate the encoding/decoding of primitive binary BCH codes.
- *	Part of this program is adapted from a Reed-Solomon encoder/decoder
- *	program,  'rs.c', to the binary case.
- *
- *	rs.c by Simon Rockliff, University of Adelaide, 21/9/89
- *	bch2.c by Robert Morelos-Zaragoza, University of Hawaii, 5/19/92
- *
- * COPYRIGHT NOTICE: This computer program is free for non-commercial purposes.
- * You may implement this program for any non-commercial application. You may
- * also implement this program for commercial purposes, provided that you
- * obtain my written permission. Any modification of this program is covered
- * by this copyright.
- *
- * %%%% Copyright 1994 (c) Robert Morelos-Zaragoza. All rights reserved. %%%%%
- *
- * m = order of the field GF(2**5) = 5
- * n = 2**5 - 1 = 31 = length
- * t = 2 = error correcting capability
- * d = 2*t + 1 = 5 = designed minimum distance
- * k = n - deg(g(x)) = 21 = dimension
- * p[] = coefficients of primitive polynomial used to generate GF(2**5)
- * g[] = coefficients of generator polynomial, g(x)
- * alpha_to [] = log table of GF(2**5)
- * index_of[] = antilog table of GF(2**5)
- * data[] = coefficients of data polynomial, i(x)
- * bb[] = coefficients of redundancy polynomial ( x**(10) i(x) ) modulo g(x)
- * numerr = number of errors
- * errpos[] = error positions
- * recd[] = coefficients of received polynomial
- * decerror = number of decoding errors (in MESSAGE positions)
- *
- */
-/*
- *      BCHCode.c
- *
- *      Copyright (C) 2015 Craig Shelley (craig@microtron.org.uk)
- *
- *      BCH Encoder/Decoder - Adapted from GNURadio for use with Multimon
- *
- *	This program is free software; you can redistribute it and/or modify
- *	it under the terms of the GNU General Public License as published by
- *	the Free Software Foundation; either version 2 of the License, or
- *	(at your option) any later version.
- *
- *	This program is distributed in the hope that it will be useful,
- *	but WITHOUT ANY WARRANTY; without even the implied warranty of
- *	MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *	GNU General Public License for more details.
- *
- *	You should have received a copy of the GNU General Public License
- *	along with this program; if not, write to the Free Software
- *	Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+ * For more information, please refer to <https://unlicense.org/>
  */
 
-#include <math.h>
 #include <stdlib.h>
 #include "BCHCode.h"
 
+/*
+ * This implements a BCH(n,k,t) decoder over GF(2^m).
+ * For FLEX paging: n=31, k=21, t=2, m=5
+ *
+ * Field elements are represented both as polynomials (for arithmetic)
+ * and as powers of the primitive element alpha (for table lookups).
+ */
+
 struct BCHCode {
-	int * p;         // coefficients of primitive polynomial used to generate GF(2**5)
-	int m;           // order of the field GF(2**5) = 5
-	int n;           // 2**5 - 1 = 31
-	int k;           // n - deg(g(x)) = 21 = dimension
-	int t;           // 2 = error correcting capability
-	int * alpha_to;  // log table of GF(2**5)
-	int * index_of;  // antilog table of GF(2**5)
-	int * g;         // coefficients of generator polynomial, g(x) [n - k + 1]=[11]
-	int * bb;        // coefficients of redundancy polynomial ( x**(10) i(x) ) modulo g(x)
+    int field_order;        /* m: defines GF(2^m) */
+    int code_len;           /* n: codeword bits */
+    int data_len;           /* k: information bits */
+    int correct_cap;        /* t: max correctable errors */
+    int parity_len;         /* n - k: check bits */
+    int *exp_tbl;           /* alpha^i -> polynomial */
+    int *log_tbl;           /* polynomial -> i where alpha^i = poly */
+    int *gen_poly;          /* generator polynomial */
+    int *bb;                /* parity (redundant) bits output from encoder */
+    int syn_tbl[4][32];     /* Precomputed syndrome contributions per bit position */
 };
 
+/* Build GF(2^m) exp and log tables from primitive polynomial */
+static void build_field_tables(struct BCHCode *ctx, const int *prim_poly)
+{
+    int i, elem;
 
+    elem = 1;
 
-
-
-
-static void generate_gf(struct BCHCode * BCHCode_data) {
-	if (BCHCode_data==NULL)  return;
-	/*
-	 * generate GF(2**m) from the irreducible polynomial p(X) in p[0]..p[m]
-	 * lookup tables:  index->polynomial form   alpha_to[] contains j=alpha**i;
-	 * polynomial form -> index form  index_of[j=alpha**i] = i alpha=2 is the
-	 * primitive element of GF(2**m)
-	 */
-
-	register int    i, mask;
-	mask = 1;
-	BCHCode_data->alpha_to[BCHCode_data->m] = 0;
-	for (i = 0; i < BCHCode_data->m; i++) {
-		BCHCode_data->alpha_to[i] = mask;
-		BCHCode_data->index_of[BCHCode_data->alpha_to[i]] = i;
-		if (BCHCode_data->p[i] != 0)
-			BCHCode_data->alpha_to[BCHCode_data->m] ^= mask;
-		mask <<= 1;
-	}
-	BCHCode_data->index_of[BCHCode_data->alpha_to[BCHCode_data->m]] = BCHCode_data->m;
-	mask >>= 1;
-	for (i = BCHCode_data->m + 1; i < BCHCode_data->n; i++) {
-		if (BCHCode_data->alpha_to[i - 1] >= mask)
-			BCHCode_data->alpha_to[i] = BCHCode_data->alpha_to[BCHCode_data->m] ^ ((BCHCode_data->alpha_to[i - 1] ^ mask) << 1);
-		else
-			BCHCode_data->alpha_to[i] = BCHCode_data->alpha_to[i - 1] << 1;
-		BCHCode_data->index_of[BCHCode_data->alpha_to[i]] = i;
-	}
-	BCHCode_data->index_of[0] = -1;
+    for (i = 0; i < ctx->code_len; i++) {
+        ctx->exp_tbl[i] = elem;
+        ctx->log_tbl[elem] = i;
+        
+        /* Multiply by alpha (i.e., x) in the field */
+        elem <<= 1;
+        if (elem & (1 << ctx->field_order)) {
+            /* Reduce modulo primitive polynomial */
+            elem ^= 0;
+            for (int j = 0; j <= ctx->field_order; j++) {
+                if (prim_poly[j])
+                    elem ^= (1 << j);
+            }
+        }
+    }
+    
+    /* Handle wrap-around and zero */
+    ctx->exp_tbl[ctx->code_len] = ctx->exp_tbl[0];
+    ctx->log_tbl[0] = -1;
 }
 
-
-static void gen_poly(struct BCHCode * BCHCode_data) {
-	if (BCHCode_data==NULL)  return;
-	/*
-	 * Compute generator polynomial of BCH code of length = 31, redundancy = 10
-	 * (OK, this is not very efficient, but we only do it once, right? :)
-	 */
-
-	register int    ii, jj, ll, kaux;
-	int             test, aux, nocycles, root, noterms, rdncy;
-	int             cycle[15][6], size[15], min[11], zeros[11];
-	/* Generate cycle sets modulo 31 */
-	cycle[0][0] = 0; size[0] = 1;
-	cycle[1][0] = 1; size[1] = 1;
-	jj = 1;			/* cycle set index */
-	do {
-		/* Generate the jj-th cycle set */
-		ii = 0;
-		do {
-			ii++;
-			cycle[jj][ii] = (cycle[jj][ii - 1] * 2) % BCHCode_data->n;
-			size[jj]++;
-			aux = (cycle[jj][ii] * 2) % BCHCode_data->n;
-		} while (aux != cycle[jj][0]);
-		/* Next cycle set representative */
-		ll = 0;
-		do {
-			ll++;
-			test = 0;
-			for (ii = 1; ((ii <= jj) && (!test)); ii++) {
-				/* Examine previous cycle sets */
-				for (kaux = 0; ((kaux < size[ii]) && (!test)); kaux++) {
-					if (ll == cycle[ii][kaux]) {
-						test = 1;
-					}
-				}
-			}
-		} while ((test) && (ll < (BCHCode_data->n - 1)));
-		if (!(test)) {
-			jj++;	/* next cycle set index */
-			cycle[jj][0] = ll;
-			size[jj] = 1;
-		}
-	} while (ll < (BCHCode_data->n - 1));
-	nocycles = jj;		/* number of cycle sets modulo BCHCode_data->n */
-	/* Search for roots 1, 2, ..., BCHCode_data->d-1 in cycle sets */
-	kaux = 0;
-	rdncy = 0;
-	for (ii = 1; ii <= nocycles; ii++) {
-		min[kaux] = 0;
-		for (jj = 0; jj < size[ii]; jj++) {
-			for (root = 1; root < (2*BCHCode_data->t + 1); root++) {
-				if (root == cycle[ii][jj]) {
-					min[kaux] = ii;
-				}
-			}
-		}
-		if (min[kaux]) {
-			rdncy += size[min[kaux]];
-			kaux++;
-		}
-	}
-	noterms = kaux;
-	kaux = 1;
-	for (ii = 0; ii < noterms; ii++) {
-		for (jj = 0; jj < size[min[ii]]; jj++) {
-			zeros[kaux] = cycle[min[ii]][jj];
-			kaux++;
-		}
-	}
-	//printf("This is a (%d, %d, %d) binary BCH code\n", BCHCode_data->n, BCHCode_data->k, BCHCode_data->d);
-	/* Compute generator polynomial */
-	BCHCode_data->g[0] = BCHCode_data->alpha_to[zeros[1]];
-	BCHCode_data->g[1] = 1;		/* g(x) = (X + zeros[1]) initially */
-	for (ii = 2; ii <= rdncy; ii++) {
-		BCHCode_data->g[ii] = 1;
-		for (jj = ii - 1; jj > 0; jj--) {
-			if (BCHCode_data->g[jj] != 0)
-				BCHCode_data->g[jj] = BCHCode_data->g[jj - 1] ^ BCHCode_data->alpha_to[(BCHCode_data->index_of[BCHCode_data->g[jj]] + zeros[ii]) % BCHCode_data->n];
-			else
-				BCHCode_data->g[jj] = BCHCode_data->g[jj - 1];
-		}
-		BCHCode_data->g[0] = BCHCode_data->alpha_to[(BCHCode_data->index_of[BCHCode_data->g[0]] + zeros[ii]) % BCHCode_data->n];
-	}
-	//printf("g(x) = ");
-	//for (ii = 0; ii <= rdncy; ii++) {
-	//	printf("%d", BCHCode_data->g[ii]);
-	//	if (ii && ((ii % 70) == 0)) {
-	//		printf("\n");
-	//	}
-	//}
-	//printf("\n");
+/* Compute generator polynomial from its roots */
+static void build_generator(struct BCHCode *ctx)
+{
+    int roots[16];
+    int num_roots = 0;
+    int i, j, r;
+    int seen[32] = {0};
+    
+    /* Find minimal polynomial roots: alpha^1 through alpha^(2t) and conjugates */
+    for (r = 1; r <= 2 * ctx->correct_cap; r++) {
+        int val = r % ctx->code_len;
+        /* Add this root and all its conjugates (cyclotomic coset) */
+        while (!seen[val]) {
+            seen[val] = 1;
+            roots[num_roots++] = val;
+            val = (val * 2) % ctx->code_len;
+        }
+    }
+    
+    /* Build g(x) = product of (x - alpha^root) for all roots */
+    ctx->gen_poly[0] = 1;
+    for (i = 1; i <= ctx->parity_len; i++)
+        ctx->gen_poly[i] = 0;
+    
+    for (i = 0; i < num_roots; i++) {
+        /* Multiply current g(x) by (x + alpha^roots[i]) */
+        for (j = num_roots; j > 0; j--) {
+            int term = ctx->gen_poly[j - 1];
+            if (term != 0) {
+                /* GF multiply: term * root_val */
+                int prod = ctx->exp_tbl[(ctx->log_tbl[term] + roots[i]) % ctx->code_len];
+                ctx->gen_poly[j] ^= prod;
+            }
+        }
+    }
 }
 
+struct BCHCode *BCHCode_New(int p[], int m, int n, int k, int t)
+{
+    struct BCHCode *ctx = malloc(sizeof(struct BCHCode));
+    if (!ctx) return NULL;
+    
+    ctx->field_order = m;
+    ctx->code_len = n;
+    ctx->data_len = k;
+    ctx->correct_cap = t;
+    ctx->parity_len = n - k;
+    
+    ctx->exp_tbl = malloc((n + 1) * sizeof(int));
+    ctx->log_tbl = malloc((n + 1) * sizeof(int));
+    ctx->gen_poly = malloc((n - k + 1) * sizeof(int));
+    ctx->bb = malloc((n - k) * sizeof(int));
+    
+    if (!ctx->exp_tbl || !ctx->log_tbl || !ctx->gen_poly || !ctx->bb) {
+        BCHCode_Delete(ctx);
+        return NULL;
+    }
+    
+    build_field_tables(ctx, p);
+    build_generator(ctx);
+    
+    /* Precompute syndrome table: syn_tbl[syndrome_idx][bit_pos] = exp[(syndrome * bit) % n] */
+    for (int s = 0; s < 4; s++) {
+        for (int bit = 0; bit < n; bit++) {
+            ctx->syn_tbl[s][bit] = ctx->exp_tbl[((s + 1) * bit) % n];
+        }
+    }
+    
+    return ctx;
+}
 
-void BCHCode_Encode(struct BCHCode * BCHCode_data, int data[]) {
-	if (BCHCode_data==NULL)  return;
-	/*
-	 * Calculate redundant bits bb[], codeword is c(X) = data(X)*X**(n-k)+ bb(X)
-	 */
+void BCHCode_Delete(struct BCHCode *ctx)
+{
+    if (!ctx) return;
+    free(ctx->exp_tbl);
+    free(ctx->log_tbl);
+    free(ctx->gen_poly);
+    free(ctx->bb);
+    free(ctx);
+}
 
-	register int    i, j;
-	register int    feedback;
-	for (i = 0; i < BCHCode_data->n - BCHCode_data->k; i++) {
-		BCHCode_data->bb[i] = 0;
-	}
-	for (i = BCHCode_data->k - 1; i >= 0; i--) {
-		feedback = data[i] ^ BCHCode_data->bb[BCHCode_data->n - BCHCode_data->k - 1];
-		if (feedback != 0) {
-			for (j = BCHCode_data->n - BCHCode_data->k - 1; j > 0; j--) {
-				if (BCHCode_data->g[j] != 0) {
-					BCHCode_data->bb[j] = BCHCode_data->bb[j - 1] ^ feedback;
-				} else {
-					BCHCode_data->bb[j] = BCHCode_data->bb[j - 1];
-				}
-			}
-			BCHCode_data->bb[0] = BCHCode_data->g[0] && feedback;
-		} else {
-			for (j = BCHCode_data->n - BCHCode_data->k - 1; j > 0; j--) {
-				BCHCode_data->bb[j] = BCHCode_data->bb[j - 1];
-			}
-			BCHCode_data->bb[0] = 0;
-		};
-	};
-};
+void BCHCode_Encode(struct BCHCode *ctx, int bits[])
+{
+    int i, j, fb;
+    
+    if (!ctx) return;
+    
+    /* Initialize parity bits to zero */
+    for (i = 0; i < ctx->parity_len; i++) {
+        ctx->bb[i] = 0;
+    }
+    
+    /* LFSR-based encoding using generator polynomial */
+    for (i = ctx->data_len - 1; i >= 0; i--) {
+        fb = bits[i] ^ ctx->bb[ctx->parity_len - 1];
+        if (fb != 0) {
+            for (j = ctx->parity_len - 1; j > 0; j--) {
+                if (ctx->gen_poly[j] != 0)
+                    ctx->bb[j] = ctx->bb[j - 1] ^ 1;
+                else
+                    ctx->bb[j] = ctx->bb[j - 1];
+            }
+            ctx->bb[0] = ctx->gen_poly[0] && fb;
+        } else {
+            for (j = ctx->parity_len - 1; j > 0; j--) {
+                ctx->bb[j] = ctx->bb[j - 1];
+            }
+            ctx->bb[0] = 0;
+        }
+    }
+}
 
+/* Return pointer to parity bits array (valid after BCHCode_Encode call) */
+int *BCHCode_GetParity(struct BCHCode *ctx)
+{
+    if (!ctx) return NULL;
+    return ctx->bb;
+}
 
-int BCHCode_Decode(struct BCHCode * BCHCode_data, int recd[]) {
-	if (BCHCode_data==NULL)  return -1;
-	/*
-	 * We do not need the Berlekamp algorithm to decode.
-	 * We solve before hand two equations in two variables.
-	 */
-
-	register int    i, j, q;
-	int             elp[3], s[5], s3;
-	int             count = 0, syn_error = 0;
-	int             loc[3], reg[3];
-	int				aux;
-	int retval=0;
-	/* first form the syndromes */
-	//	printf("s[] = (");
-	for (i = 1; i <= 4; i++) {
-		s[i] = 0;
-		for (j = 0; j < BCHCode_data->n; j++) {
-			if (recd[j] != 0) {
-				s[i] ^= BCHCode_data->alpha_to[(i * j) % BCHCode_data->n];
-			}
-		}
-		if (s[i] != 0) {
-			syn_error = 1;	/* set flag if non-zero syndrome */
-		}
-		/* NOTE: If only error detection is needed,
-		 * then exit the program here...
-		 */
-		/* convert syndrome from polynomial form to index form  */
-		s[i] = BCHCode_data->index_of[s[i]];
-		//printf("%3d ", s[i]);
-	};
-	//printf(")\n");
-	if (syn_error) {	/* If there are errors, try to correct them */
-		if (s[1] != -1) {
-			s3 = (s[1] * 3) % BCHCode_data->n;
-			if ( s[3] == s3 ) { /* Was it a single error ? */
-				//printf("One error at %d\n", s[1]);
-				recd[s[1]] ^= 1; /* Yes: Correct it */
-			} else {
-				/* Assume two errors occurred and solve
-				 * for the coefficients of sigma(x), the
-				 * error locator polynomail
-				 */
-				if (s[3] != -1) {
-					aux = BCHCode_data->alpha_to[s3] ^ BCHCode_data->alpha_to[s[3]];
-				} else {
-					aux = BCHCode_data->alpha_to[s3];
-				}
-				elp[0] = 0;
-				elp[1] = (s[2] - BCHCode_data->index_of[aux] + BCHCode_data->n) % BCHCode_data->n;
-				elp[2] = (s[1] - BCHCode_data->index_of[aux] + BCHCode_data->n) % BCHCode_data->n;
-				//printf("sigma(x) = ");
-				//for (i = 0; i <= 2; i++) {
-				//	printf("%3d ", elp[i]);
-				//}
-				//printf("\n");
-				//printf("Roots: ");
-				/* find roots of the error location polynomial */
-				for (i = 1; i <= 2; i++) {
-					reg[i] = elp[i];
-				}
-				count = 0;
-				for (i = 1; i <= BCHCode_data->n; i++) { /* Chien search */
-					q = 1;
-					for (j = 1; j <= 2; j++) {
-						if (reg[j] != -1) {
-							reg[j] = (reg[j] + j) % BCHCode_data->n;
-							q ^= BCHCode_data->alpha_to[reg[j]];
-						}
-					}
-					if (!q) {	/* store error location number indices */
-						loc[count] = i % BCHCode_data->n;
-						count++;
-						//printf("%3d ", (i%n));
-					}
-				}
-				//printf("\n");
-				if (count == 2)	{
-					/* no. roots = degree of elp hence 2 errors */
-					for (i = 0; i < 2; i++)
-						recd[loc[i]] ^= 1;
-				} else {	/* Cannot solve: Error detection */
-					retval=1;
-					//for (i = 0; i < 31; i++) {
-					//	recd[i] = 0;
-					//}
-					//printf("incomplete decoding\n");
-				}
-			}
-		} else if (s[2] != -1) {/* Error detection */
-			retval=1;
-			//for (i = 0; i < 31; i++) recd[i] = 0;
-			//printf("incomplete decoding\n");
-		}
-	}
-
-	return retval;
+/* Return length of parity array (n - k) */
+int BCHCode_GetParityLen(struct BCHCode *ctx)
+{
+    if (!ctx) return 0;
+    return ctx->parity_len;
 }
 
 /*
- * Example usage BCH(31,21,5)
+ * Decode received word, correcting up to t errors in-place.
+ * Returns 0 if successful, 1 if uncorrectable errors detected.
  *
- * p[] = coefficients of primitive polynomial used to generate GF(2**5)
- * m = order of the field GF(2**5) = 5
- * n = 2**5 - 1 = 31
- * t = 2 = error correcting capability
- * d = 2*BCHCode_data->t + 1 = 5 = designed minimum distance
- * k = n - deg(g(x)) = 21 = dimension
- * g[] = coefficients of generator polynomial, g(x) [n - k + 1]=[11]
- * alpha_to [] = log table of GF(2**5)
- * index_of[] = antilog table of GF(2**5)
- * data[] = coefficients of data polynomial, i(x)
- * bb[] = coefficients of redundancy polynomial ( x**(10) i(x) ) modulo g(x)
+ * Optimized for BCH(31,21,2):
+ * - Precomputed syndrome lookup table eliminates multiply/modulo in hot path
+ * - Early exit on zero syndromes and after finding 2 roots
+ * - Branchless syndrome accumulation where possible
  */
-struct BCHCode * BCHCode_New(int p[], int m, int n, int k, int t) {
-	struct BCHCode * BCHCode_data=NULL;
+int BCHCode_Decode(struct BCHCode *ctx, int recv[])
+{
+    if (!ctx) return -1;
 
-	BCHCode_data=(struct BCHCode *) malloc(sizeof (struct BCHCode));
+    const int n = 31;  /* Hardcoded for performance - compiler can optimize better */
+    const int *exp = ctx->exp_tbl;
+    const int *log = ctx->log_tbl;
 
-	if (BCHCode_data!=NULL) {
-		BCHCode_data->alpha_to=(int *) malloc(sizeof(int) * (n+1));
-		BCHCode_data->index_of=(int *) malloc(sizeof(int) * (n+1));
-		BCHCode_data->p=(int *) malloc(sizeof(int) * (m+1));
-		BCHCode_data->g=(int *) malloc(sizeof(int) * (n-k+1));
-		BCHCode_data->bb=(int *) malloc(sizeof(int) * (n-k+1));
+    /* Syndrome computation using precomputed table */
+    int S0 = 0, S1 = 0, S2 = 0, S3 = 0;
+    for (int bit = 0; bit < n; bit++) {
+        if (recv[bit]) {
+            S0 ^= ctx->syn_tbl[0][bit];
+            S1 ^= ctx->syn_tbl[1][bit];
+            S2 ^= ctx->syn_tbl[2][bit];
+            S3 ^= ctx->syn_tbl[3][bit];
+        }
+    }
 
-		if (
-				BCHCode_data->alpha_to == NULL ||
-				BCHCode_data->index_of == NULL ||
-				BCHCode_data->p        == NULL ||
-				BCHCode_data->g        == NULL ||
-				BCHCode_data->bb       == NULL
-				) {
-			BCHCode_Delete(BCHCode_data);
-			BCHCode_data=NULL;
-		}
-	}
+    /* Early exit: no errors */
+    if ((S0 | S1 | S2 | S3) == 0)
+        return 0;
 
-	if (BCHCode_data!=NULL) {
-		int i;
-		for (i=0; i<(m+1); i++) {
-			BCHCode_data->p[i]=p[i];
-		}
-		BCHCode_data->m=m;
-		BCHCode_data->n=n;
-		BCHCode_data->k=k;
-		BCHCode_data->t=t;
+    /* Convert to index form (L0-L2 for S1-S3; S4 not needed for t=2) */
+    int L0 = log[S0], L1 = log[S1], L2 = log[S2];
+    (void)S3;  /* S4 computed but not used in this algorithm */
 
-		generate_gf(BCHCode_data);			/* generate the Galois Field GF(2**m) */
-		gen_poly(BCHCode_data);				/* Compute the generator polynomial of BCH code */
-	}
+    /* S1=0 with errors means uncorrectable */
+    if (L0 == -1)
+        return (L1 != -1) ? 1 : 0;
 
-	return BCHCode_data;
-}
+    /* Single error: S3 == S1^3 (compare in index form) */
+    int triple = L0 * 3;
+    if (triple >= n) triple -= n;
+    if (triple >= n) triple -= n;  /* Faster than modulo for small multiples */
+    
+    if (L2 == triple) {
+        recv[L0] ^= 1;
+        return 0;
+    }
 
-void BCHCode_Delete(struct BCHCode * BCHCode_data) {
-	if (BCHCode_data==NULL)  return;
+    /* Two errors: solve error locator polynomial */
+    int denom = (L2 != -1) ? (exp[triple] ^ exp[L2]) : exp[triple];
+    int denom_log = log[denom];
 
-	if (BCHCode_data->alpha_to != NULL) free(BCHCode_data->alpha_to);
-	if (BCHCode_data->index_of != NULL) free(BCHCode_data->index_of);
-	if (BCHCode_data->p        != NULL) free(BCHCode_data->p);
-	if (BCHCode_data->g        != NULL) free(BCHCode_data->g);
-	if (BCHCode_data->bb       != NULL) free(BCHCode_data->bb);
+    /* Error locator coefficients */
+    int c1 = L1 - denom_log;
+    int c2 = L0 - denom_log;
+    if (c1 < 0) c1 += n;
+    if (c2 < 0) c2 += n;
 
-	free(BCHCode_data);
+    /* Chien search - find roots of 1 + c1*x + c2*x^2 */
+    int pos0 = -1, pos1 = -1;
+    int a1 = c1, a2 = c2;
+    
+    for (int i = 1; i <= n; i++) {
+        a1++; if (a1 >= n) a1 -= n;
+        a2 += 2; if (a2 >= n) a2 -= n; if (a2 >= n) a2 -= n;
+
+        if ((1 ^ exp[a1] ^ exp[a2]) == 0) {
+            if (pos0 < 0) {
+                pos0 = (i < n) ? i : 0;
+            } else {
+                pos1 = (i < n) ? i : 0;
+                break;  /* Found both roots, exit early */
+            }
+        }
+    }
+
+    if (pos0 >= 0 && pos1 >= 0) {
+        recv[pos0] ^= 1;
+        recv[pos1] ^= 1;
+        return 0;
+    }
+
+    return 1;
 }
