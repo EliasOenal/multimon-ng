@@ -21,6 +21,8 @@
 
 /* ---------------------------------------------------------------------- */
 
+#include <stdint.h>
+
 #define SAMPLE_RATE 22050
 #define MS(x) ((float)(x)*SAMPLE_RATE/1000)
 
@@ -28,7 +30,7 @@ extern const int costabi[0x400];
 
 #define COS(x) costabi[(((x)>>6)&0x3ffu)]
 
-enum gen_type { gentype_dtmf, gentype_sine, gentype_zvei, gentype_hdlc, gentype_uart, gentype_clipfsk };
+enum gen_type { gentype_dtmf, gentype_sine, gentype_zvei, gentype_hdlc, gentype_uart, gentype_clipfsk, gentype_flex };
 
 struct gen_params {
 	enum gen_type type;
@@ -66,6 +68,13 @@ struct gen_params {
 			int pktlen;
 			unsigned char pkt[256];
 		} hdlc;
+		struct {
+			uint32_t capcode;
+			int cycle;
+			int frame;
+			int errors;
+			char message[256];
+		} flex;
 	} p;
 };
 
@@ -104,6 +113,12 @@ struct gen_state {
 			unsigned int datalen;
 			unsigned char data[512];
 		} hdlc;
+		struct {
+			int bit_idx;
+			unsigned int bitph;
+			unsigned int datalen;
+			unsigned char data[4096];  /* One bit per byte for clarity */
+		} flex;
 	} s;
 };
 
@@ -124,4 +139,7 @@ extern int gen_clipfsk(signed short *buf, int buflen, struct gen_params *p, stru
 
 extern void gen_init_hdlc(struct gen_params *p, struct gen_state *s);
 extern int gen_hdlc(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
+
+extern void gen_init_flex(struct gen_params *p, struct gen_state *s);
+extern int gen_flex(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
 

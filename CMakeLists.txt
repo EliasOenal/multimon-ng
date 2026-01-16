@@ -67,16 +67,17 @@ endif( PULSE_AUDIO_SUPPORT )
 if( NOT MSVC )
 	add_definitions( "-std=gnu11" )
 endif( NOT MSVC )
-add_definitions( "-DMAX_VERBOSE_LEVEL=3" "-DCHARSET_UTF8" )
+add_definitions( "-DCHARSET_UTF8" )
 
 if ( EXISTS "${multimon-ng_SOURCE_DIR}/BCHCode.c" )
-	set( SOURCES ${SOURCES}
-		BCHCode.c )
+	set( BCH_SOURCE BCHCode.c )
 else()
 	message(STATUS "Using the BCH decoder stub")
-	set( SOURCES ${SOURCES}
-		BCHCode_stub.c )
+	set( BCH_SOURCE BCHCode_stub.c )
 endif()
+
+set( SOURCES ${SOURCES}
+	${BCH_SOURCE} )
 
 set( HEADERS ${HEADERS}
     	multimon.h
@@ -129,6 +130,38 @@ set( SOURCES ${SOURCES}
 
 add_executable( "${TARGET}" ${SOURCES} ${HEADERS} )
 set_property(TARGET "${TARGET}" PROPERTY LINKER_LANGUAGE C)
+target_compile_definitions( "${TARGET}" PRIVATE MAX_VERBOSE_LEVEL=3 )
 target_link_libraries( "${TARGET}" m )
 install(TARGETS multimon-ng DESTINATION bin)
+
+# gen-ng signal generator
+option( BUILD_GEN_NG "Build gen-ng signal generator" ON )
+if( BUILD_GEN_NG )
+	set( GEN_SOURCES
+		gen.c
+		gen_dtmf.c
+		gen_sin.c
+		gen_zvei.c
+		gen_hdlc.c
+		gen_uart.c
+		gen_clipfsk.c
+		gen_flex.c
+		costabi.c
+		${BCH_SOURCE}
+	)
+	add_executable( gen-ng ${GEN_SOURCES} gen.h )
+	target_compile_definitions( gen-ng PRIVATE MAX_VERBOSE_LEVEL=1 )
+	if( WIN32 )
+		target_compile_definitions( gen-ng PRIVATE DUMMY_AUDIO ONLY_RAW WINDOWS )
+		target_link_libraries( gen-ng winmm )
+	elseif( APPLE )
+		target_compile_definitions( gen-ng PRIVATE DUMMY_AUDIO ONLY_RAW CHARSET_UTF8 )
+		target_link_libraries( gen-ng m )
+	else()
+		target_compile_definitions( gen-ng PRIVATE CHARSET_UTF8 )
+		target_link_libraries( gen-ng m )
+	endif()
+	set_property(TARGET gen-ng PROPERTY LINKER_LANGUAGE C)
+	install(TARGETS gen-ng DESTINATION bin)
+endif()
 

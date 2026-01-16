@@ -10,6 +10,9 @@
 
 set -e
 
+# Get script directory (for temp files)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -172,6 +175,275 @@ run_test "POCSAG1200" "POCSAG1200" "flac" "$EXAMPLE_DIR/POCSAG_sample_-_1200_bps
 run_test "POCSAG2400" "POCSAG2400" "flac" "$EXAMPLE_DIR/POCSAG_sample_-_2400_bps.flac" \
     "POCSAG2400: Address: 1022869  Function: 1  Alpha:   +++TIME=0008300324+++TIME=0008300324" \
     || FAILED=1
+
+# FLEX End-to-End Tests (using gen-ng to generate test signals)
+# These tests verify the full encode/decode chain for FLEX paging
+
+# Path to gen-ng binary
+GEN_NG=${GEN_NG:-./build/gen-ng}
+
+# Check if gen-ng is available for FLEX tests
+if [ -z "$WINE_CMD" ]; then
+    GEN_NG_AVAILABLE=0
+    [ -x "$GEN_NG" ] && GEN_NG_AVAILABLE=1
+else
+    GEN_NG_AVAILABLE=0
+    GEN_NG=${GEN_NG:-./build-mingw32/gen-ng.exe}
+    [ -f "$GEN_NG" ] && GEN_NG_AVAILABLE=1
+    # For Wine, also check mingw64 path
+    if [ $GEN_NG_AVAILABLE -eq 0 ]; then
+        GEN_NG=${GEN_NG:-./build-mingw64/gen-ng.exe}
+        [ -f "$GEN_NG" ] && GEN_NG_AVAILABLE=1
+    fi
+fi
+
+# Helper function to generate and test FLEX signal
+# Arguments: test_name message capcode errors expected_patterns...
+run_flex_test() {
+    local name="$1"
+    local message="$2"
+    local capcode="$3"
+    local errors="$4"
+    shift 4
+    local expected_patterns=("$@")
+    
+    # Use test directory for temp files to stay within project
+    local tmpfile="${SCRIPT_DIR}/flex_test_$$.raw"
+    
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing $name... "
+    
+    # Generate the FLEX signal
+    local gen_cmd
+    if [ -n "$WINE_CMD" ]; then
+        gen_cmd="$WINE_CMD $GEN_NG"
+    else
+        gen_cmd="$GEN_NG"
+    fi
+    
+    local gen_opts="-t raw"
+    [ -n "$message" ] && gen_opts="$gen_opts -f \"$message\""
+    [ -n "$capcode" ] && gen_opts="$gen_opts -F $capcode"
+    [ -n "$errors" ] && [ "$errors" != "0" ] && gen_opts="$gen_opts -e $errors"
+    
+    # Run generator
+    if ! eval "$gen_cmd $gen_opts \"$tmpfile\"" >/dev/null 2>&1; then
+        echo -e "${RED}FAILED${NC} (gen-ng failed)"
+        rm -f "$tmpfile"
+        return 1
+    fi
+    
+    # Run decoder
+    local output
+    if [ -n "$WINE_CMD" ]; then
+        output=$($WINE_CMD "$MULTIMON" -t raw -q -a FLEX "$tmpfile" 2>&1 | filter_wine_output)
+    else
+        output=$("$MULTIMON" -t raw -q -a FLEX "$tmpfile" 2>&1)
+    fi
+    
+    rm -f "$tmpfile"
+    
+    local all_found=1
+    local missing=""
+    for pattern in "${expected_patterns[@]}"; do
+        if ! echo "$output" | grep -qF "$pattern"; then
+            all_found=0
+            missing="$pattern"
+            break
+        fi
+    done
+    
+    if [ $all_found -eq 1 ]; then
+        echo -e "${GREEN}PASSED${NC}"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    else
+        echo -e "${RED}FAILED${NC}"
+        echo "  Missing expected output: $missing"
+        echo "  Got output:"
+        echo "$output" | sed 's/^/    /'
+        return 1
+    fi
+}
+
+# Helper function to test FLEX signal with errors that should NOT decode correctly
+# Arguments: test_name message capcode errors
+run_flex_test_expect_fail() {
+    local name="$1"
+    local message="$2"
+    local capcode="$3"
+    local errors="$4"
+    
+    # Use test directory for temp files to stay within project
+    local tmpfile="${SCRIPT_DIR}/flex_test_fail_$$.raw"
+    
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing $name... "
+    
+    # Generate the FLEX signal with errors
+    local gen_cmd
+    if [ -n "$WINE_CMD" ]; then
+        gen_cmd="$WINE_CMD $GEN_NG"
+    else
+        gen_cmd="$GEN_NG"
+    fi
+    
+    local gen_opts="-t raw"
+    [ -n "$message" ] && gen_opts="$gen_opts -f \"$message\""
+    [ -n "$capcode" ] && gen_opts="$gen_opts -F $capcode"
+    [ -n "$errors" ] && [ "$errors" != "0" ] && gen_opts="$gen_opts -e $errors"
+    
+    # Run generator
+    if ! eval "$gen_cmd $gen_opts \"$tmpfile\"" >/dev/null 2>&1; then
+        echo -e "${RED}FAILED${NC} (gen-ng failed)"
+        rm -f "$tmpfile"
+        return 1
+    fi
+    
+    # Run decoder
+    local output
+    if [ -n "$WINE_CMD" ]; then
+        output=$($WINE_CMD "$MULTIMON" -t raw -q -a FLEX "$tmpfile" 2>&1 | filter_wine_output)
+    else
+        output=$("$MULTIMON" -t raw -q -a FLEX "$tmpfile" 2>&1)
+    fi
+    
+    rm -f "$tmpfile"
+    
+    # Check that the original message does NOT appear (errors should corrupt it)
+    if echo "$output" | grep -qF "$message"; then
+        echo -e "${RED}FAILED${NC} (message decoded despite $errors-bit errors)"
+        echo "  Expected: decode failure or corrupted message"
+        echo "  Got output:"
+        echo "$output" | sed 's/^/    /'
+        return 1
+    fi
+    
+    echo -e "${GREEN}PASSED${NC} (message not decoded as expected)"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+    return 0
+}
+
+# Helper function to test FLEX_NEXT decoder
+run_flex_next_test() {
+    local name="$1"
+    local message="$2"
+    local capcode="$3"
+    shift 3
+    local expected_patterns=("$@")
+    
+    # Use test directory for temp files to stay within project
+    local tmpfile="${SCRIPT_DIR}/flex_next_test_$$.raw"
+    
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing $name... "
+    
+    # Generate the FLEX signal
+    local gen_cmd
+    if [ -n "$WINE_CMD" ]; then
+        gen_cmd="$WINE_CMD $GEN_NG"
+    else
+        gen_cmd="$GEN_NG"
+    fi
+    
+    local gen_opts="-t raw"
+    [ -n "$message" ] && gen_opts="$gen_opts -f \"$message\""
+    [ -n "$capcode" ] && gen_opts="$gen_opts -F $capcode"
+    
+    # Run generator
+    if ! eval "$gen_cmd $gen_opts \"$tmpfile\"" >/dev/null 2>&1; then
+        echo -e "${RED}FAILED${NC} (gen-ng failed)"
+        rm -f "$tmpfile"
+        return 1
+    fi
+    
+    # Run FLEX_NEXT decoder
+    local output
+    if [ -n "$WINE_CMD" ]; then
+        output=$($WINE_CMD "$MULTIMON" -t raw -q -a FLEX_NEXT "$tmpfile" 2>&1 | filter_wine_output)
+    else
+        output=$("$MULTIMON" -t raw -q -a FLEX_NEXT "$tmpfile" 2>&1)
+    fi
+    
+    rm -f "$tmpfile"
+    
+    local all_found=1
+    local missing=""
+    for pattern in "${expected_patterns[@]}"; do
+        if ! echo "$output" | grep -qF "$pattern"; then
+            all_found=0
+            missing="$pattern"
+            break
+        fi
+    done
+    
+    if [ $all_found -eq 1 ]; then
+        echo -e "${GREEN}PASSED${NC}"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    else
+        echo -e "${RED}FAILED${NC}"
+        echo "  Missing expected output: $missing"
+        echo "  Got output:"
+        echo "$output" | sed 's/^/    /'
+        return 1
+    fi
+}
+
+if [ $GEN_NG_AVAILABLE -eq 1 ]; then
+    echo
+    echo "FLEX end-to-end tests (gen-ng -> multimon-ng):"
+    
+    # Test 1: Short message
+    run_flex_test "FLEX short message" "Hi" "12345" "0" \
+        "000012345" "ALN" "Hi" \
+        || FAILED=1
+    
+    # Test 2: Medium message with varied characters
+    run_flex_test "FLEX medium message" "Test 123 !@# ABC xyz" "99999" "0" \
+        "000099999" "ALN" "Test 123 !@# ABC xyz" \
+        || FAILED=1
+    
+    # Test 3: Maximum length message (251 chars)
+    MAX_MSG="MAX_LENGTH_TEST:$(printf 'X%.0s' {1..235})"
+    run_flex_test "FLEX max length (251)" "$MAX_MSG" "1000000" "0" \
+        "001000000" "ALN" "MAX_LENGTH_TEST:" \
+        || FAILED=1
+    
+    # Test 4: BCH 1-bit error correction
+    run_flex_test "FLEX 1-bit error correction" "Error1" "54321" "1" \
+        "000054321" "ALN" "Error1" \
+        || FAILED=1
+    
+    # Test 5: BCH 2-bit error correction
+    run_flex_test "FLEX 2-bit error correction" "Error2" "11111" "2" \
+        "000011111" "ALN" "Error2" \
+        || FAILED=1
+    
+    # Test 6: BCH 3-bit errors should NOT be correctable (exceeds t=2 capability)
+    # This test verifies that 3-bit errors cause decode failure
+    run_flex_test_expect_fail "FLEX 3-bit error (uncorrectable)" "Error3" "22222" "3" \
+        || FAILED=1
+    
+    # Test 7: FLEX_NEXT decoder compatibility
+    run_flex_next_test "FLEX_NEXT decoder" "FLEX_NEXT test" "777777" \
+        "0000777777" "ALN" "FLEX_NEXT test" \
+        || FAILED=1
+    
+    # Test 8: Special characters in message
+    run_flex_test "FLEX special chars" "Hello World! @2024" "500000" "0" \
+        "000500000" "ALN" "Hello World! @2024" \
+        || FAILED=1
+    
+    # Test 9: Minimum capcode
+    run_flex_test "FLEX min capcode" "MinCap" "1" "0" \
+        "000000001" "ALN" "MinCap" \
+        || FAILED=1
+    
+else
+    echo
+    echo "Skipping FLEX end-to-end tests (gen-ng not available at $GEN_NG)"
+fi
 
 echo
 echo "Tests: $TESTS_PASSED/$TESTS_RUN passed"

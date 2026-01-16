@@ -31,11 +31,13 @@ jobs:
     
     - name: Run tests with Wine
       run: |
-        WINE_CMD=wine MULTIMON=./build-mingw64/multimon-ng.exe ./test/run_tests.sh
+        WINE_CMD=wine MULTIMON=./build-mingw64/multimon-ng.exe GEN_NG=./build-mingw64/gen-ng.exe ./test/run_tests.sh
     
     - name: Upload artifact
       uses: actions/upload-artifact@v6
       with:
         name: multimon-ng-win64
-        path: build-mingw64/multimon-ng.exe
+        path: |
+          build-mingw64/multimon-ng.exe
+          build-mingw64/gen-ng.exe
         retention-days: 30

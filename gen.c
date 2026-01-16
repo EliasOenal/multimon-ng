@@ -30,10 +30,15 @@
 #include "gen.h"
 #include <sys/types.h>
 #include <sys/stat.h>
-#ifndef _MSC_VER
-#include <sys/wait.h>
+#ifdef _MSC_VER
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
+#ifndef ONLY_RAW
+#include <sys/wait.h>
+#endif
+#include <getopt.h>
 #include <string.h>
 #include <stdio.h>
 #include <fcntl.h>
@@ -83,11 +88,11 @@ typedef void (*t_init_procs)(struct gen_params *, struct gen_state *);
 typedef int (*t_gen_procs)(signed short *, int, struct gen_params *, struct gen_state *);
 
 static const t_init_procs init_procs[] = {
-	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk
+	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk, gen_init_flex
 };
 
 static const t_gen_procs gen_procs[] = {
-	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk
+	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk, gen_flex
 };
 
 /* ---------------------------------------------------------------------- */
@@ -296,9 +301,11 @@ static void output_sound(unsigned int sample_rate, const char *ifname)
 
 static void output_file(unsigned int sample_rate, const char *fname, const char *type)
 {
+#if !defined(ONLY_RAW)
 	struct stat statbuf;
 	int pipedes[2];
 	int pid = 0, soxstat;
+#endif
 	int fd;
 	int i, num, num2;
 	short buffer[8192];	
@@ -314,6 +321,10 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 			exit(10);
 		}
 	} else {
+#if defined(ONLY_RAW)
+		fprintf(stderr, "error: non-raw output requires sox (not available on this platform)\n");
+		exit(10);
+#else
 		if (!stat(fname, &statbuf)) {
 			fprintf(stderr, "file already exists: %s\n",fname);
 			exit(10);
@@ -347,6 +358,7 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 		}
 		close(pipedes[0]); /* close reading pipe end */
 		fd = pipedes[1];
+#endif
 	}
 	/*
 	 * modulate
@@ -367,7 +379,10 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 		}
 	} while (num2 > 0);
 	close(fd);
-	waitpid(pid, &soxstat, 0);
+#if !defined(ONLY_RAW)
+	if (pid > 0)
+		waitpid(pid, &soxstat, 0);
+#endif
 }
 
 /* ---------------------------------------------------------------------- */
@@ -381,6 +396,9 @@ static const char usage_str[] = "Generates test signals\n"
 "  -u <text>  : encode uart string\n"
 "  -p <text>  : encode hdlc packet\n"
 "  -c <str>   : encode CLIP FSK string\n"
+"  -f <msg>   : encode FLEX pager message\n"
+"     -F <capcode> : FLEX pager address (default: 1234567)\n"
+"     -e <0-3>     : inject 0-3 bit errors per codeword (for BCH testing)\n"
 "  -h         : this help\n";
 
 int main(int argc, char *argv[])
@@ -393,7 +411,7 @@ int main(int argc, char *argv[])
 
 	fprintf(stdout, "gen-ng - (C) 1997 by Tom Sailer HB9JNX/AE4WA\n"
                     "         (C) 2012/2013 by Elias Oenal\n");	
-	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:h")) != EOF) {
+	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:e:h")) != EOF) {
 		switch (c) {
 		case 'h':
 		case '?':
@@ -481,8 +499,8 @@ int main(int argc, char *argv[])
 			params[num_gen-1].type = gentype_uart;
 			params[num_gen-1].ampl = 16384;
 			params[num_gen-1].p.uart.txdelay = 2;
-			strncpy(params[num_gen-1].p.uart.pkt, optarg, sizeof(params[num_gen-1].p.uart.pkt));
-			params[num_gen-1].p.uart.pktlen = strlen(params[num_gen-1].p.uart.pkt);
+			strncpy((char *)params[num_gen-1].p.uart.pkt, optarg, sizeof(params[num_gen-1].p.uart.pkt));
+			params[num_gen-1].p.uart.pktlen = strlen((char *)params[num_gen-1].p.uart.pkt);
 			break;
 
 		case 'c':
@@ -495,8 +513,8 @@ int main(int argc, char *argv[])
 			params[num_gen-1].type = gentype_clipfsk;
 			params[num_gen-1].ampl = 16384;
 			params[num_gen-1].p.clipfsk.txdelay = 2;
-			strncpy(params[num_gen-1].p.clipfsk.pkt, optarg, sizeof(params[num_gen-1].p.clipfsk.pkt));
-			params[num_gen-1].p.clipfsk.pktlen = strlen(params[num_gen-1].p.clipfsk.pkt);
+			strncpy((char *)params[num_gen-1].p.clipfsk.pkt, optarg, sizeof(params[num_gen-1].p.clipfsk.pkt));
+			params[num_gen-1].p.clipfsk.pktlen = strlen((char *)params[num_gen-1].p.clipfsk.pkt);
 			break;
 
 		case 'p':
@@ -526,10 +544,50 @@ int main(int argc, char *argv[])
 			params[num_gen-1].p.hdlc.pkt[13] = ((0x00) << 1) | 1;
 			params[num_gen-1].p.hdlc.pkt[14] = 0x03;
 			params[num_gen-1].p.hdlc.pkt[15] = 0xf0;
-			strncpy(params[num_gen-1].p.hdlc.pkt+16, optarg, 
+			strncpy((char *)params[num_gen-1].p.hdlc.pkt+16, optarg, 
 				sizeof(params[num_gen-1].p.hdlc.pkt)-16);
 			params[num_gen-1].p.hdlc.pktlen = 16 + 
-				strlen(params[num_gen-1].p.hdlc.pkt+16);
+				strlen((char *)params[num_gen-1].p.hdlc.pkt+16);
+			break;
+
+		case 'f':
+			num_gen++;
+			if (num_gen > MAX_GEN) {
+				fprintf(stderr, "too many generators\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].type = gentype_flex;
+			params[num_gen-1].ampl = 16384;
+			params[num_gen-1].p.flex.capcode = 1234567;
+			params[num_gen-1].p.flex.cycle = 0;
+			params[num_gen-1].p.flex.frame = 0;
+			params[num_gen-1].p.flex.errors = 0;
+			strncpy(params[num_gen-1].p.flex.message, optarg,
+				sizeof(params[num_gen-1].p.flex.message) - 1);
+			break;
+
+		case 'F':
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_flex) {
+				fprintf(stderr, "gen: -F requires -f first\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].p.flex.capcode = strtoul(optarg, NULL, 0);
+			break;
+
+		case 'e':
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_flex) {
+				fprintf(stderr, "gen: -e requires -f first\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].p.flex.errors = atoi(optarg);
+			if (params[num_gen-1].p.flex.errors < 0 || params[num_gen-1].p.flex.errors > 3) {
+				fprintf(stderr, "gen: -e must be 0-3\n");
+				errflg++;
+			}
+			break;
 		}
 	}
 		
