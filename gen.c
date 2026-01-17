@@ -88,11 +88,11 @@ typedef void (*t_init_procs)(struct gen_params *, struct gen_state *);
 typedef int (*t_gen_procs)(signed short *, int, struct gen_params *, struct gen_state *);
 
 static const t_init_procs init_procs[] = {
-	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk, gen_init_flex
+	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk, gen_init_flex, gen_init_pocsag
 };
 
 static const t_gen_procs gen_procs[] = {
-	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk, gen_flex
+	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk, gen_flex, gen_pocsag
 };
 
 /* ---------------------------------------------------------------------- */
@@ -398,7 +398,12 @@ static const char usage_str[] = "Generates test signals\n"
 "  -c <str>   : encode CLIP FSK string\n"
 "  -f <msg>   : encode FLEX pager message\n"
 "     -F <capcode> : FLEX pager address (default: 1234567)\n"
-"     -e <0-3>     : inject 0-3 bit errors per codeword (for BCH testing)\n"
+"  -P <msg>   : encode POCSAG pager message\n"
+"     -A <address> : POCSAG pager address/capcode (default: 1234567)\n"
+"     -B <baud>    : POCSAG baud rate: 512, 1200, 2400 (default: 1200)\n"
+"     -N           : POCSAG numeric mode (function 0)\n"
+"     -I           : POCSAG inverted output polarity\n"
+"  -e <0-3>   : inject 0-3 bit errors per codeword (FLEX/POCSAG BCH testing)\n"
 "  -h         : this help\n";
 
 int main(int argc, char *argv[])
@@ -411,7 +416,7 @@ int main(int argc, char *argv[])
 
 	fprintf(stdout, "gen-ng - (C) 1997 by Tom Sailer HB9JNX/AE4WA\n"
                     "         (C) 2012/2013 by Elias Oenal\n");	
-	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:e:h")) != EOF) {
+	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:e:P:A:B:NIh")) != EOF) {
 		switch (c) {
 		case 'h':
 		case '?':
@@ -577,16 +582,85 @@ int main(int argc, char *argv[])
 			break;
 
 		case 'e':
-			if (num_gen <= 0 || params[num_gen-1].type != gentype_flex) {
-				fprintf(stderr, "gen: -e requires -f first\n");
+			if (num_gen <= 0) {
+				fprintf(stderr, "gen: -e requires -f or -P first\n");
 				errflg++;
 				break;
 			}
-			params[num_gen-1].p.flex.errors = atoi(optarg);
-			if (params[num_gen-1].p.flex.errors < 0 || params[num_gen-1].p.flex.errors > 3) {
-				fprintf(stderr, "gen: -e must be 0-3\n");
+			if (params[num_gen-1].type == gentype_flex) {
+				params[num_gen-1].p.flex.errors = atoi(optarg);
+				if (params[num_gen-1].p.flex.errors < 0 || params[num_gen-1].p.flex.errors > 3) {
+					fprintf(stderr, "gen: -e must be 0-3\n");
+					errflg++;
+				}
+			} else if (params[num_gen-1].type == gentype_pocsag) {
+				params[num_gen-1].p.pocsag.errors = atoi(optarg);
+				if (params[num_gen-1].p.pocsag.errors < 0 || params[num_gen-1].p.pocsag.errors > 3) {
+					fprintf(stderr, "gen: -e must be 0-3\n");
+					errflg++;
+				}
+			} else {
+				fprintf(stderr, "gen: -e requires -f or -P first\n");
 				errflg++;
 			}
+			break;
+
+		case 'P':
+			if (num_gen >= MAX_GEN) {
+				fprintf(stderr, "gen: too many generators\n");
+				errflg++;
+				break;
+			}
+			params[num_gen].type = gentype_pocsag;
+			params[num_gen].ampl = 16384;
+			params[num_gen].p.pocsag.address = 1234567;
+			params[num_gen].p.pocsag.function = 3;  /* Default: alphanumeric */
+			params[num_gen].p.pocsag.baud = 1200;   /* Default: 1200 baud */
+			num_gen++;
+			strncpy(params[num_gen-1].p.pocsag.message, optarg,
+				sizeof(params[num_gen-1].p.pocsag.message) - 1);
+			break;
+
+		case 'A':
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_pocsag) {
+				fprintf(stderr, "gen: -A requires -P first\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].p.pocsag.address = strtoul(optarg, NULL, 0);
+			break;
+
+		case 'B':
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_pocsag) {
+				fprintf(stderr, "gen: -B requires -P first\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].p.pocsag.baud = atoi(optarg);
+			if (params[num_gen-1].p.pocsag.baud != 512 &&
+			    params[num_gen-1].p.pocsag.baud != 1200 &&
+			    params[num_gen-1].p.pocsag.baud != 2400) {
+				fprintf(stderr, "gen: -B must be 512, 1200, or 2400\n");
+				errflg++;
+			}
+			break;
+
+		case 'N':
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_pocsag) {
+				fprintf(stderr, "gen: -N requires -P first\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].p.pocsag.function = 0;  /* Numeric mode */
+			break;
+
+		case 'I':
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_pocsag) {
+				fprintf(stderr, "gen: -I requires -P first\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].p.pocsag.invert = 1;
 			break;
 		}
 	}

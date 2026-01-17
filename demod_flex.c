@@ -102,7 +102,7 @@
 
 #include "multimon.h"
 #include "filter.h"
-#include "BCHCode.h"
+#include "bch.h"
 #include <math.h>
 #include <string.h>
 #include <time.h>
@@ -226,7 +226,6 @@ struct Flex_Decode {
   enum Flex_PageTypeEnum      type;
   int                         long_address;
   int64_t                     capcode;
-  struct BCHCode *            BCHCode;
 };
 
 
@@ -283,41 +282,28 @@ static unsigned int count_bits(struct Flex * flex, unsigned int data) {
 
 static int bch3121_fix_errors(struct Flex * flex, uint32_t * data_to_fix, char PhaseNo) {
   if (flex==NULL) return -1;
-  int i=0;
-  int recd[31];
 
-  /*Convert the data pattern into an array of coefficients*/
-  unsigned int data=*data_to_fix;
-  for (i=0; i<31; i++) {
-    recd[i] = (data>>30)&1;
-    data<<=1;
-  }
-
-  /*Decode and correct the coefficients*/
-  int decode_error=BCHCode_Decode(flex->Decode.BCHCode, recd);
+  unsigned int original = *data_to_fix & 0x7FFFFFFF;
+  unsigned int data = original;
+  
+  /*Decode and correct using new bch library*/
+  int result = bch_flex_correct(&data);
 
   /*Decode successful?*/
-  if (!decode_error) {
-    /*Convert the coefficient array back to a bit pattern*/
-    data=0;
-    for (i=0; i<31; i++) {
-      data<<=1;
-      data|=recd[i];
-    }
+  if (result >= 0) {
     /*Count the number of fixed errors*/
-    int fixed=count_bits(flex, (*data_to_fix & 0x7FFFFFFF) ^ data);
-    if (fixed>0) {
-      verbprintf(3, "FLEX: Phase %c Fixed %i errors @ 0x%08x  (0x%08x -> 0x%08x)\n", PhaseNo, fixed, (*data_to_fix&0x7FFFFFFF) ^ data, (*data_to_fix&0x7FFFFFFF), data );
+    if (result > 0) {
+      verbprintf(3, "FLEX: Phase %c Fixed %i errors @ 0x%08x  (0x%08x -> 0x%08x)\n", PhaseNo, result, original ^ data, original, data );
     }
 
     /*Write the fixed data back to the caller*/
-    *data_to_fix=data;
+    *data_to_fix = data;
+    return 0;
 
   } else {
     verbprintf(3, "FLEX: Phase %c Data corruption - Unable to fix errors.\n", PhaseNo);
+    return 1;
   }
-
-  return decode_error;
 }
 
 static unsigned int flex_sync_check(struct Flex * flex, uint64_t buf) {
@@ -1527,12 +1513,6 @@ static void Flex_Demodulate(struct Flex * flex, double sample) {
 
 static void Flex_Delete(struct Flex * flex) {
   if (flex==NULL) return;
-
-  if (flex->Decode.BCHCode!=NULL) {
-    BCHCode_Delete(flex->Decode.BCHCode);
-    flex->Decode.BCHCode=NULL;
-  }
-
   free(flex);
 }
 
@@ -1547,14 +1527,8 @@ static struct Flex * Flex_New(unsigned int SampleFrequency) {
     // rate to start.
     flex->Demodulator.baud = 1600;
 
-    /*Generator polynomial for BCH3121 Code*/
-    int p[6];
-    p[0] = p[2] = p[5] = 1; p[1] = p[3] = p[4] =0;
-    flex->Decode.BCHCode=BCHCode_New( p, 5, 31, 21, 2);
-    if (flex->Decode.BCHCode == NULL) {
-      Flex_Delete(flex);
-      flex=NULL;
-    }
+    /* Initialize BCH tables (does nothing if already initialized) */
+    bch_init();
 
     for(int g = 0; g < 17; g++)
     {

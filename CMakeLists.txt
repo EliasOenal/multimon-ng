@@ -69,11 +69,13 @@ if( NOT MSVC )
 endif( NOT MSVC )
 add_definitions( "-DCHARSET_UTF8" )
 
-if ( EXISTS "${multimon-ng_SOURCE_DIR}/BCHCode.c" )
+if ( EXISTS "${multimon-ng_SOURCE_DIR}/bch.c" )
+	set( BCH_SOURCE bch.c )
+elseif ( EXISTS "${multimon-ng_SOURCE_DIR}/BCHCode.c" )
 	set( BCH_SOURCE BCHCode.c )
 else()
 	message(STATUS "Using the BCH decoder stub")
-	set( BCH_SOURCE BCHCode_stub.c )
+	set( BCH_SOURCE bch_stub.c )
 endif()
 
 set( SOURCES ${SOURCES}
@@ -85,6 +87,7 @@ set( HEADERS ${HEADERS}
     	filter.h
     	filter-i386.h
 		cJSON.h
+		bch.h
 )
 
 set( SOURCES ${SOURCES}
@@ -146,6 +149,7 @@ if( BUILD_GEN_NG )
 		gen_uart.c
 		gen_clipfsk.c
 		gen_flex.c
+		gen_pocsag.c
 		costabi.c
 		${BCH_SOURCE}
 	)

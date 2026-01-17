@@ -1,0 +1,178 @@
+.\" -*- nroff -*-
+.TH GEN-NG 1 "January 16, 2026"
+.\" Please adjust this date whenever revising the manpage.
+.\"
+.SH NAME
+gen-ng \- program to generate radio transmission test signals
+.SH SYNOPSIS
+.B gen-ng
+.RI [ options ]\ output_file
+.SH DESCRIPTION
+The \fBgen-ng\fP software generates test signals for various digital transmission
+modes commonly found on VHF/UHF radio. It is the companion tool to
+\fBmultimon-ng\fP and can be used to create test files for decoder validation.
+.PP
+The output is 16-bit signed PCM audio at 22050 Hz sample rate, which can be
+fed directly to multimon-ng for testing or converted to other formats using
+tools like sox.
+.PP
+Currently, the following modes are supported:
+.PP
+.RS
+.IP \(bu 4
+DTMF (Dual Tone Multi Frequency)
+.IP \(bu 4
+ZVEI (selective calling)
+.IP \(bu 4
+UART (serial data)
+.IP \(bu 4
+HDLC (High-Level Data Link Control packets)
+.IP \(bu 4
+CLIP FSK (Caller ID)
+.IP \(bu 4
+Sine wave (test tone)
+.IP \(bu 4
+FLEX (paging protocol at 1600 baud 2-FSK)
+.IP \(bu 4
+POCSAG (paging protocol at 512, 1200, or 2400 baud)
+.RE
+.SH OPTIONS
+.TP
+.B  \-t <type>
+Output file type. Use 'raw' for direct output or any other type supported by sox
+(wav, flac, mp3, etc.). Types other than raw require sox to be installed.
+.TP
+.B  \-a <ampl>
+Set signal amplitude (default: 16384).
+.TP
+.B  \-d <string>
+Generate DTMF tones for the given digit string.
+Valid characters: 0-9, A-D, *, #.
+.TP
+.B  \-z <string>
+Generate ZVEI selective call tones for the given digit string.
+.TP
+.B  \-s <freq>
+Generate a sine wave at the specified frequency in Hz.
+.TP
+.B  \-u <text>
+Generate UART-encoded serial data containing the specified text.
+.TP
+.B  \-p <text>
+Generate an HDLC packet containing the specified text.
+.TP
+.B  \-c <string>
+Generate CLIP FSK (Caller ID) data.
+.TP
+.B  \-f <message>
+Generate a FLEX pager message. The message is encoded as alphanumeric text.
+.TP
+.B  \-F <capcode>
+Set the FLEX pager address/capcode (default: 1234567).
+Must be in the range 1 to 2097151.
+.TP
+.B  \-e <0-3>
+Inject bit errors into FLEX or POCSAG codewords for BCH error correction testing.
+0 = no errors, 1 = one-bit errors, 2 = two-bit errors (correctable),
+3 = three-bit errors (uncorrectable, for negative testing).
+This option must follow \-f (FLEX) or \-P (POCSAG).
+.TP
+.B  \-P <message>
+Generate a POCSAG pager message. By default, the message is encoded as
+alphanumeric text (7-bit ASCII). Use \-N for numeric mode.
+.TP
+.B  \-A <address>
+Set the POCSAG pager address/capcode (default: 1234567).
+Must be in the range 0 to 2097151.
+.TP
+.B  \-B <baud>
+Set the POCSAG baud rate: 512, 1200, or 2400 (default: 1200).
+.TP
+.B  \-N
+Use POCSAG numeric mode (function 0) instead of alphanumeric mode.
+Valid numeric characters: 0-9, space, hyphen (-), period (.), U.
+.TP
+.B  \-I
+Generate POCSAG signal with inverted polarity. Use this to test the decoder's
+auto-detection of inverted signals.
+.TP
+.B  \-h
+Print help message and exit.
+.SH EXAMPLES
+Generate a DTMF tone sequence and decode it:
+.RS
+.nf
+gen-ng -t raw -d "123456" /tmp/dtmf.raw
+multimon-ng -t raw -a DTMF /tmp/dtmf.raw
+.fi
+.RE
+.PP
+Generate a FLEX pager message:
+.RS
+.nf
+gen-ng -t raw -f "Hello World" -F 12345 /tmp/flex.raw
+multimon-ng -t raw -a FLEX /tmp/flex.raw
+.fi
+.RE
+.PP
+Generate a FLEX message with 2-bit errors to test BCH correction:
+.RS
+.nf
+gen-ng -t raw -f "Test" -F 54321 -e 2 /tmp/flex_err.raw
+multimon-ng -t raw -a FLEX /tmp/flex_err.raw
+.fi
+.RE
+.PP
+Generate a POCSAG alphanumeric message at 1200 baud:
+.RS
+.nf
+gen-ng -t raw -P "Meeting at 3pm" -A 67890 /tmp/pocsag.raw
+multimon-ng -t raw -a POCSAG1200 /tmp/pocsag.raw
+.fi
+.RE
+.PP
+Generate a POCSAG numeric message at 512 baud:
+.RS
+.nf
+gen-ng -t raw -P "1234567890" -N -A 11111 -B 512 /tmp/pocsag.raw
+multimon-ng -t raw -a POCSAG512 /tmp/pocsag.raw
+.fi
+.RE
+.PP
+Generate a POCSAG message with 2-bit errors to test BCH correction:
+.RS
+.nf
+gen-ng -t raw -P "Test" -A 54321 -e 2 /tmp/pocsag_err.raw
+multimon-ng -t raw -a POCSAG1200 /tmp/pocsag_err.raw
+.fi
+.RE
+.PP
+Generate a POCSAG message with inverted polarity:
+.RS
+.nf
+gen-ng -t raw -P "Inverted test" -A 12345 -I /tmp/pocsag_inv.raw
+multimon-ng -t raw -a POCSAG1200 /tmp/pocsag_inv.raw
+.fi
+.RE
+.PP
+Generate a WAV file (requires sox):
+.RS
+.nf
+gen-ng -t wav -f "Pager test" -F 99999 /tmp/flex.wav
+.fi
+.RE
+.SH OUTPUT FORMAT
+The raw output format is 16-bit signed little-endian PCM at 22050 Hz sample rate,
+mono channel. This is the same format expected by multimon-ng with the \-t raw option.
+.SH SEE ALSO
+.BR multimon-ng (1),
+.BR sox (1)
+.SH AUTHOR
+gen-ng was written by Tom Sailer and Elias Oenal.
+.PP
+This manual page was written by the multimon-ng authors.
+.PP
+This is free software. You can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free
+Software Foundation; either version 2 of the License, or any later
+version.

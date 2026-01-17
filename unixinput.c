@@ -669,7 +669,7 @@ static const char usage_str[] = "\n"
         "  -j           : FMS: Just output hex data and CRC, no parsing.\n"
         "  -e           : POCSAG: Hide empty messages.\n"
         "  -u           : POCSAG: Heuristically prune unlikely decodes.\n"
-        "  -i           : POCSAG: Inverts the input samples. Try this if decoding fails.\n"
+        "  -i           : POCSAG: (Deprecated) Polarity is now auto-detected.\n"
         "  -p           : POCSAG: Show partially received messages.\n"
         "  -f <mode>    : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
         "                         (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
@@ -851,7 +851,8 @@ intypefound:
             break;
 
         case 'i':
-            pocsag_invert_input = true;
+            fprintf(stderr, "Warning: -i is deprecated. POCSAG polarity is now auto-detected.\n");
+            /* Flag kept for backwards compatibility but now ignored */
             break;
             
         case 'd':

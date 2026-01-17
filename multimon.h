@@ -123,6 +123,7 @@ struct demod_state {
             unsigned char state;        // state machine
             unsigned char rx_bit;       // bit counter, counts 32bits
             unsigned char rx_word;
+            unsigned char inverted;     // auto-detected inverted polarity
             int32_t function;          // POCSAG function
             int32_t address;           // POCSAG address
             unsigned char buffer[512];

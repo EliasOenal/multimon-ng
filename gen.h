@@ -30,7 +30,7 @@ extern const int costabi[0x400];
 
 #define COS(x) costabi[(((x)>>6)&0x3ffu)]
 
-enum gen_type { gentype_dtmf, gentype_sine, gentype_zvei, gentype_hdlc, gentype_uart, gentype_clipfsk, gentype_flex };
+enum gen_type { gentype_dtmf, gentype_sine, gentype_zvei, gentype_hdlc, gentype_uart, gentype_clipfsk, gentype_flex, gentype_pocsag };
 
 struct gen_params {
 	enum gen_type type;
@@ -75,6 +75,14 @@ struct gen_params {
 			int errors;
 			char message[256];
 		} flex;
+		struct {
+			uint32_t address;
+			int function;      /* 0=numeric, 1-3=alphanumeric */
+			int baud;          /* 512, 1200, or 2400 */
+			int errors;        /* Number of bit errors to inject (0-3) */
+			int invert;        /* Invert output polarity */
+			char message[256];
+		} pocsag;
 	} p;
 };
 
@@ -119,6 +127,13 @@ struct gen_state {
 			unsigned int datalen;
 			unsigned char data[4096];  /* One bit per byte for clarity */
 		} flex;
+		struct {
+			int bit_idx;
+			float bitph;
+			int baud;
+			unsigned int datalen;
+			unsigned char data[2048];
+		} pocsag;
 	} s;
 };
 
@@ -142,4 +157,7 @@ extern int gen_hdlc(signed short *buf, int buflen, struct gen_params *p, struct 
 
 extern void gen_init_flex(struct gen_params *p, struct gen_state *s);
 extern int gen_flex(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
+
+extern void gen_init_pocsag(struct gen_params *p, struct gen_state *s);
+extern int gen_pocsag(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
 

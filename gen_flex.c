@@ -26,7 +26,7 @@
  */
 
 #include "gen.h"
-#include "BCHCode.h"
+#include "bch.h"
 #include <string.h>
 #include <stdio.h>
 
@@ -51,48 +51,6 @@
 #define FLEX_PAGETYPE_ALPHANUMERIC 5
 
 /*---------------------------------------------------------------------------*/
-
-/* Shared BCH context for encoding */
-static struct BCHCode *bch_ctx = NULL;
-
-/* Initialize BCH encoder - call once at startup */
-static void bch_init(void)
-{
-    if (bch_ctx) return;
-    
-    /* BCH(31,21,2) with primitive polynomial x^5 + x^2 + 1 */
-    int prim_poly[] = {1, 0, 1, 0, 0, 1};
-    bch_ctx = BCHCode_New(prim_poly, 5, 31, 21, 2);
-}
-
-/* BCH(31,21) encoder using shared library - returns 31-bit codeword */
-static uint32_t bch_encode_word(uint32_t data21)
-{
-    int bits[31] = {0};
-    int *parity;
-    uint32_t result;
-    int i;
-    
-    if (!bch_ctx) bch_init();
-    
-    /* Data in positions 0-20, LSB-first */
-    for (i = 0; i < 21; i++) {
-        bits[i] = (data21 >> i) & 1;
-    }
-    
-    BCHCode_Encode(bch_ctx, bits);
-    parity = BCHCode_GetParity(bch_ctx);
-    
-    /* Data in bits 0-20, parity in bits 21-30 */
-    result = data21 & 0x1FFFFF;
-    for (i = 0; i < 10; i++) {
-        if (parity[i]) {
-            result |= (1u << (21 + i));
-        }
-    }
-    
-    return result;
-}
 
 /* Inject bit errors into a 31-bit codeword */
 static uint32_t inject_errors(uint32_t codeword, int num_errors, unsigned int *seed)
@@ -163,7 +121,7 @@ static uint32_t build_fiw(int cycle, int frame)
     int checksum = (0xF - sum) & 0xF;
     fiw |= checksum;
     
-    return bch_encode_word(fiw);
+    return bch_flex_encode(fiw);
 }
 
 /* Build BIW (Block Information Word) - returns BCH-encoded 31-bit word */
@@ -179,7 +137,7 @@ static uint32_t build_biw(int voffset, int aoffset)
     biw |= (aoffset & 0x3) << 8;
     biw |= (voffset & 0x3F) << 10;
     
-    return bch_encode_word(biw);
+    return bch_flex_encode(biw);
 }
 
 /* Build address word - returns BCH-encoded 31-bit word */
@@ -189,7 +147,7 @@ static uint32_t build_address(uint32_t capcode)
      * The decoder does: capcode = aw1 - 0x8000
      * So we encode: aw1 = capcode + 0x8000
      */
-    return bch_encode_word((capcode + 0x8000) & 0x1FFFFF);
+    return bch_flex_encode((capcode + 0x8000) & 0x1FFFFF);
 }
 
 /* Build vector word - returns BCH-encoded 31-bit word */
@@ -207,13 +165,13 @@ static uint32_t build_vector(int msg_type, int msg_start, int msg_len)
     vec |= (msg_start & 0x7F) << 7;
     vec |= (msg_len & 0x7F) << 14;
     
-    return bch_encode_word(vec);
+    return bch_flex_encode(vec);
 }
 
 /* Build message word - returns BCH-encoded 31-bit word */
 static uint32_t build_message_word(uint32_t data)
 {
-    return bch_encode_word(data & 0x1FFFFF);
+    return bch_flex_encode(data & 0x1FFFFF);
 }
 
 /* Encode a string to FLEX message words (7-bit ASCII)
@@ -291,9 +249,9 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
      * Use alternating 0xAAAAAA/0x155555 patterns instead of all-1s */
     for (i = 0; i < FLEX_CODEWORDS_PER_PHASE; i++) {
         if (i % 2 == 0) {
-            codewords[i] = bch_encode_word(0x0AAAAA);  /* 010101... pattern */
+            codewords[i] = bch_flex_encode(0x0AAAAA);  /* 010101... pattern */
         } else {
-            codewords[i] = bch_encode_word(0x155555);  /* 101010... pattern */
+            codewords[i] = bch_flex_encode(0x155555);  /* 101010... pattern */
         }
     }
     
