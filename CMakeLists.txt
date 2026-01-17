@@ -60,6 +60,17 @@ if( PULSE_AUDIO_SUPPORT )
 	find_library( PULSE_SIMPLE NAMES pulse-simple REQUIRED )
 	link_libraries( ${PULSEAUDIO_LIBRARY} ${PULSE_SIMPLE} )
 	add_definitions( "-DPULSE_AUDIO" )
+elseif( APPLE )
+	# macOS: Use Core Audio ProcessTap for system audio capture (macOS 14.2+)
+	find_library( COREAUDIO_LIBRARY CoreAudio REQUIRED )
+	find_library( AUDIOTOOLBOX_LIBRARY AudioToolbox REQUIRED )
+	find_library( COREFOUNDATION_LIBRARY CoreFoundation REQUIRED )
+	find_library( FOUNDATION_LIBRARY Foundation REQUIRED )
+	link_libraries( ${COREAUDIO_LIBRARY} ${AUDIOTOOLBOX_LIBRARY} ${COREFOUNDATION_LIBRARY} ${FOUNDATION_LIBRARY} )
+	add_definitions( "-DCOREAUDIO" "-DHAS_PROCESSTAP" )
+	set( MACOS_AUDIO_SOURCE macos_audio.m )
+	# Enable Objective-C for .m files
+	enable_language( OBJC )
 else( PULSE_AUDIO_SUPPORT )
 	add_definitions( "-DDUMMY_AUDIO" )
 endif( PULSE_AUDIO_SUPPORT )
@@ -128,6 +139,7 @@ set( SOURCES ${SOURCES}
 	demod_dumpcsv.c
 	demod_x10.c
 	cJSON.c
+	${MACOS_AUDIO_SOURCE}
 )
 
 

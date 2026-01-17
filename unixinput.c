@@ -90,10 +90,20 @@ static inline int timespec_get(struct timespec *ts, int base)
 #elif PULSE_AUDIO
 #include <pulse/simple.h>
 #include <pulse/error.h>
+#elif COREAUDIO
+#include <AudioToolbox/AudioQueue.h>
+#include <CoreAudio/CoreAudio.h>
+#ifdef HAS_PROCESSTAP
+/* External functions from macos_audio.m for system audio capture */
+extern int macos_screencapture_available(void);
+extern int macos_start_system_audio(unsigned int sample_rate, void (*callback)(short *, int));
+extern void macos_stop_system_audio(void);
+extern void macos_audio_run_loop(double seconds);
+#endif
 #elif WIN32_AUDIO
 //see win32_soundin.c
 #elif DUMMY_AUDIO
-// NO AUDIO FOR OSX :/
+// NO AUDIO
 #else /* SUN_AUDIO */
 #include <sys/soundcard.h>
 #include <sys/ioctl.h>
@@ -390,6 +400,189 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
     (void)overlap;
     (void)ifname;
 }
+#elif COREAUDIO
+/* macOS Core Audio implementation using AudioQueue */
+
+/* Shared state for audio queue callback */
+static struct {
+    short *buffer;
+    unsigned int buffer_size;
+    volatile int data_ready;
+    volatile int running;
+} ca_state;
+
+static void ca_input_callback(void *userdata, AudioQueueRef queue,
+                              AudioQueueBufferRef buf,
+                              const AudioTimeStamp *start_time,
+                              UInt32 num_packets,
+                              const AudioStreamPacketDescription *desc)
+{
+    (void)userdata;
+    (void)start_time;
+    (void)desc;
+    
+    if (num_packets > 0 && ca_state.running) {
+        unsigned int bytes = num_packets * sizeof(short);
+        if (bytes > ca_state.buffer_size)
+            bytes = ca_state.buffer_size;
+        memcpy(ca_state.buffer, buf->mAudioData, bytes);
+        ca_state.data_ready = bytes / sizeof(short);
+    }
+    
+    /* Re-enqueue the buffer for continuous recording */
+    if (ca_state.running)
+        AudioQueueEnqueueBuffer(queue, buf, 0, NULL);
+}
+
+static void input_sound(unsigned int sample_rate, unsigned int overlap,
+                        const char *ifname)
+{
+    AudioQueueRef queue = NULL;
+    AudioQueueBufferRef buffers[3];
+    OSStatus status;
+    
+    short buffer[8192];
+    float fbuf[16384];
+    unsigned int fbuf_cnt = 0;
+    short *sp;
+    int i;
+    
+    (void)ifname;  /* Device selection not implemented yet */
+    
+    /* Set up audio format: 16-bit signed integer, mono */
+    AudioStreamBasicDescription format = {
+        .mSampleRate = sample_rate,
+        .mFormatID = kAudioFormatLinearPCM,
+        .mFormatFlags = kLinearPCMFormatFlagIsSignedInteger | kLinearPCMFormatFlagIsPacked,
+        .mBytesPerPacket = sizeof(short),
+        .mFramesPerPacket = 1,
+        .mBytesPerFrame = sizeof(short),
+        .mChannelsPerFrame = 1,
+        .mBitsPerChannel = 16,
+        .mReserved = 0
+    };
+    
+    /* Initialize shared state */
+    ca_state.buffer = buffer;
+    ca_state.buffer_size = sizeof(buffer);
+    ca_state.data_ready = 0;
+    ca_state.running = 1;
+    
+    /* Create audio input queue */
+    status = AudioQueueNewInput(&format, ca_input_callback, NULL,
+                                CFRunLoopGetCurrent(), kCFRunLoopCommonModes,
+                                0, &queue);
+    if (status != noErr) {
+        fprintf(stderr, "AudioQueueNewInput failed: %d\n", (int)status);
+        exit(10);
+    }
+    
+    /* Allocate and enqueue buffers */
+    const unsigned int buf_size = sizeof(buffer);
+    for (int b = 0; b < 3; b++) {
+        status = AudioQueueAllocateBuffer(queue, buf_size, &buffers[b]);
+        if (status != noErr) {
+            fprintf(stderr, "AudioQueueAllocateBuffer failed: %d\n", (int)status);
+            exit(10);
+        }
+        AudioQueueEnqueueBuffer(queue, buffers[b], 0, NULL);
+    }
+    
+    /* Start recording */
+    status = AudioQueueStart(queue, NULL);
+    if (status != noErr) {
+        fprintf(stderr, "AudioQueueStart failed: %d\n", (int)status);
+        exit(10);
+    }
+    
+    fprintf(stdout, "Core Audio: recording at %u Hz\n", sample_rate);
+    
+    /* Main loop: process audio from callback */
+    for (;;) {
+        /* Run the run loop to process callbacks */
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.1, false);
+        
+        if (ca_state.data_ready > 0) {
+            i = ca_state.data_ready;
+            sp = buffer;
+            ca_state.data_ready = 0;
+            
+            if (integer_only) {
+                fbuf_cnt = i;
+            } else {
+                for (; i > 0; i--, sp++)
+                    fbuf[fbuf_cnt++] = (*sp) * (1.0f / 32768.0f);
+            }
+            
+            if (fbuf_cnt > overlap) {
+                process_buffer(fbuf, buffer, fbuf_cnt - overlap);
+                memmove(fbuf, fbuf + fbuf_cnt - overlap, overlap * sizeof(fbuf[0]));
+                fbuf_cnt = overlap;
+            }
+        }
+    }
+    
+    /* Cleanup (unreachable in normal operation, but good practice) */
+    ca_state.running = 0;
+    AudioQueueStop(queue, true);
+    AudioQueueDispose(queue, true);
+}
+
+#ifdef HAS_PROCESSTAP
+/* System audio capture using Core Audio ProcessTap (macOS 14.2+) */
+static unsigned int sck_overlap;
+static float sck_fbuf[16384];
+static short sck_sbuf[8192];
+static unsigned int sck_fbuf_cnt = 0;
+
+static void sck_audio_callback(short *samples, int count)
+{
+    if (count <= 0)
+        return;
+    
+    /* Copy samples to our buffer */
+    if (count > 8192)
+        count = 8192;
+    memcpy(sck_sbuf, samples, count * sizeof(short));
+    
+    if (integer_only) {
+        sck_fbuf_cnt = count;
+    } else {
+        for (int i = 0; i < count; i++)
+            sck_fbuf[sck_fbuf_cnt++] = samples[i] * (1.0f / 32768.0f);
+    }
+    
+    if (sck_fbuf_cnt > sck_overlap) {
+        process_buffer(sck_fbuf, sck_sbuf, sck_fbuf_cnt - sck_overlap);
+        memmove(sck_fbuf, sck_fbuf + sck_fbuf_cnt - sck_overlap, sck_overlap * sizeof(sck_fbuf[0]));
+        sck_fbuf_cnt = sck_overlap;
+    }
+}
+
+static void input_system_audio(unsigned int sample_rate, unsigned int overlap)
+{
+    sck_overlap = overlap;
+    sck_fbuf_cnt = 0;
+    
+    if (!macos_screencapture_available()) {
+        fprintf(stderr, "System audio capture requires macOS 14.2 or later\n");
+        exit(10);
+    }
+    
+    if (macos_start_system_audio(sample_rate, sck_audio_callback) != 0) {
+        fprintf(stderr, "Failed to start system audio capture\n");
+        fprintf(stderr, "Make sure to grant screen recording permission in System Preferences\n");
+        exit(10);
+    }
+    
+    /* Keep running - the callback handles audio processing */
+    for (;;) {
+        macos_audio_run_loop(0.1);
+    }
+    
+    macos_stop_system_audio();
+}
+#endif /* HAS_PROCESSTAP */
 #elif WIN32_AUDIO
 //Implemented in win32_soundin.c
 void input_sound(unsigned int sample_rate, unsigned int overlap, const char *ifname);
@@ -716,6 +909,9 @@ static const char usage_str[] = "\n"
         "  hardware. A filename of \"-\" denotes standard input.\n"
         "  -t <type>    : Input file type (auto-detected from extension if not specified)\n"
         "                 Types other than raw require sox. Supported: hw (hardware input),\n"
+#ifdef HAS_PROCESSTAP
+        "                 system (capture system audio output, macOS 14.2+),\n"
+#endif
         "                 raw, wav, flac, mp3, ogg, aiff, au, etc.\n"
         "  -a <demod>   : Add demodulator\n"
         "  -s <demod>   : Subtract demodulator\n"
@@ -764,7 +960,11 @@ int main(int argc, char *argv[])
     int mask_first = 1;
     int sample_rate = -1;
     unsigned int overlap = 0;
+#ifdef HAS_PROCESSTAP
+    char *input_type = "system";  /* Default to system audio capture on macOS */
+#else
     char *input_type = "hw";
+#endif
 
     static struct option long_options[] =
       {
@@ -843,6 +1043,13 @@ int main(int argc, char *argv[])
                 input_type = "hw";
                 break;
             }
+#ifdef HAS_PROCESSTAP
+            /* Special case: -t system for system audio capture */
+            if (!strcmp(optarg, "system")) {
+                input_type = "system";
+                break;
+            }
+#endif
             for (itype = (char **)allowed_types; *itype; itype++)
                 if (!strcmp(*itype, optarg)) {
                     input_type = *itype;
@@ -850,6 +1057,9 @@ int main(int argc, char *argv[])
                 }
             fprintf(stderr, "invalid input type \"%s\"\n"
                     "allowed types: hw ", optarg);
+#ifdef HAS_PROCESSTAP
+            fprintf(stderr, "system ");
+#endif
             for (itype = (char **)allowed_types; *itype; itype++)
                 fprintf(stderr, "%s ", *itype);
             fprintf(stderr, "\n");
@@ -1015,16 +1225,25 @@ intypefound:
     }
     
     /* If no explicit type was set, check if we should auto-detect from files */
-    if (!strcmp(input_type, "hw") && !type_explicit && (argc - optind) >= 1) {
+    if ((!strcmp(input_type, "hw") || !strcmp(input_type, "system")) && !type_explicit && (argc - optind) >= 1) {
         /* Check if the argument looks like a device path (starts with /dev/) */
         const char *first_arg = argv[optind];
         if (strncmp(first_arg, "/dev/", 5) == 0) {
-            /* Device path - keep hw mode, pass to input_sound */
+            /* Device path - switch to hw mode */
+            input_type = "hw";
         } else {
             /* Regular file - switch to file mode with auto-detection */
             input_type = NULL;
         }
     }
+    
+#ifdef HAS_PROCESSTAP
+    if (input_type && !strcmp(input_type, "system")) {
+        input_system_audio(sample_rate, overlap);
+        quit();
+        exit(0);
+    }
+#endif
     
     if (input_type && !strcmp(input_type, "hw")) {
         if ((argc - optind) >= 1)

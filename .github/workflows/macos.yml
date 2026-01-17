@@ -1,0 +1,31 @@
+name: macOS Build
+
+on: [push]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - uses: actions/checkout@v6
+    
+    - name: Install sox
+      run: brew install sox
+    
+    - name: Configure with CMake
+      run: mkdir build && cd build && cmake ..
+    
+    - name: Build
+      run: cd build && make -j$(sysctl -n hw.ncpu)
+    
+    - name: Run tests
+      run: ./test/run_tests.sh
+    
+    - name: Upload artifact
+      uses: actions/upload-artifact@v6
+      with:
+        name: multimon-ng-macos
+        path: |
+          build/multimon-ng
+          build/gen-ng
+        retention-days: 30
