@@ -90,11 +90,14 @@ WINE_CMD=wine MULTIMON=./build-mingw64/multimon-ng.exe GEN_NG=./build-mingw64/ge
 
 **Manual testing:**
 ```bash
-# Test with raw file
-./build/multimon-ng -t raw -q -a POCSAG1200 ./test/samples/pocsag_ref.raw
+# Test with raw file (auto-detected from extension, or use -t raw)
+./build/multimon-ng -q -a POCSAG1200 ./test/samples/pocsag_ref.raw
 
-# Test with wav/flac (requires sox)
-./build/multimon-ng -t wav -q -a X10 ./test/samples/x10rf.wav
+# Test with wav/flac (auto-detected, requires sox)
+./build/multimon-ng -q -a X10 ./test/samples/x10rf.wav
+
+# Explicit type override
+./build/multimon-ng -t flac -q -a POCSAG1200 ./test/samples/POCSAG_sample_-_1200_bps.flac
 ```
 
 ## gen-ng Signal Generator
@@ -210,13 +213,18 @@ Both protocols must call `bch_init()` before using encode/correct functions (cal
 
 ## Common Issues
 
-1. **"execlp: No such file or directory"**: Occurs when using `-t wav` without sox installed. Use `-t raw` for raw input files or install sox.
+1. **"execlp: No such file or directory"**: Sox is required for non-raw audio files. The file type is auto-detected from extension (e.g., `.wav`, `.flac`). If sox is missing, convert manually:
+   ```bash
+   sox -R input.wav -esigned-integer -b16 -r 22050 -t raw output.raw
+   ```
 
 2. **Missing PulseAudio/X11**: Optional dependencies. Build succeeds without them.
 
 3. **DTMF/ZVEI tests fail under Wine**: Known issue with tone detection under Wine emulation. Tests are skipped automatically when `WINE_CMD` is set.
 
 4. **Format warnings in demod_flex.c**: Known issues with `%lld` format specifiers, harmless.
+
+5. **Unknown file extension warning**: If a file has an unrecognized extension, multimon-ng assumes raw format and prints a warning. Use `-t <type>` to override.
 
 ## Pre-installed Environment
 
@@ -234,18 +242,18 @@ The CI environment has these tools via `.github/workflows/copilot-setup-steps.ym
 ### Testing with SoX
 
 ```bash
-# Convert formats
+# Convert formats (always use -R for deterministic output)
 sox -R -t wav input.wav -esigned-integer -b16 -r 22050 -t raw output.raw
 
-# Test wav file directly (sox must be installed)
-./build/multimon-ng -t wav -q -a X10 ./test/samples/x10rf.wav
+# Test wav file directly (sox must be installed, type auto-detected)
+./build/multimon-ng -q -a X10 ./test/samples/x10rf.wav
 ```
 
 ### Testing Windows Builds with Wine
 
 ```bash
 wine ./build-mingw64/multimon-ng.exe -h
-wine ./build-mingw64/multimon-ng.exe -t raw -q -a UFSK1200 ./test/samples/ufsk1200.raw
+wine ./build-mingw64/multimon-ng.exe -q -a UFSK1200 ./test/samples/ufsk1200.raw
 ```
 
 ## Trust These Instructions

@@ -50,13 +50,13 @@ FAILED=0
 # =============================================================================
 echo "Basic decoder tests:"
 
-run_test "UFSK1200" "UFSK1200" "raw" "$SAMPLES_DIR/ufsk1200.raw" \
+run_test "UFSK1200" "UFSK1200" "auto" "$SAMPLES_DIR/ufsk1200.raw" \
     "N3000000000005000102000000F7" \
     "N3000400001405000106000400D7" \
     "N3001200002000000100001200BA" \
     || FAILED=1
 
-run_test "X10" "X10" "wav" "$SAMPLES_DIR/x10rf.wav" \
+run_test "X10" "X10" "auto" "$SAMPLES_DIR/x10rf.wav" \
     "bstring = 00110000110011110001000011101111" \
     "housecode = P 2" \
     || FAILED=1
@@ -65,7 +65,7 @@ run_test "POCSAG512" "POCSAG512" "flac" "$SAMPLES_DIR/POCSAG_sample_-_512_bps.fl
     "POCSAG512: Address:  273040  Function: 3  Alpha:   512 B SIDE ZZZZZZ" \
     || FAILED=1
 
-run_test "POCSAG1200" "POCSAG1200" "flac" "$SAMPLES_DIR/POCSAG_sample_-_1200_bps.flac" \
+run_test "POCSAG1200" "POCSAG1200" "auto" "$SAMPLES_DIR/POCSAG_sample_-_1200_bps.flac" \
     "POCSAG1200: Address:  273040  Function: 3  Alpha:   +++TIME=0008300324" \
     || FAILED=1
 
@@ -80,28 +80,28 @@ if [ -d "$BCH_REF_DIR" ]; then
     echo
     echo "BCH reference tests:"
     
-    # FLEX BCH
-    run_test "FLEX BCH clean" "FLEX" "raw" "$BCH_REF_DIR/flex_clean.raw" \
+    # FLEX BCH (mix of auto and explicit)
+    run_test "FLEX BCH clean" "FLEX" "auto" "$BCH_REF_DIR/flex_clean.raw" \
         "000123456" "FLEX_REF_CLEAN" || FAILED=1
     run_test "FLEX BCH 1-bit" "FLEX" "raw" "$BCH_REF_DIR/flex_1bit.raw" \
         "000234567" "FLEX_REF_1BIT" || FAILED=1
-    run_test "FLEX BCH 2-bit" "FLEX" "raw" "$BCH_REF_DIR/flex_2bit.raw" \
+    run_test "FLEX BCH 2-bit" "FLEX" "auto" "$BCH_REF_DIR/flex_2bit.raw" \
         "000345678" "FLEX_REF_2BIT" || FAILED=1
     
-    # POCSAG BCH
+    # POCSAG BCH (mix of auto and explicit)
     run_test "POCSAG BCH clean" "POCSAG1200" "raw" "$BCH_REF_DIR/pocsag_clean.raw" \
         "Address:  111111" "POCSAG_REF_CLEAN" || FAILED=1
-    run_test "POCSAG BCH 1-bit" "POCSAG1200" "raw" "$BCH_REF_DIR/pocsag_1bit.raw" \
+    run_test "POCSAG BCH 1-bit" "POCSAG1200" "auto" "$BCH_REF_DIR/pocsag_1bit.raw" \
         "Address:  222222" "POCSAG_REF_1BIT" || FAILED=1
     run_test "POCSAG BCH 2-bit" "POCSAG1200" "raw" "$BCH_REF_DIR/pocsag_2bit.raw" \
         "Address:  333333" "POCSAG_REF_2BIT" || FAILED=1
     
-    # POCSAG inverted polarity BCH
-    run_test "POCSAG inv BCH clean" "POCSAG1200" "raw" "$BCH_REF_DIR/pocsag_inv_clean.raw" \
+    # POCSAG inverted polarity BCH (mix of auto and explicit)
+    run_test "POCSAG inv BCH clean" "POCSAG1200" "auto" "$BCH_REF_DIR/pocsag_inv_clean.raw" \
         "Address:  444444" "POCSAG_INV_CLEAN" || FAILED=1
     run_test "POCSAG inv BCH 1-bit" "POCSAG1200" "raw" "$BCH_REF_DIR/pocsag_inv_1bit.raw" \
         "Address:  555555" "POCSAG_INV_1BIT" || FAILED=1
-    run_test "POCSAG inv BCH 2-bit" "POCSAG1200" "raw" "$BCH_REF_DIR/pocsag_inv_2bit.raw" \
+    run_test "POCSAG inv BCH 2-bit" "POCSAG1200" "auto" "$BCH_REF_DIR/pocsag_inv_2bit.raw" \
         "Address:  666666" "POCSAG_INV_2BIT" || FAILED=1
 fi
 
@@ -213,6 +213,15 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
     
     run_gen_decode_test "POCSAG inverted 2-bit error" \
         '-P "InvErr2" -A 77777 -I -e 2' "POCSAG1200" "Address:   77777" "InvErr2" || FAILED=1
+    
+    echo
+    echo "WAV roundtrip tests (sox integration):"
+    
+    run_gen_decode_wav_test "POCSAG wav roundtrip" \
+        '-P "WavTest" -A 88888' "POCSAG1200" "Address:   88888" "WavTest" || FAILED=1
+    
+    run_gen_decode_wav_test "FLEX wav roundtrip" \
+        '-f "FlexWav" -F 1234567' "FLEX" "1234567" "FlexWav" || FAILED=1
 else
     echo
     echo "Skipping end-to-end tests (gen-ng not available)"

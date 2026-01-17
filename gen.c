@@ -79,8 +79,49 @@ int snprintf(char *buf, size_t sz, const char *fmt, ...)
 
 static const char *allowed_types[] = {
 	"raw", "aiff", "au", "hcom", "sf", "voc", "cdr", "dat", 
-	"smp", "wav", "maud", "vwe", NULL
+	"smp", "wav", "maud", "vwe", "mp3", "mp4", "ogg", "flac", NULL
 };
+
+/* Extension to type mapping (extensions that differ from type name) */
+static const struct { const char *ext; const char *type; } ext_map[] = {
+	{ "aif", "aiff" },
+	{ NULL, NULL }
+};
+
+/* Detect output type from filename extension, returns NULL if unknown */
+static const char *detect_type_from_extension(const char *fname)
+{
+	if (!fname)
+		return NULL;
+
+	const char *dot = strrchr(fname, '.');
+	if (!dot || dot == fname)
+		return NULL;
+
+	const char *ext = dot + 1;
+	size_t ext_len = strlen(ext);
+	if (ext_len == 0 || ext_len > 8)
+		return NULL;
+
+	/* Convert extension to lowercase for comparison */
+	char ext_lower[16];
+	for (size_t i = 0; i <= ext_len && i < sizeof(ext_lower) - 1; i++)
+		ext_lower[i] = (ext[i] >= 'A' && ext[i] <= 'Z') ? ext[i] + 32 : ext[i];
+
+	/* Check extension map first (for aliases like .aif -> aiff) */
+	for (int i = 0; ext_map[i].ext; i++) {
+		if (!strcmp(ext_lower, ext_map[i].ext))
+			return ext_map[i].type;
+	}
+
+	/* Check if extension matches a known type directly */
+	for (const char **t = allowed_types; *t; t++) {
+		if (!strcmp(ext_lower, *t))
+			return *t;
+	}
+
+	return NULL;
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -299,6 +340,22 @@ static void output_sound(unsigned int sample_rate, const char *ifname)
 
 /* ---------------------------------------------------------------------- */
 
+#if !defined(ONLY_RAW)
+/* Check if sox is available, returns 1 if found, 0 if not */
+static int check_sox_available(void)
+{
+	/* Check common locations and PATH */
+	if (access("/usr/bin/sox", X_OK) == 0) return 1;
+	if (access("/usr/local/bin/sox", X_OK) == 0) return 1;
+	if (access("/opt/homebrew/bin/sox", X_OK) == 0) return 1;
+	if (access("/opt/local/bin/sox", X_OK) == 0) return 1;
+
+	/* Check PATH using which */
+	int ret = system("which sox >/dev/null 2>&1");
+	return (ret == 0);
+}
+#endif
+
 static void output_file(unsigned int sample_rate, const char *fname, const char *type)
 {
 #if !defined(ONLY_RAW)
@@ -310,26 +367,42 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 	int i, num, num2;
 	short buffer[8192];	
 	short *sp;
+	int is_stdout = !strcmp(fname, "-");
 
 	/*
 	 * if the input type is not raw, sox is started to convert the
 	 * samples to the requested format
 	 */
 	if (!type || !strcmp(type, "raw")) {
+		if (is_stdout) {
+			fd = 1;  /* stdout */
 #ifdef WINDOWS
-		if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL|O_BINARY, 0777)) < 0) {
-#else
-		if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL, 0777)) < 0) {
+			setmode(fd, O_BINARY);
 #endif
-			perror("open");
-			exit(10);
+		} else {
+#ifdef WINDOWS
+			if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL|O_BINARY, 0777)) < 0) {
+#else
+			if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL, 0777)) < 0) {
+#endif
+				perror("open");
+				exit(10);
+			}
 		}
 	} else {
 #if defined(ONLY_RAW)
 		fprintf(stderr, "error: non-raw output requires sox (not available on this platform)\n");
 		exit(10);
 #else
-		if (!stat(fname, &statbuf)) {
+		/* Check sox availability before attempting conversion */
+		if (!check_sox_available()) {
+			fprintf(stderr, "Error: sox is required for .%s output but was not found.\n", type);
+			fprintf(stderr, "Install sox or use raw output (-t raw) and convert manually:\n");
+			fprintf(stderr, "  sox -R -t raw -esigned-integer -b16 -r %d input.raw -t %s '%s'\n",
+					sample_rate, type, fname);
+			exit(10);
+		}
+		if (!is_stdout && !stat(fname, &statbuf)) {
 			fprintf(stderr, "file already exists: %s\n",fname);
 			exit(10);
 		}
@@ -349,9 +422,9 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 			if (dup2(pipedes[0], 0) < 0) 
 				perror("dup2");
 			close(pipedes[0]); /* close reading pipe end */
-			execlp("sox", "sox", 
+			execlp("sox", "sox", "-R",
 			       "-t", "raw", "-esigned-integer", "-b16", "-r", srate, "-",
-			       "-t", type, fname,
+			       "-t", type, is_stdout ? "-" : fname,
 			       NULL);
 			perror("execlp");
 			exit(10);
@@ -392,7 +465,8 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 /* ---------------------------------------------------------------------- */
 
 static const char usage_str[] = "Generates test signals\n"
-"  -t <type>  : output file type (any other type than raw requires sox)\n"
+"  -t <type>  : output file type (auto-detected from extension if not specified)\n"
+"               Types other than raw require sox. Supported: raw, wav, flac, mp3, ogg, etc.\n"
 "  -a <ampl>  : amplitude\n"
 "  -d <str>   : encode DTMF string\n"
 "  -z <str>   : encode ZVEI string\n"
@@ -414,6 +488,7 @@ int main(int argc, char *argv[])
 {
 	int c;
 	int errflg = 0;
+	int type_explicit = 0;
 	char **otype;
 	char *output_type = "hw";
 	char *cp;
@@ -428,6 +503,7 @@ int main(int argc, char *argv[])
 			break;
 
 		case 't':
+			type_explicit = 1;
 			for (otype = (char **)allowed_types; *otype; otype++) 
 				if (!strcmp(*otype, optarg)) {
 					output_type = *otype;
@@ -681,6 +757,17 @@ int main(int argc, char *argv[])
 		if (!init_procs[params[c].type])
 			break;
 		init_procs[params[c].type](params+c, state+c);
+	}
+
+	/* If no explicit type and file specified, auto-detect from extension */
+	if (!type_explicit && !strcmp(output_type, "hw") && (argc - optind) >= 1) {
+		const char *detected = detect_type_from_extension(argv[optind]);
+		if (detected) {
+			output_type = (char *)detected;
+		} else {
+			/* Unknown extension, default to raw */
+			output_type = "raw";
+		}
 	}
 
 	if (!strcmp(output_type, "hw")) {

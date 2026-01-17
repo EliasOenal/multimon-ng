@@ -81,6 +81,7 @@ report_result() {
 
 # Generic test runner for sample files
 # Arguments: name decoder input_type input_file expected1 [expected2 ...]
+# Note: if input_type is "auto", auto-detection from file extension is used
 run_test() {
     local name="$1"
     local decoder="$2"
@@ -92,12 +93,29 @@ run_test() {
     TESTS_RUN=$((TESTS_RUN + 1))
     echo -n "Testing $name... "
     
+    # Determine effective type for sox check
+    local effective_type="$input_type"
+    if [ "$input_type" = "auto" ]; then
+        # Extract extension
+        effective_type="${input_file##*.}"
+    fi
+    
+    # Skip if sox is needed but not available
+    if [ "$effective_type" != "raw" ] && ! command -v sox >/dev/null 2>&1; then
+        echo -e "${GREEN}SKIPPED${NC} (sox not installed)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    fi
+    
     local output
-    if [ -n "$WINE_CMD" ] && [ "$input_type" != "raw" ]; then
-        # Non-raw input with Wine: use sox on host to convert, pipe to Wine
-        output=$(sox -V1 --ignore-length -t "$input_type" "$input_file" \
+    if [ -n "$WINE_CMD" ] && [ "$effective_type" != "raw" ]; then
+        # Wine can't run sox, so convert with host sox first then pipe raw to Wine
+        output=$(sox -R -V1 --ignore-length -t "$effective_type" "$input_file" \
             -t raw -esigned-integer -b16 -r 22050 - remix 1 2>/dev/null | \
             run_multimon -t raw -q -a "$decoder" -)
+    elif [ "$input_type" = "auto" ]; then
+        # Test auto-detection: no -t flag (native only)
+        output=$(run_multimon -q -a "$decoder" "$input_file")
     else
         output=$(run_multimon -t "$input_type" -q -a "$decoder" "$input_file")
     fi
@@ -135,6 +153,73 @@ run_gen_decode_test() {
     local output
     output=$(run_multimon -t raw -q -a "$decoder" "$tmpfile")
     rm -f "$tmpfile"
+    
+    if check_patterns "$output" "${expected_patterns[@]}"; then
+        report_result "$name" 1
+    else
+        report_result "$name" 0 "$MISSING_PATTERN" "$output"
+        return 1
+    fi
+}
+
+# Generate signal with gen-ng using wav format and decode with multimon-ng
+# Tests the full sox roundtrip (gen-ng -> sox -> wav -> sox -> multimon-ng)
+# Arguments: name gen_opts decoder expected1 [expected2 ...]
+run_gen_decode_wav_test() {
+    local name="$1"
+    local gen_opts="$2"
+    local decoder="$3"
+    shift 3
+    local expected_patterns=("$@")
+    
+    local tmpraw="${TEST_DIR}/tmp_$$.raw"
+    local tmpwav="${TEST_DIR}/tmp_$$.wav"
+    
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing $name... "
+    
+    # Skip if sox is not available
+    if ! command -v sox >/dev/null 2>&1; then
+        echo -e "${GREEN}SKIPPED${NC} (sox not installed)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    fi
+    
+    if [ -n "$WINE_CMD" ]; then
+        # Wine gen-ng can't use sox, so generate raw then convert with host sox
+        if ! eval "run_gen_ng -t raw $gen_opts \"$tmpraw\"" >/dev/null 2>&1; then
+            echo -e "${RED}FAILED${NC} (gen-ng failed)"
+            rm -f "$tmpraw"
+            return 1
+        fi
+        # Convert raw to wav with host sox
+        if ! sox -R -t raw -esigned-integer -b16 -r 22050 "$tmpraw" -t wav "$tmpwav" 2>/dev/null; then
+            echo -e "${RED}FAILED${NC} (sox convert failed)"
+            rm -f "$tmpraw"
+            return 1
+        fi
+        rm -f "$tmpraw"
+    else
+        # Native: generate wav directly
+        if ! eval "run_gen_ng -t wav $gen_opts \"$tmpwav\"" >/dev/null 2>&1; then
+            echo -e "${RED}FAILED${NC} (gen-ng failed)"
+            rm -f "$tmpwav"
+            return 1
+        fi
+    fi
+    
+    # Decode signal
+    local output
+    if [ -n "$WINE_CMD" ]; then
+        # Wine can't run sox, convert with host sox first
+        output=$(sox -R -V1 --ignore-length -t wav "$tmpwav" \
+            -t raw -esigned-integer -b16 -r 22050 - remix 1 2>/dev/null | \
+            run_multimon -t raw -q -a "$decoder" -)
+    else
+        # Native: use auto-detect from extension
+        output=$(run_multimon -q -a "$decoder" "$tmpwav")
+    fi
+    rm -f "$tmpwav"
     
     if check_patterns "$output" "${expected_patterns[@]}"; then
         report_result "$name" 1

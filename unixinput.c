@@ -111,6 +111,65 @@ static const char *allowed_types[] = {
     "smp", "wav", "maud", "vwe", "mp3", "mp4", "ogg", "flac", NULL
 };
 
+/* Extension to type mapping (extensions that differ from type name) */
+static const struct { const char *ext; const char *type; } ext_map[] = {
+    { "aif", "aiff" },
+    { NULL, NULL }
+};
+
+/* Detect input type from filename extension, returns NULL if unknown */
+static const char *detect_type_from_extension(const char *fname)
+{
+    if (!fname || !strcmp(fname, "-"))
+        return NULL;
+
+    const char *dot = strrchr(fname, '.');
+    if (!dot || dot == fname)
+        return NULL;
+
+    const char *ext = dot + 1;
+    size_t ext_len = strlen(ext);
+    if (ext_len == 0 || ext_len > 8)
+        return NULL;
+
+    /* Convert extension to lowercase for comparison */
+    char ext_lower[16];
+    for (size_t i = 0; i <= ext_len && i < sizeof(ext_lower) - 1; i++)
+        ext_lower[i] = (ext[i] >= 'A' && ext[i] <= 'Z') ? ext[i] + 32 : ext[i];
+
+    /* Check extension map first (for aliases like .aif -> aiff) */
+    for (int i = 0; ext_map[i].ext; i++) {
+        if (!strcmp(ext_lower, ext_map[i].ext))
+            return ext_map[i].type;
+    }
+
+    /* Check if extension matches a known type directly */
+    for (const char **t = allowed_types; *t; t++) {
+        if (!strcmp(ext_lower, *t))
+            return *t;
+    }
+
+    return NULL;
+}
+
+/* Check if sox is available, returns 1 if found, 0 if not */
+static int check_sox_available(void)
+{
+#ifdef WIN32
+    /* On Windows, just try to run it - harder to check PATH reliably */
+    return 1;
+#else
+    /* Check common locations and PATH */
+    if (access("/usr/bin/sox", X_OK) == 0) return 1;
+    if (access("/usr/local/bin/sox", X_OK) == 0) return 1;
+    if (access("/opt/homebrew/bin/sox", X_OK) == 0) return 1;
+
+    /* Check PATH using which */
+    int ret = system("which sox >/dev/null 2>&1");
+    return (ret == 0);
+#endif
+}
+
 /* ---------------------------------------------------------------------- */
 
 static const struct demod_param *dem[] = { ALL_DEMOD };
@@ -129,8 +188,9 @@ static unsigned int dem_mask[(NUMDEMOD+31)/32];
 /* ---------------------------------------------------------------------- */
 
 static int verbose_level = 0;
-static int repeatable_sox = 0;
+static int repeatable_sox = 1;  /* Always use sox -R for deterministic output */
 static int mute_sox = 0;
+static int type_explicit = 0;   /* Track if -t was explicitly provided */
 static int integer_only = true;
 static bool dont_flush = false;
 static bool is_startline = true;
@@ -654,7 +714,9 @@ static const char usage_str[] = "\n"
         "Usage: %s [file] [file] [file] ...\n"
         "  If no [file] is given, input will be read from your default sound\n"
         "  hardware. A filename of \"-\" denotes standard input.\n"
-        "  -t <type>    : Input file type (any other type than raw requires sox)\n"
+        "  -t <type>    : Input file type (auto-detected from extension if not specified)\n"
+        "                 Types other than raw require sox. Supported: hw (hardware input),\n"
+        "                 raw, wav, flac, mp3, ogg, aiff, au, etc.\n"
         "  -a <demod>   : Add demodulator\n"
         "  -s <demod>   : Subtract demodulator\n"
         "  -c           : Remove all demodulators (must be added with -a <demod>)\n"
@@ -664,7 +726,7 @@ static const char usage_str[] = "\n"
         "  -h           : This help\n"
         "  -A           : APRS mode (TNC2 text output)\n"
         "  -m           : Mute SoX warnings\n"
-        "  -r           : Call SoX in repeatable mode (e.g. fixed random seed for dithering)\n"
+        "  -r           : (Deprecated) Repeatable mode is now always enabled.\n"
         "  -n           : Don't flush stdout, increases performance.\n"
         "  -j           : FMS: Just output hex data and CRC, no parsing.\n"
         "  -e           : POCSAG: Hide empty messages.\n"
@@ -771,17 +833,23 @@ int main(int argc, char *argv[])
             break;
             
         case 'r':
-            repeatable_sox = 1;
+            fprintf(stderr, "Warning: -r is deprecated. Repeatable mode is now always enabled.\n");
             break;
             
         case 't':
+            type_explicit = 1;
+            /* Special case: -t hw for explicit hardware input */
+            if (!strcmp(optarg, "hw")) {
+                input_type = "hw";
+                break;
+            }
             for (itype = (char **)allowed_types; *itype; itype++)
                 if (!strcmp(*itype, optarg)) {
                     input_type = *itype;
                     goto intypefound;
                 }
             fprintf(stderr, "invalid input type \"%s\"\n"
-                    "allowed types: ", optarg);
+                    "allowed types: hw ", optarg);
             for (itype = (char **)allowed_types; *itype; itype++)
                 fprintf(stderr, "%s ", *itype);
             fprintf(stderr, "\n");
@@ -943,9 +1011,22 @@ intypefound:
     if (optind < argc && !strcmp(argv[optind], "-"))
     {
         input_type = "raw";
+        type_explicit = 1;  /* stdin requires explicit raw */
     }
     
-    if (!strcmp(input_type, "hw")) {
+    /* If no explicit type was set, check if we should auto-detect from files */
+    if (!strcmp(input_type, "hw") && !type_explicit && (argc - optind) >= 1) {
+        /* Check if the argument looks like a device path (starts with /dev/) */
+        const char *first_arg = argv[optind];
+        if (strncmp(first_arg, "/dev/", 5) == 0) {
+            /* Device path - keep hw mode, pass to input_sound */
+        } else {
+            /* Regular file - switch to file mode with auto-detection */
+            input_type = NULL;
+        }
+    }
+    
+    if (input_type && !strcmp(input_type, "hw")) {
         if ((argc - optind) >= 1)
             input_sound(sample_rate, overlap, argv[optind]);
         else
@@ -958,8 +1039,37 @@ intypefound:
         exit(4);
     }
     
-    for (i = optind; i < argc; i++)
-        input_file(sample_rate, overlap, argv[i], input_type);
+    for (i = optind; i < argc; i++) {
+        const char *file_type = input_type;
+        
+        /* Auto-detect type from extension if -t wasn't specified */
+        if (!type_explicit) {
+            const char *detected = detect_type_from_extension(argv[i]);
+            if (detected) {
+                file_type = detected;
+            } else {
+                /* Unknown extension, default to raw with warning */
+                if (!quietflg) {
+                    const char *dot = strrchr(argv[i], '.');
+                    if (dot && dot[1]) {
+                        fprintf(stderr, "Warning: Unknown extension '%s', assuming raw. Use -t to specify type.\n", dot);
+                    }
+                }
+                file_type = "raw";
+            }
+        }
+        
+        /* Check sox availability for non-raw types */
+        if (strcmp(file_type, "raw") != 0 && !check_sox_available()) {
+            fprintf(stderr, "Error: sox is required for .%s files but was not found.\n", file_type);
+            fprintf(stderr, "Install sox or convert manually:\n");
+            fprintf(stderr, "  sox -R -t %s '%s' -esigned-integer -b16 -r %d -t raw output.raw\n",
+                    file_type, argv[i], sample_rate);
+            exit(10);
+        }
+        
+        input_file(sample_rate, overlap, argv[i], file_type);
+    }
     
     quit();
     exit(0);

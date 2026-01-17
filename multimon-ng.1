@@ -115,8 +115,9 @@ ZVEI - The German Electrical and Electronic Manufacturers' Association - paging 
 .SH OPTIONS
 .TP
 .B  \-t <type>
-Input file type (any other type than raw requires sox).
-Allowed types: raw aiff au hcom sf voc cdr dat smp wav maud vwe mp3 mp4 ogg flac.
+Input file type. Auto-detected from file extension if not specified.
+Use "hw" for hardware audio input (default when no file specified).
+Types other than raw require sox. Allowed types: hw raw aiff au hcom sf voc cdr dat smp wav maud vwe mp3 mp4 ogg flac.
 .TP
 .B  \-a <demod>
 Add demodulator (see below).
@@ -144,7 +145,8 @@ APRS mode (TNC2 text output).
 Mute SoX warnings.
 .TP
 .B  \-r
-Call SoX in repeatable mode (e.g. fixed random seed for dithering).
+(Deprecated) Repeatable mode is now always enabled. This flag is
+kept for backwards compatibility but has no effect.
 .TP
 .B  \-n
 Don't flush stdout, increases performance.
