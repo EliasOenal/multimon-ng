@@ -53,7 +53,22 @@ if( X11_SUPPORT )
 	)
 else( X11_SUPPORT )
 	add_definitions( "-DNO_X11" )
-endif( X11_SUPPORT ) 
+endif( X11_SUPPORT )
+
+# SDL3 phosphor scope support
+find_package( SDL3 QUIET )
+if( SDL3_FOUND )
+	option( SDL3_SCOPE "Enable SDL3 digital phosphor scope" ON )
+	mark_as_advanced( SDL3_SCOPE )
+endif( SDL3_FOUND )
+
+if( SDL3_SCOPE )
+	set( SOURCES ${SOURCES}
+		demod_sdl_scope.c
+	)
+else( SDL3_SCOPE )
+	add_definitions( "-DNO_SDL3" )
+endif( SDL3_SCOPE ) 
 
 if( PULSE_AUDIO_SUPPORT )
 	include_directories( ${PULSEAUDIO_INCLUDE_DIR} )
@@ -147,6 +162,9 @@ add_executable( "${TARGET}" ${SOURCES} ${HEADERS} )
 set_property(TARGET "${TARGET}" PROPERTY LINKER_LANGUAGE C)
 target_compile_definitions( "${TARGET}" PRIVATE MAX_VERBOSE_LEVEL=3 )
 target_link_libraries( "${TARGET}" m )
+if( SDL3_SCOPE )
+	target_link_libraries( "${TARGET}" SDL3::SDL3 )
+endif( SDL3_SCOPE )
 install(TARGETS multimon-ng DESTINATION bin)
 
 # gen-ng signal generator

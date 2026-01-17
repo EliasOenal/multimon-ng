@@ -327,6 +327,9 @@ extern const struct demod_param demod_dumpcsv;
 #ifndef NO_X11
 extern const struct demod_param demod_scope;
 #endif
+#ifndef NO_SDL3
+extern const struct demod_param demod_sdl_scope;
+#endif
 
 #ifndef NO_X11
 #define SCOPE_DEMOD , &demod_scope
@@ -334,10 +337,16 @@ extern const struct demod_param demod_scope;
 #define SCOPE_DEMOD
 #endif
 
+#ifndef NO_SDL3
+#define SDL_SCOPE_DEMOD , &demod_sdl_scope
+#else
+#define SDL_SCOPE_DEMOD
+#endif
+
 #define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_flex, &demod_flex_next, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
     &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
     &demod_fsk9600, &demod_dtmf, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
-    &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD
+    &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD SDL_SCOPE_DEMOD
 
 
 /* ---------------------------------------------------------------------- */

@@ -9,8 +9,8 @@ jobs:
     steps:
     - uses: actions/checkout@v6
     
-    - name: Install sox
-      run: brew install sox
+    - name: Install dependencies
+      run: brew install sox sdl3
     
     - name: Configure with CMake
       run: mkdir build && cd build && cmake ..
