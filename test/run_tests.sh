@@ -115,26 +115,23 @@ else
 fi
 
 if [ $GEN_NG_AVAILABLE -eq 1 ]; then
-    # DTMF/ZVEI tests don't work reliably under Wine (tone detection issues)
-    if [ -z "$WINE_CMD" ]; then
-        echo
-        echo "DTMF/ZVEI end-to-end tests:"
-        
-        run_gen_decode_test "DTMF digits" \
-            '-d "123456"' "DTMF" "DTMF: 1" "DTMF: 2" "DTMF: 3" "DTMF: 4" "DTMF: 5" "DTMF: 6" || FAILED=1
-        
-        run_gen_decode_test "DTMF with letters" \
-            '-d "0ABCD"' "DTMF" "DTMF: 0" "DTMF: A" "DTMF: B" "DTMF: C" "DTMF: D" || FAILED=1
-        
-        run_gen_decode_test "DTMF star pound" \
-            '-d "*#"' "DTMF" "DTMF: *" "DTMF: #" || FAILED=1
-        
-        run_gen_decode_test "ZVEI1 sequence" \
-            '-z "12345"' "ZVEI1" "ZVEI1: 12345" || FAILED=1
-        
-        run_gen_decode_test "ZVEI1 with E" \
-            '-z "1E234"' "ZVEI1" "ZVEI1: 1E234" || FAILED=1
-    fi
+    echo
+    echo "DTMF/ZVEI end-to-end tests:"
+    
+    run_gen_decode_test "DTMF digits" \
+        '-d "123456"' "DTMF" "DTMF: 1" "DTMF: 2" "DTMF: 3" "DTMF: 4" "DTMF: 5" "DTMF: 6" || FAILED=1
+    
+    run_gen_decode_test "DTMF with letters" \
+        '-d "0ABCD"' "DTMF" "DTMF: 0" "DTMF: A" "DTMF: B" "DTMF: C" "DTMF: D" || FAILED=1
+    
+    run_gen_decode_test "DTMF star pound" \
+        '-d "*#"' "DTMF" "DTMF: *" "DTMF: #" || FAILED=1
+    
+    run_gen_decode_test "ZVEI1 sequence" \
+        '-z "12345"' "ZVEI1" "ZVEI1: 12345" || FAILED=1
+    
+    run_gen_decode_test "ZVEI1 with E" \
+        '-z "1E234"' "ZVEI1" "ZVEI1: 1E234" || FAILED=1
     
     echo
     echo "FLEX end-to-end tests:"

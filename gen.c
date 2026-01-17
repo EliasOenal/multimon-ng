@@ -316,7 +316,11 @@ static void output_file(unsigned int sample_rate, const char *fname, const char 
 	 * samples to the requested format
 	 */
 	if (!type || !strcmp(type, "raw")) {
+#ifdef WINDOWS
+		if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL|O_BINARY, 0777)) < 0) {
+#else
 		if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL, 0777)) < 0) {
+#endif
 			perror("open");
 			exit(10);
 		}
