@@ -109,6 +109,9 @@ POCSAG (Post Office Code Standards Advisory Group) is a common paging transmissi
 .br
 SCOPE - show samples in a rudimentary oscilloscope display on an X server.
 .br
+SDL_SCOPE - digital phosphor oscilloscope display using SDL3. Features green/amber
+phosphor emulation with intensity grading. Press Space to toggle color, Q/Esc to quit.
+.br
 X10 - a home automation protocol.
 .br
 ZVEI - The German Electrical and Electronic Manufacturers' Association - paging tone format.
@@ -167,6 +170,11 @@ kept for backwards compatibility but has no effect.
 .B  \-p
 POCSAG: Show partially received messages.
 .TP
+.B  \-P <mode>
+POCSAG: Set signal polarity detection mode. <mode> can be 'auto' (default),
+\&'normal' (only try normal polarity), or 'inverted' (only try inverted polarity).
+Use 'normal' to reduce false positives when signal polarity is known.
+.TP
 .B  \-f <mode>
 POCSAG: Disables auto-detection and forces decoding of data as <mode>
 (<mode> can be 'numeric', 'alpha', 'skyper' and 'auto')
@@ -211,7 +219,7 @@ Format output as JSON. Supported by the following demodulators:
 DTMF, EAS, FLEX, POCSAG. (Other demodulators will silently ignore this flag.)
 .PP
 Where <demod> is one of:
-POCSAG512 POCSAG1200 POCSAG2400 FLEX FLEX_NEXT EAS UFSK1200 CLIPFSK FMSFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3 HAPN4800 FSK9600 DTMF ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI EEA EIA CCIR MORSE_CW DUMPCSV X10 SCOPE
+POCSAG512 POCSAG1200 POCSAG2400 FLEX FLEX_NEXT EAS UFSK1200 CLIPFSK FMSFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3 HAPN4800 FSK9600 DTMF ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI EEA EIA CCIR MORSE_CW DUMPCSV X10 SCOPE SDL_SCOPE
 .br
 The \-a and \-s options may be given multiple times to specify the desired list of demodulators.
 .SH EXAMPLE

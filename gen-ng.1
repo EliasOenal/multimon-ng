@@ -35,6 +35,8 @@ Sine wave (test tone)
 FLEX (paging protocol at 1600 baud 2-FSK)
 .IP \(bu 4
 POCSAG (paging protocol at 512, 1200, or 2400 baud)
+.IP \(bu 4
+Scope text (waveforms for SDL_SCOPE display)
 .RE
 .SH OPTIONS
 .TP
@@ -95,6 +97,10 @@ Valid numeric characters: 0-9, space, hyphen (-), period (.), U.
 .B  \-I
 Generate POCSAG signal with inverted polarity. Use this to test the decoder's
 auto-detection of inverted signals.
+.TP
+.B  \-S <text>
+Generate waveforms that render readable text on the SDL_SCOPE display.
+Uses a 5x7 bitmap font.
 .TP
 .B  \-h
 Print help message and exit.
@@ -159,6 +165,14 @@ Generate a WAV file (requires sox):
 .RS
 .nf
 gen-ng -t wav -f "Pager test" -F 99999 /tmp/flex.wav
+.fi
+.RE
+.PP
+Generate text for the SDL_SCOPE display:
+.RS
+.nf
+gen-ng -t raw -S "HELLO" /tmp/scope.raw
+multimon-ng -t raw -a SDL_SCOPE /tmp/scope.raw
 .fi
 .RE
 .SH OUTPUT FORMAT

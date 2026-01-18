@@ -1,5 +1,7 @@
 # multimon-ng
 
+![Demo](demo/demo.webp)
+
 multimon-ng is the successor of multimon. It decodes the following digital transmission modes:
 
 - POCSAG512 POCSAG1200 POCSAG2400
@@ -12,7 +14,7 @@ multimon-ng is the successor of multimon. It decodes the following digital trans
 - ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI
 - EEA EIA CCIR
 - MORSE_CW
-- DUMPCSV X10 SCOPE
+- DUMPCSV X10 SCOPE SDL_SCOPE
 
 ## Building
 

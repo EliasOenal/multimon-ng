@@ -795,6 +795,10 @@ int main(int argc, char *argv[])
 				break;
 			}
 			params[num_gen-1].p.pocsag.address = strtoul(optarg, NULL, 0);
+			if (params[num_gen-1].p.pocsag.address > 2097151) {
+				fprintf(stderr, "gen: POCSAG address must be 0-2097151\n");
+				errflg++;
+			}
 			break;
 
 		case 'B':

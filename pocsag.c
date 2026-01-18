@@ -74,6 +74,7 @@ int pocsag_error_correction = 2;
 int pocsag_show_partial_decodes = 0;
 int pocsag_heuristic_pruning = 0;
 int pocsag_prune_empty = 0;
+int pocsag_polarity = 0;  /* 0=auto, 1=normal only, 2=inverted only */
 
 extern int json_mode;
 
@@ -806,26 +807,32 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
         
         s->l2.pocsag.pocsag_bits_processed_while_not_synced++;
 
-        /* Try normal polarity with error correction */
-        rx_data_try = rx_data;
-        pocsag_brute_repair(&s->l2.pocsag, &rx_data_try);
-        if(rx_data_try == POCSAG_SYNC)
+        /* Try normal polarity with error correction (unless inverted-only mode) */
+        if(pocsag_polarity != 2)
         {
-            verbprintf(4, "Acquired sync!\n");
-            s->l2.pocsag.state = SYNC;
-            s->l2.pocsag.inverted = 0;
-            return;
+            rx_data_try = rx_data;
+            pocsag_brute_repair(&s->l2.pocsag, &rx_data_try);
+            if(rx_data_try == POCSAG_SYNC)
+            {
+                verbprintf(4, "Acquired sync!\n");
+                s->l2.pocsag.state = SYNC;
+                s->l2.pocsag.inverted = 0;
+                return;
+            }
         }
         
-        /* Try inverted polarity with error correction */
-        rx_data_try = ~rx_data;
-        pocsag_brute_repair(&s->l2.pocsag, &rx_data_try);
-        if(rx_data_try == POCSAG_SYNC)
+        /* Try inverted polarity with error correction (unless normal-only mode) */
+        if(pocsag_polarity != 1)
         {
-            verbprintf(3, "Acquired sync (inverted polarity detected)!\n");
-            s->l2.pocsag.state = SYNC;
-            s->l2.pocsag.inverted = 1;
-            return;
+            rx_data_try = ~rx_data;
+            pocsag_brute_repair(&s->l2.pocsag, &rx_data_try);
+            if(rx_data_try == POCSAG_SYNC)
+            {
+                verbprintf(3, "Acquired sync (inverted polarity detected)!\n");
+                s->l2.pocsag.state = SYNC;
+                s->l2.pocsag.inverted = 1;
+                return;
+            }
         }
         return;
     }
@@ -841,7 +848,7 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
         if(!word_complete(s))
             return; // Wait for more bits to arrive.
 
-        // it is always 17 words
+        // it is always 17 words: position 0 is sync, positions 1-16 are data
         unsigned char rxword = s->l2.pocsag.rx_word; // for address calculation
         s->l2.pocsag.rx_word = (s->l2.pocsag.rx_word + 1) % 17;
 
@@ -924,13 +931,14 @@ static void do_one_bit(struct demod_state *s, uint32_t rx_data)
 
                 if (s->l2.pocsag.numnibbles > sizeof(s->l2.pocsag.buffer)*2 - 5) {
                     if (!json_mode) {
-                        verbprintf(0, "%s: Warning: Message too long\n",
+                        verbprintf(2, "%s: Warning: Message too long\n",
                                    s->dem_par->name);
                     } else {
                         fprintf(stdout, "{\"error\": \"%s: Warning: Message too long\n\"}", s->dem_par->name);
                         fflush(stdout);
                     }
-                    s->l2.pocsag.state = END_OF_MESSAGE;
+                    /* Message too long indicates we're decoding garbage - lose sync */
+                    s->l2.pocsag.state = LOSING_SYNC;
                     break;
                 }
 

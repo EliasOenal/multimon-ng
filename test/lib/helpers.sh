@@ -162,6 +162,79 @@ run_gen_decode_test() {
     fi
 }
 
+# Generate signal with gen-ng and decode with multimon-ng with extra options
+# Arguments: name gen_opts decoder extra_multimon_opts expected1 [expected2 ...]
+run_gen_decode_test_with_opts() {
+    local name="$1"
+    local gen_opts="$2"
+    local decoder="$3"
+    local extra_opts="$4"
+    shift 4
+    local expected_patterns=("$@")
+    
+    local tmpfile="${TEST_DIR}/tmp_$$.raw"
+    
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing $name... "
+    
+    # Generate signal
+    if ! eval "run_gen_ng -t raw $gen_opts \"$tmpfile\"" >/dev/null 2>&1; then
+        echo -e "${RED}FAILED${NC} (gen-ng failed)"
+        rm -f "$tmpfile"
+        return 1
+    fi
+    
+    # Decode signal with extra options
+    local output
+    output=$(run_multimon -t raw -q -a "$decoder" $extra_opts "$tmpfile")
+    rm -f "$tmpfile"
+    
+    if check_patterns "$output" "${expected_patterns[@]}"; then
+        report_result "$name" 1
+    else
+        report_result "$name" 0 "$MISSING_PATTERN" "$output"
+        return 1
+    fi
+}
+
+# Generate signal with gen-ng and decode with multimon-ng, expecting NO output
+# Used for negative tests (wrong polarity, wrong decoder, etc.)
+# Arguments: name gen_opts decoder extra_multimon_opts
+run_gen_decode_no_output_test() {
+    local name="$1"
+    local gen_opts="$2"
+    local decoder="$3"
+    local extra_opts="$4"
+    
+    local tmpfile="${TEST_DIR}/tmp_$$.raw"
+    
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing $name... "
+    
+    # Generate signal
+    if ! eval "run_gen_ng -t raw $gen_opts \"$tmpfile\"" >/dev/null 2>&1; then
+        echo -e "${RED}FAILED${NC} (gen-ng failed)"
+        rm -f "$tmpfile"
+        return 1
+    fi
+    
+    # Decode signal - should produce NO decoder output
+    local output
+    output=$(run_multimon -t raw -q -a "$decoder" $extra_opts "$tmpfile" | grep "^$decoder")
+    rm -f "$tmpfile"
+    
+    if [ -z "$output" ]; then
+        echo -e "${GREEN}PASSED${NC} (no output, as expected)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    else
+        echo -e "${RED}FAILED${NC} (expected no output)"
+        echo "  Got unexpected output:"
+        echo "$output" | sed 's/^/    /'
+        return 1
+    fi
+}
+
 # Generate signal with gen-ng using wav format and decode with multimon-ng
 # Tests the full sox roundtrip (gen-ng -> sox -> wav -> sox -> multimon-ng)
 # Arguments: name gen_opts decoder expected1 [expected2 ...]

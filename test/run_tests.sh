@@ -215,6 +215,33 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
         '-P "InvErr2" -A 77777 -I -e 2' "POCSAG1200" "Address:   77777" "InvErr2" || FAILED=1
     
     echo
+    echo "POCSAG polarity option tests:"
+    
+    # Normal signal with -P auto (default): should decode
+    run_gen_decode_test_with_opts "POCSAG normal with -P auto" \
+        '-P "NormAuto" -A 11111' "POCSAG1200" "-P auto" "Address:   11111" "NormAuto" || FAILED=1
+    
+    # Normal signal with -P normal: should decode
+    run_gen_decode_test_with_opts "POCSAG normal with -P normal" \
+        '-P "NormNorm" -A 22222' "POCSAG1200" "-P normal" "Address:   22222" "NormNorm" || FAILED=1
+    
+    # Normal signal with -P inverted: should NOT decode
+    run_gen_decode_no_output_test "POCSAG normal with -P inverted (expect fail)" \
+        '-P "NormInv" -A 33333' "POCSAG1200" "-P inverted" || FAILED=1
+    
+    # Inverted signal with -P auto: should decode
+    run_gen_decode_test_with_opts "POCSAG inverted with -P auto" \
+        '-P "InvAuto" -A 44444 -I' "POCSAG1200" "-P auto" "Address:   44444" "InvAuto" || FAILED=1
+    
+    # Inverted signal with -P inverted: should decode
+    run_gen_decode_test_with_opts "POCSAG inverted with -P inverted" \
+        '-P "InvInv" -A 55555 -I' "POCSAG1200" "-P inverted" "Address:   55555" "InvInv" || FAILED=1
+    
+    # Inverted signal with -P normal: should NOT decode
+    run_gen_decode_no_output_test "POCSAG inverted with -P normal (expect fail)" \
+        '-P "InvNorm" -A 66666 -I' "POCSAG1200" "-P normal" || FAILED=1
+    
+    echo
     echo "WAV roundtrip tests (sox integration):"
     
     run_gen_decode_wav_test "POCSAG wav roundtrip" \

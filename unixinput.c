@@ -4,7 +4,7 @@
  *      Copyright (C) 1996
  *          Thomas Sailer (sailer@ife.ee.ethz.ch, hb9jnx@hb9w.che.eu)
  *
- *      Copyright (C) 2012-2025
+ *      Copyright (C) 2012-2026
  *          Elias Oenal    (multimon-ng@eliasoenal.com)
  *
  *      Copyright (C) 2024
@@ -218,6 +218,7 @@ extern int pocsag_error_correction;
 extern int pocsag_show_partial_decodes;
 extern int pocsag_heuristic_pruning;
 extern int pocsag_prune_empty;
+extern int pocsag_polarity;
 extern bool pocsag_init_charset(char *charset);
 
 extern int aprs_mode;
@@ -930,6 +931,7 @@ static const char usage_str[] = "\n"
         "  -u           : POCSAG: Heuristically prune unlikely decodes.\n"
         "  -i           : POCSAG: (Deprecated) Polarity is now auto-detected.\n"
         "  -p           : POCSAG: Show partially received messages.\n"
+        "  -P <mode>    : POCSAG: Polarity (auto/normal/inverted, default: auto).\n"
         "  -f <mode>    : POCSAG: Overrides standards and forces decoding of data as <mode>\n"
         "                         (<mode> can be 'numeric', 'alpha', 'skyper' or 'auto')\n"
         "  -b <level>   : POCSAG: BCH bit error correction level. Set 0 to disable, default is 2.\n"
@@ -975,10 +977,11 @@ int main(int argc, char *argv[])
         {"label", required_argument, NULL, 'l'},
         {"charset", required_argument, NULL, 'C'},
         {"json", no_argument, &json_mode, 1},
+        {"pocsag-polarity", required_argument, NULL, 'P'},
         {0, 0, 0, 0}
       };
 
-    while ((c = getopt_long(argc, argv, "t:a:s:v:f:b:C:o:d:g:cqhAmrnjeuipxy", long_options, NULL)) != EOF) {
+    while ((c = getopt_long(argc, argv, "t:a:s:v:f:b:C:o:d:g:P:cqhAmrnjeuipxy", long_options, NULL)) != EOF) {
         switch (c) {
         case 'h':
         case '?':
@@ -1023,6 +1026,19 @@ int main(int argc, char *argv[])
 
         case'e':
             pocsag_prune_empty = 1;
+            break;
+
+        case 'P':
+            if (!strcmp(optarg, "auto") || !strcmp(optarg, "0"))
+                pocsag_polarity = 0;
+            else if (!strcmp(optarg, "normal") || !strcmp(optarg, "1"))
+                pocsag_polarity = 1;
+            else if (!strcmp(optarg, "inverted") || !strcmp(optarg, "2"))
+                pocsag_polarity = 2;
+            else {
+                fprintf(stderr, "Invalid POCSAG polarity: %s (use auto/normal/inverted)\n", optarg);
+                errflg++;
+            }
             break;
             
         case 'm':
@@ -1175,9 +1191,9 @@ intypefound:
 
     if ( !quietflg && !json_mode)
     { // pay heed to the quietflg or JSON mode
-        fprintf(stderr, "multimon-ng 1.4.1\n"
+        fprintf(stderr, "multimon-ng 1.5.0\n"
             "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
-            "  (C) 2012-2025 by Elias Oenal\n"
+            "  (C) 2012-2026 by Elias Oenal\n"
             "Available demodulators:");
         for (i = 0; (unsigned int) i < NUMDEMOD; i++) {
             fprintf(stderr, " %s", dem[i]->name);
