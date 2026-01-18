@@ -99,6 +99,7 @@ extern int macos_screencapture_available(void);
 extern int macos_start_system_audio(unsigned int sample_rate, void (*callback)(short *, int));
 extern void macos_stop_system_audio(void);
 extern void macos_audio_run_loop(double seconds);
+extern void macos_set_quiet(int quiet);
 #endif
 #elif WIN32_AUDIO
 //see win32_soundin.c
@@ -1239,6 +1240,7 @@ intypefound:
     
 #ifdef HAS_PROCESSTAP
     if (input_type && !strcmp(input_type, "system")) {
+        macos_set_quiet(quietflg);
         input_system_audio(sample_rate, overlap);
         quit();
         exit(0);

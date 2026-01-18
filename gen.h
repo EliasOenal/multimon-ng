@@ -161,3 +161,8 @@ extern int gen_flex(signed short *buf, int buflen, struct gen_params *p, struct 
 extern void gen_init_pocsag(struct gen_params *p, struct gen_state *s);
 extern int gen_pocsag(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
 
+/* Scope text generator - uses callback-based API */
+typedef void (*gen_write_t)(void *ctx, const short *samples, int count);
+extern void gen_init_scope(void);
+extern int gen_scope(const char *text, int txtlen, gen_write_t write_cb, void *ctx);
+

@@ -44,6 +44,7 @@ static AudioDeviceIOProcID g_io_proc_id = NULL;
 static unsigned int g_input_channels = 0;
 static double g_input_sample_rate = 0;
 static unsigned int g_output_sample_rate = 22050;
+static int g_quiet_mode = 0;
 
 /* Resampling state */
 static double g_resample_pos = 0.0;
@@ -54,6 +55,11 @@ int macos_screencapture_available(void) {
         return 1;
     }
     return 0;
+}
+
+/* Set quiet mode */
+void macos_set_quiet(int quiet) {
+    g_quiet_mode = quiet;
 }
 
 /* Helper: convert float to int16 */
@@ -221,8 +227,9 @@ int macos_start_system_audio(unsigned int sample_rate, audio_callback_t callback
             g_input_channels = tapFormat.mChannelsPerFrame;
             g_input_sample_rate = tapFormat.mSampleRate;
             
-            fprintf(stdout, "Tap: %.0f Hz %dch -> resampling to %u Hz mono\n", 
-                    g_input_sample_rate, g_input_channels, g_output_sample_rate);
+            if (!g_quiet_mode)
+                fprintf(stdout, "Tap: %.0f Hz %dch -> resampling to %u Hz mono\n", 
+                        g_input_sample_rate, g_input_channels, g_output_sample_rate);
             
             /* Get tap UID for aggregate device */
             CFStringRef tapUID = copy_tap_uid(g_tap_id);
@@ -298,7 +305,8 @@ int macos_start_system_audio(unsigned int sample_rate, audio_callback_t callback
                 return -1;
             }
             
-            fprintf(stdout, "System audio capture started\n");
+            if (!g_quiet_mode)
+                fprintf(stdout, "System audio capture started\n");
         }
         
         return 0;

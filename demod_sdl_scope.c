@@ -139,99 +139,97 @@ static struct {
     int prev_y;
     bool has_prev_y;
     uint64_t last_render;
-    int frame_count;
+    uint64_t last_decay;
+
+    /* Real-time throttling for file input */
+    uint64_t start_time;
+    uint64_t samples_processed;
 
     bool initialized;
     bool running;
     bool sdl_ready;
+#ifdef __APPLE__
+    dispatch_source_t timer;
+#endif
 } sdl_state = {0};
 
 /* ---------------------------------------------------------------------- */
 
-static void do_render_frame(void)
+/* Process a single sample directly into the intensity array */
+static void process_sample(float sample)
+{
+    if (sample > 1.0f) sample = 1.0f;
+    if (sample < -1.0f) sample = -1.0f;
+
+    int y = (int)((1.0f - sample * 0.7f) * 0.5f * (PHOSPHOR_HEIGHT - 1));
+    if (y < 0) y = 0;
+    if (y >= PHOSPHOR_HEIGHT) y = PHOSPHOR_HEIGHT - 1;
+
+    /* Mark columns as dirty */
+    sdl_state.dirty[sdl_state.current_x] = true;
+    if (sdl_state.current_x > 0)
+        sdl_state.dirty[sdl_state.current_x - 1] = true;
+    if (sdl_state.current_x < PHOSPHOR_WIDTH - 1)
+        sdl_state.dirty[sdl_state.current_x + 1] = true;
+
+    /* Each sample has a fixed energy budget (TRACE_INTENSITY).
+     * This energy is spread across the distance traveled.
+     * Short distance = bright, long distance = dim per pixel.
+     * Bloom spreads energy to adjacent columns (same total budget). */
+    if (sdl_state.has_prev_y) {
+        int y0 = sdl_state.prev_y;
+        int y1 = y;
+        if (y0 > y1) { int tmp = y0; y0 = y1; y1 = tmp; }
+        int span = y1 - y0 + 1;
+        float per_pixel = TRACE_INTENSITY / (float)span;
+        /* Split energy: 50% center, 25% left, 25% right */
+        float center = per_pixel * 0.5f;
+        float side = per_pixel * 0.25f;
+        for (int yy = y0; yy <= y1; yy++) {
+            sdl_state.intensity[sdl_state.current_x][yy] += center;
+            if (sdl_state.current_x > 0)
+                sdl_state.intensity[sdl_state.current_x - 1][yy] += side;
+            if (sdl_state.current_x < PHOSPHOR_WIDTH - 1)
+                sdl_state.intensity[sdl_state.current_x + 1][yy] += side;
+        }
+    } else {
+        /* Split energy: 50% center, 25% left, 25% right */
+        float center = TRACE_INTENSITY * 0.5f;
+        float side = TRACE_INTENSITY * 0.25f;
+        sdl_state.intensity[sdl_state.current_x][y] += center;
+        if (sdl_state.current_x > 0)
+            sdl_state.intensity[sdl_state.current_x - 1][y] += side;
+        if (sdl_state.current_x < PHOSPHOR_WIDTH - 1)
+            sdl_state.intensity[sdl_state.current_x + 1][y] += side;
+    }
+    sdl_state.prev_y = y;
+    sdl_state.has_prev_y = true;
+
+    sdl_state.samples_in_col++;
+    if (sdl_state.samples_in_col >= SAMPLES_PER_COLUMN) {
+        sdl_state.samples_in_col = 0;
+        sdl_state.current_x = (sdl_state.current_x + 1) % PHOSPHOR_WIDTH;
+        for (int dy = 0; dy < PHOSPHOR_HEIGHT; dy++)
+            sdl_state.intensity[sdl_state.current_x][dy] = 0;
+    }
+}
+
+/* Render the current intensity array to screen */
+static void render_display(void)
 {
     if (!sdl_state.sdl_ready) return;
 
-    /* Process events */
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_EVENT_QUIT ||
-            (event.type == SDL_EVENT_KEY_DOWN &&
-             (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_Q))) {
-            sdl_state.running = false;
-            /* Use _exit to avoid hang on macOS with dispatch_async */
-            _exit(0);
-        }
-        /* Toggle phosphor color with space */
-        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_SPACE) {
-            colormap = (colormap == colormap_green) ? colormap_amber : colormap_green;
-        }
-    }
-
-    /* Process buffered samples */
-    while (sdl_state.ring_read != sdl_state.ring_write) {
-        float sample = sdl_state.ring[sdl_state.ring_read];
-        sdl_state.ring_read = (sdl_state.ring_read + 1) % RING_BUFFER_SIZE;
-
-        if (sample > 1.0f) sample = 1.0f;
-        if (sample < -1.0f) sample = -1.0f;
-
-        int y = (int)((1.0f - sample * 0.7f) * 0.5f * (PHOSPHOR_HEIGHT - 1));
-        if (y < 0) y = 0;
-        if (y >= PHOSPHOR_HEIGHT) y = PHOSPHOR_HEIGHT - 1;
-
-        /* Mark columns as dirty */
-        sdl_state.dirty[sdl_state.current_x] = true;
-        if (sdl_state.current_x > 0)
-            sdl_state.dirty[sdl_state.current_x - 1] = true;
-        if (sdl_state.current_x < PHOSPHOR_WIDTH - 1)
-            sdl_state.dirty[sdl_state.current_x + 1] = true;
-
-        if (sdl_state.has_prev_y) {
-            int y0 = sdl_state.prev_y;
-            int y1 = y;
-            if (y0 > y1) { int tmp = y0; y0 = y1; y1 = tmp; }
-            int span = y1 - y0 + 1;
-            float per_pixel = TRACE_INTENSITY / (float)span;
-            for (int yy = y0; yy <= y1; yy++) {
-                sdl_state.intensity[sdl_state.current_x][yy] += per_pixel;
-                /* Horizontal bloom */
-                if (sdl_state.current_x > 0)
-                    sdl_state.intensity[sdl_state.current_x - 1][yy] += per_pixel * 0.5f;
-                if (sdl_state.current_x < PHOSPHOR_WIDTH - 1)
-                    sdl_state.intensity[sdl_state.current_x + 1][yy] += per_pixel * 0.5f;
-            }
-        } else {
-            sdl_state.intensity[sdl_state.current_x][y] += TRACE_INTENSITY;
-            if (sdl_state.current_x > 0)
-                sdl_state.intensity[sdl_state.current_x - 1][y] += TRACE_INTENSITY * 0.5f;
-            if (sdl_state.current_x < PHOSPHOR_WIDTH - 1)
-                sdl_state.intensity[sdl_state.current_x + 1][y] += TRACE_INTENSITY * 0.5f;
-        }
-        sdl_state.prev_y = y;
-        sdl_state.has_prev_y = true;
-
-        sdl_state.samples_in_col++;
-        if (sdl_state.samples_in_col >= SAMPLES_PER_COLUMN) {
-            sdl_state.samples_in_col = 0;
-            sdl_state.current_x = (sdl_state.current_x + 1) % PHOSPHOR_WIDTH;
-            for (int dy = 0; dy < PHOSPHOR_HEIGHT; dy++)
-                sdl_state.intensity[sdl_state.current_x][dy] = 0;
-        }
-    }
-
-    /* Rate limit rendering to 60fps */
     uint64_t now = SDL_GetTicks();
-    if (now - sdl_state.last_render < 16) return;
-    sdl_state.last_render = now;
-    sdl_state.frame_count++;
-
-    /* Apply decay every 3rd frame */
-    bool do_decay = (sdl_state.frame_count % 3 == 0);
-    float decay = 0.94f;
     float lut_scale = (INTENSITY_LUT_SIZE - 1) / MAX_INTENSITY;
 
-    if (do_decay) {
+    /* Time-based decay: 0.94 every 50ms (equivalent to every 3 frames at 60fps) */
+    uint64_t decay_elapsed = now - sdl_state.last_decay;
+    if (decay_elapsed >= 50) {
+        /* Calculate how many 50ms periods elapsed and compute cumulative decay */
+        int decay_steps = (int)(decay_elapsed / 50);
+        float decay = powf(0.94f, (float)decay_steps);
+        sdl_state.last_decay = now - (decay_elapsed % 50);  /* Keep remainder */
+
         /* Decay frame: process all columns */
         for (int x = 0; x < PHOSPHOR_WIDTH; x++) {
             float *col = sdl_state.intensity[x];
@@ -267,6 +265,41 @@ static void do_render_frame(void)
     SDL_RenderClear(sdl_state.renderer);
     SDL_RenderTexture(sdl_state.renderer, sdl_state.texture, NULL, NULL);
     SDL_RenderPresent(sdl_state.renderer);
+}
+
+static void do_render_frame(void)
+{
+    if (!sdl_state.sdl_ready) return;
+
+    /* Process events */
+    SDL_Event event;
+    while (SDL_PollEvent(&event)) {
+        if (event.type == SDL_EVENT_QUIT ||
+            (event.type == SDL_EVENT_KEY_DOWN &&
+             (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_Q))) {
+            sdl_state.running = false;
+            /* Use _exit to avoid hang on macOS with dispatch_async */
+            _exit(0);
+        }
+        /* Toggle phosphor color with space */
+        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_SPACE) {
+            colormap = (colormap == colormap_green) ? colormap_amber : colormap_green;
+        }
+    }
+
+    /* Process buffered samples into intensity array (for async audio input) */
+    while (sdl_state.ring_read != sdl_state.ring_write) {
+        float sample = sdl_state.ring[sdl_state.ring_read];
+        sdl_state.ring_read = (sdl_state.ring_read + 1) % RING_BUFFER_SIZE;
+        process_sample(sample);
+    }
+
+    /* Rate limit rendering to 60fps */
+    uint64_t now = SDL_GetTicks();
+    if (now - sdl_state.last_render < 16) return;
+    sdl_state.last_render = now;
+
+    render_display();
 }
 
 /* ---------------------------------------------------------------------- */
@@ -326,7 +359,22 @@ static void sdl_scope_init(struct demod_state *s)
     sdl_state.running = true;
     sdl_state.last_render = SDL_GetTicks();
 
-    fprintf(stderr, "SDL_SCOPE: Ready (Space=toggle color, Q/Esc=quit)\n");
+#ifdef __APPLE__
+    /* Create a timer to pump SDL events even when no audio is playing */
+    sdl_state.timer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+                                              dispatch_get_main_queue());
+    if (sdl_state.timer) {
+        dispatch_source_set_timer(sdl_state.timer,
+                                  dispatch_time(DISPATCH_TIME_NOW, 0),
+                                  NSEC_PER_SEC / 60, /* 60 Hz */
+                                  NSEC_PER_MSEC);    /* 1ms leeway */
+        dispatch_source_set_event_handler(sdl_state.timer, ^{
+            if (sdl_state.running && sdl_state.sdl_ready)
+                do_render_frame();
+        });
+        dispatch_resume(sdl_state.timer);
+    }
+#endif
 }
 
 /* ---------------------------------------------------------------------- */
@@ -337,22 +385,66 @@ static void sdl_scope_demod(struct demod_state *s, buffer_t buffer, int length)
 
     if (!sdl_state.initialized || !sdl_state.running) return;
 
-    for (int i = 0; i < length; i++) {
-        sdl_state.ring[sdl_state.ring_write] = buffer.fbuffer[i];
-        sdl_state.ring_write = (sdl_state.ring_write + 1) % RING_BUFFER_SIZE;
-    }
-
 #ifdef __APPLE__
-    if (pthread_main_np()) {
-        do_render_frame();
+    bool is_main_thread = pthread_main_np();
+#else
+    bool is_main_thread = true;
+#endif
+
+    if (is_main_thread) {
+        /* File/stdin input: process directly at real-time pace */
+        if (sdl_state.start_time == 0)
+            sdl_state.start_time = SDL_GetTicks();
+
+        int samples_per_frame = SAMPLING_RATE / 60;
+
+        for (int i = 0; i < length; i++) {
+            process_sample(buffer.fbuffer[i]);
+            sdl_state.samples_processed++;
+
+            /* Render and throttle every frame's worth of samples */
+            if (sdl_state.samples_processed % samples_per_frame == 0) {
+                /* Poll events */
+                SDL_Event event;
+                while (SDL_PollEvent(&event)) {
+                    if (event.type == SDL_EVENT_QUIT ||
+                        (event.type == SDL_EVENT_KEY_DOWN &&
+                         (event.key.key == SDLK_ESCAPE || event.key.key == SDLK_Q))) {
+                        sdl_state.running = false;
+                        _exit(0);
+                    }
+                    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_SPACE) {
+                        colormap = (colormap == colormap_green) ? colormap_amber : colormap_green;
+                    }
+                }
+
+                /* Rate limit and render (same as audio path) */
+                uint64_t now = SDL_GetTicks();
+                if (now - sdl_state.last_render >= 16) {
+                    sdl_state.last_render = now;
+                    render_display();
+                }
+
+                /* Real-time throttle */
+                uint64_t expected_ms = (sdl_state.samples_processed * 1000) / SAMPLING_RATE;
+                uint64_t elapsed_ms = SDL_GetTicks() - sdl_state.start_time;
+                if (expected_ms > elapsed_ms + 2) {
+                    SDL_Delay((uint32_t)(expected_ms - elapsed_ms));
+                }
+            }
+        }
     } else {
+        /* Async audio input: queue samples for timer-based rendering */
+        for (int i = 0; i < length; i++) {
+            sdl_state.ring[sdl_state.ring_write] = buffer.fbuffer[i];
+            sdl_state.ring_write = (sdl_state.ring_write + 1) % RING_BUFFER_SIZE;
+        }
+#ifdef __APPLE__
         dispatch_async(dispatch_get_main_queue(), ^{
             do_render_frame();
         });
-    }
-#else
-    do_render_frame();
 #endif
+    }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -363,6 +455,13 @@ static void sdl_scope_deinit(struct demod_state *s)
 
     if (!sdl_state.initialized) return;
     sdl_state.running = false;
+
+#ifdef __APPLE__
+    if (sdl_state.timer) {
+        dispatch_source_cancel(sdl_state.timer);
+        sdl_state.timer = NULL;
+    }
+#endif
 
     if (sdl_state.texture) SDL_DestroyTexture(sdl_state.texture);
     if (sdl_state.renderer) SDL_DestroyRenderer(sdl_state.renderer);

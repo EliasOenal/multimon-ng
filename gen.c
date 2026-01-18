@@ -356,6 +356,91 @@ static int check_sox_available(void)
 }
 #endif
 
+/* Callback context for scope text output */
+struct scope_write_ctx {
+	int fd;
+};
+
+static void scope_write_cb(void *ctx, const short *samples, int count)
+{
+	struct scope_write_ctx *wctx = (struct scope_write_ctx *)ctx;
+	int i = write(wctx->fd, samples, count * sizeof(short));
+	if (i < 0) {
+		perror("write");
+		exit(4);
+	}
+}
+
+static void output_scope_file(const char *fname, const char *type, const char *text)
+{
+#if !defined(ONLY_RAW)
+	int pipedes[2];
+	int pid = 0, soxstat;
+#endif
+	int fd;
+	struct scope_write_ctx ctx;
+	int is_stdout = !strcmp(fname, "-");
+
+	if (!type || !strcmp(type, "raw")) {
+		if (is_stdout) {
+			fd = 1;
+#ifdef WINDOWS
+			setmode(fd, O_BINARY);
+#endif
+		} else {
+#ifdef WINDOWS
+			if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL|O_BINARY, 0777)) < 0) {
+#else
+			if ((fd = open(fname, O_WRONLY|O_CREAT|O_EXCL, 0777)) < 0) {
+#endif
+				perror("open");
+				exit(10);
+			}
+		}
+	} else {
+#if defined(ONLY_RAW)
+		fprintf(stderr, "error: non-raw output requires sox\n");
+		exit(10);
+#else
+		if (!check_sox_available()) {
+			fprintf(stderr, "Error: sox is required for .%s output\n", type);
+			exit(10);
+		}
+		if (pipe(pipedes)) {
+			perror("pipe");
+			exit(10);
+		}
+		if (!(pid = fork())) {
+			char srate[8];
+			dup2(pipedes[0], 0);
+			close(pipedes[0]);
+			close(pipedes[1]);
+			sprintf(srate, "%d", SAMPLE_RATE);
+			execlp("sox", "sox", "-t", "raw", "-esigned-integer",
+			       "-b", "16", "-r", srate, "-", fname, NULL);
+			perror("execlp");
+			exit(10);
+		}
+		if (pid < 0) {
+			perror("fork");
+			exit(10);
+		}
+		fd = pipedes[1];
+		close(pipedes[0]);
+#endif
+	}
+
+	gen_init_scope();
+	ctx.fd = fd;
+	gen_scope(text, strlen(text), scope_write_cb, &ctx);
+
+	close(fd);
+#if !defined(ONLY_RAW)
+	if (pid > 0)
+		waitpid(pid, &soxstat, 0);
+#endif
+}
+
 static void output_file(unsigned int sample_rate, const char *fname, const char *type)
 {
 #if !defined(ONLY_RAW)
@@ -481,6 +566,7 @@ static const char usage_str[] = "Generates test signals\n"
 "     -B <baud>    : POCSAG baud rate: 512, 1200, 2400 (default: 1200)\n"
 "     -N           : POCSAG numeric mode (function 0)\n"
 "     -I           : POCSAG inverted output polarity\n"
+"  -S <text>  : encode text for SDL_SCOPE display\n"
 "  -e <0-3>   : inject 0-3 bit errors per codeword (FLEX/POCSAG BCH testing)\n"
 "  -h         : this help\n";
 
@@ -492,10 +578,11 @@ int main(int argc, char *argv[])
 	char **otype;
 	char *output_type = "hw";
 	char *cp;
+	char *scope_text = NULL;
 
 	fprintf(stdout, "gen-ng - (C) 1997 by Tom Sailer HB9JNX/AE4WA\n"
                     "         (C) 2012/2013 by Elias Oenal\n");	
-	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:e:P:A:B:NIh")) != EOF) {
+	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:e:P:A:B:S:NIh")) != EOF) {
 		switch (c) {
 		case 'h':
 		case '?':
@@ -734,6 +821,10 @@ int main(int argc, char *argv[])
 			params[num_gen-1].p.pocsag.function = 0;  /* Numeric mode */
 			break;
 
+		case 'S':
+			scope_text = optarg;
+			break;
+
 		case 'I':
 			if (num_gen <= 0 || params[num_gen-1].type != gentype_pocsag) {
 				fprintf(stderr, "gen: -I requires -P first\n");
@@ -745,7 +836,7 @@ int main(int argc, char *argv[])
 		}
 	}
 		
-	if (errflg || num_gen <= 0) {
+	if (errflg || (num_gen <= 0 && !scope_text)) {
 		(void)fprintf(stderr, usage_str);
 		exit(2);
 	}
@@ -771,6 +862,10 @@ int main(int argc, char *argv[])
 	}
 
 	if (!strcmp(output_type, "hw")) {
+		if (scope_text) {
+			fprintf(stderr, "Scope text output to sound device not supported\n");
+			exit(2);
+		}
 		if ((argc - optind) >= 1)
 			output_sound(SAMPLE_RATE, argv[optind]);
 		else 
@@ -781,6 +876,13 @@ int main(int argc, char *argv[])
 		(void)fprintf(stderr, "no destination file specified\n");
 		exit(4);
 	}
+
+	/* Handle scope text separately (uses callback API) */
+	if (scope_text) {
+		output_scope_file(argv[optind], output_type, scope_text);
+		exit(0);
+	}
+
 	output_file(SAMPLE_RATE, argv[optind], output_type);
 	exit(0);
 }
