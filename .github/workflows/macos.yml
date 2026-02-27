@@ -22,7 +22,7 @@ jobs:
       run: ./test/run_tests.sh
     
     - name: Upload artifact
-      uses: actions/upload-artifact@v6
+      uses: actions/upload-artifact@v7
       with:
         name: multimon-ng-macos
         path: |
