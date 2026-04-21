@@ -1,6 +1,8 @@
 name: MinGW32 Cross-Compile
 
-on: [push]
+on:
+  push:
+  pull_request:
 
 jobs:
   build-mingw32:

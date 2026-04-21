@@ -44,44 +44,75 @@
 #include <time.h>
 #include <getopt.h>
 
-/* MinGW compatibility for timespec_get */
-#if defined(__MINGW32__) || defined(__MINGW64__)
-#include <windows.h>
+/* Compatibility shim for C11 timespec_get()
+ *
+ * timespec_get() is a C11 function not universally available:
+ *   - MSVC: available since VS2015
+ *   - MinGW: generally missing -> use GetSystemTimeAsFileTime()
+ *   - Android/Bionic: missing -> use POSIX clock_gettime()
+ *   - Older BSDs/Solaris: may be missing -> use POSIX clock_gettime()
+ *   - glibc >= 2.16, musl, macOS 10.15+, FreeBSD 11+: available
+ *
+ * CMake detects availability via check_symbol_exists and defines
+ * HAVE_TIMESPEC_GET. When absent, we provide a platform-appropriate fallback:
+ * a Windows API shim on _WIN32, otherwise a POSIX clock_gettime() shim.
+ */
+#if defined(_WIN32)
+/* Windows strftime implementations may not support %F and %T format specifiers */
+#define ISO8601_FORMAT "%Y-%m-%dT%H:%M:%S"
+#else
+#define ISO8601_FORMAT "%FT%T"
+#endif
+
+#ifndef HAVE_TIMESPEC_GET
 
 #ifndef TIME_UTC
 #define TIME_UTC 1
 #endif
 
-/* Provide timespec_get for MinGW if not available */
-#ifndef timespec_get
+#if defined(_WIN32)
+#include <windows.h>
+
+/* Provide timespec_get for Windows (MinGW, or MSVC older than VS2015)
+ * using the Windows API. clock_gettime() is not available on Windows.
+ */
 static inline int timespec_get(struct timespec *ts, int base)
 {
     if (base != TIME_UTC) return 0;
-    
-    /* Get current time using Windows-specific functions */
+
     FILETIME ft;
     ULARGE_INTEGER ui;
-    
+
     GetSystemTimeAsFileTime(&ft);
     ui.LowPart = ft.dwLowDateTime;
     ui.HighPart = ft.dwHighDateTime;
-    
+
     /* Convert from 100-nanosecond intervals since 1601-01-01 to Unix epoch */
     const uint64_t EPOCH_DIFF = 116444736000000000ULL;
     uint64_t tmp = ui.QuadPart - EPOCH_DIFF;
-    
+
     ts->tv_sec = (time_t)(tmp / 10000000ULL);
     ts->tv_nsec = (long)((tmp % 10000000ULL) * 100);
-    
+
     return TIME_UTC;
 }
-#endif
 
-/* MinGW doesn't support %F and %T format specifiers for strftime */
-#define ISO8601_FORMAT "%Y-%m-%dT%H:%M:%S"
-#else
-#define ISO8601_FORMAT "%FT%T"
-#endif
+#else /* !_WIN32 */
+
+/* Provide timespec_get on POSIX systems that lack it (e.g. Android/Bionic).
+ * clock_gettime(CLOCK_REALTIME, ...) is POSIX.1-2001 and available on
+ * Linux (all libcs), macOS, all BSDs, Solaris, and Android.
+ */
+static inline int timespec_get(struct timespec *ts, int base)
+{
+    if (base != TIME_UTC) return 0;
+    if (clock_gettime(CLOCK_REALTIME, ts) != 0) return 0;
+    return TIME_UTC;
+}
+
+#endif /* _WIN32 */
+
+#endif /* !HAVE_TIMESPEC_GET */
 
 #ifdef SUN_AUDIO
 #include <sys/audioio.h>

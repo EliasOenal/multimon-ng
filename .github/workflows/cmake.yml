@@ -1,6 +1,8 @@
 name: C/C++ CI cmake
 
-on: [push]
+on:
+  push:
+  pull_request:
 
 jobs:
   build:

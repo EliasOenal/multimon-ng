@@ -16,7 +16,6 @@ Each demodulator file (`demod_<name>.c`) must:
 2. Add `extern const struct demod_param demod_<name>;` to `multimon.h`
 3. Add `&demod_<name>` to the `ALL_DEMOD` macro in `multimon.h`
 4. Add source file to `CMakeLists.txt` (SOURCES list)
-5. Add source file to `multimon-ng.pro`
 
 ## Code Style
 

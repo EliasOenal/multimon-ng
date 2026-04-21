@@ -6,7 +6,7 @@
 
 - **Language**: C (GNU11 standard)
 - **License**: GPL-2.0
-- **Build**: CMake (primary), qmake (secondary)
+- **Build**: CMake
 - **Platforms**: Linux, macOS, Windows (MinGW)
 
 ## Project Structure
@@ -14,7 +14,6 @@
 ```
 /                       # Source files (flat structure)
 ├── CMakeLists.txt      # Build configuration
-├── multimon-ng.pro     # qmake build configuration
 ├── multimon.h          # Demodulator definitions and ALL_DEMOD macro
 ├── unixinput.c         # multimon-ng main()
 ├── gen.c               # gen-ng main()
@@ -141,12 +140,12 @@ Generate test signals for protocol testing:
 
 ## CI/CD Workflows
 
-Four GitHub Actions workflows run on every push:
+Four GitHub Actions workflows run on pushes and pull requests:
 
 | Workflow | File | Description |
 |----------|------|-------------|
 | C/C++ CI cmake | cmake.yml | Linux CMake build + full test suite |
-| C/C++ CI qmake | qmake.yml | Linux qmake build |
+| macOS Build | macos.yml | macOS CMake build |
 | MinGW32 Cross-Compile | mingw32.yml | Windows 32-bit + Wine tests |
 | MinGW64 Cross-Compile | mingw64.yml | Windows 64-bit + Wine tests |
 
@@ -166,7 +165,7 @@ Four GitHub Actions workflows run on every push:
 2. Define `const struct demod_param demod_<name>` in the file
 3. Add `extern const struct demod_param demod_<name>;` to `multimon.h`
 4. Add `&demod_<name>` to the `ALL_DEMOD` macro in `multimon.h`
-5. Add source file to `CMakeLists.txt` (SOURCES list) and `multimon-ng.pro`
+5. Add source file to `CMakeLists.txt` (SOURCES list)
 
 ### Adding New Generators
 
@@ -237,7 +236,6 @@ The CI environment has these tools via `.github/workflows/copilot-setup-steps.ym
 | Libraries | `libpulse-dev`, `libx11-dev` |
 | Cross-compile | `gcc-mingw-w64-*`, `g++-mingw-w64-*` |
 | Windows testing | `wine`, `wine64` |
-| Alternative build | `qt5-qmake` |
 
 ### Testing with SoX
 

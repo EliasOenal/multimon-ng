@@ -1,4 +1,4 @@
-cmake_minimum_required( VERSION 2.8.12...3.10 )
+cmake_minimum_required( VERSION 3.15...3.30 )
 
 # The "MSVC" flag isn't set until the "project" command
 # is called.  Let's just check the operating system.
@@ -43,6 +43,21 @@ elseif( UNIX )
 	set( INSTALL_MAN_DIR "${CMAKE_INSTALL_PREFIX}/share/man" )
 	install( FILES multimon-ng.1 DESTINATION "${INSTALL_MAN_DIR}/man1" )
 endif( WIN32 )
+
+# Check for C11 timespec_get on all platforms. It is standard C11 but missing
+# on Android/Bionic and some older systems; MSVC has it since VS2015, glibc
+# since 2.16, macOS since 10.15. When absent, unixinput.c provides a fallback.
+include( CheckSymbolExists )
+# Ensure the check sees the same C standard the project builds with. Some
+# older compilers default to pre-C11 modes where timespec_get() is hidden.
+if( NOT MSVC )
+	set( CMAKE_REQUIRED_FLAGS "-std=gnu11" )
+endif()
+check_symbol_exists( timespec_get "time.h" HAVE_TIMESPEC_GET )
+unset( CMAKE_REQUIRED_FLAGS )
+if( HAVE_TIMESPEC_GET )
+	add_definitions( "-DHAVE_TIMESPEC_GET" )
+endif( HAVE_TIMESPEC_GET )
 
 if( X11_SUPPORT )
 	include_directories( ${X11_INCLUDE_DIR} )

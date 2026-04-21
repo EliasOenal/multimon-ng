@@ -6,8 +6,7 @@ applyTo: "**/*.c,**/*.h"
 
 ## Build System
 
-- Primary: CMake (`mkdir build && cd build && cmake .. && make -j$(nproc)`)
-- Secondary: qmake
+- CMake (`mkdir build && cd build && cmake .. && make -j$(nproc)`)
 
 ## Code Style
 

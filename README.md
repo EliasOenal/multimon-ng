@@ -18,57 +18,65 @@ multimon-ng is the successor of multimon. It decodes the following digital trans
 
 ## Building
 
-multimon-ng can be built using either qmake or CMake:
+multimon-ng is built using CMake.
 
-#### qmake
+### Prerequisites
+
+Required:
+- A C compiler (GCC or Clang)
+- CMake 3.15 or newer
+- `make` (or another CMake-supported generator)
+
+Optional (auto-detected):
+- `libpulse-dev` — enables PulseAudio live audio input
+- `libx11-dev` — enables the X11 scope display
+- SDL3 — enables the SDL3 digital phosphor scope
+
+If none of the audio libraries are found, multimon-ng is built with file/stdin
+input only (`DUMMY_AUDIO`). This is fine for processing recorded samples or
+piped input from tools like `rtl_fm`.
+
+Example (Debian/Ubuntu):
 ```
-mkdir build
-cd build
-qmake ../multimon-ng.pro
-make
-sudo make install
+sudo apt-get install build-essential cmake libpulse-dev libx11-dev
 ```
 
-#### CMake
+### Build
+
 ```
-mkdir build
-cd build
-cmake ..
-make
-sudo make install
+cmake -S . -B build
+cmake --build build --parallel 4
+sudo cmake --install build
 ```
 
-The installation prefix can be set by passing a 'PREFIX' parameter to qmake. e.g:
-```qmake multimon-ng.pro PREFIX=/usr/local```
+The default install prefix is `/usr/local`. To install elsewhere (for example,
+system-wide at `/usr` or into your user directory), pass `CMAKE_INSTALL_PREFIX`:
+```
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
+```
 
 ### Windows MinGW Builds
 
 #### On Windows (MSYS2/MinGW)
 Install MSYS2, then from the MinGW64 or MinGW32 shell:
 ```
-mkdir build
-cd build
-cmake ..
-make
+cmake -S . -B build
+cmake --build build --parallel 4
 ```
 
 #### Cross-compiling from Linux
-Install MinGW cross-compiler, then use the provided toolchain files:
+Install the MinGW cross-compiler, then use the provided toolchain files:
 ```
 # For 64-bit Windows
-mkdir build-mingw64
-cd build-mingw64
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw64.cmake
-make
+cmake -S . -B build-mingw64 -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw64.cmake
+cmake --build build-mingw64 --parallel 4
 
 # For 32-bit Windows
-mkdir build-mingw32
-cd build-mingw32
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchain-mingw32.cmake
-make
+cmake -S . -B build-mingw32 -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain-mingw32.cmake
+cmake --build build-mingw32 --parallel 4
 ```
 
-### Environments
+## Supported Environments
 
 So far multimon-ng has been successfully built on:
 
@@ -77,8 +85,8 @@ So far multimon-ng has been successfully built on:
 - Gentoo
 - Kali Linux
 - Ubuntu
-- OS X
-- Windows (Qt-MinGW build environment, Cygwin, and VisualStudio/MSVC)
+- macOS
+- Windows (MSYS2/MinGW, Cygwin, and VisualStudio/MSVC)
 - FreeBSD
 
 ## Examples
@@ -128,11 +136,17 @@ flac -d --stdout ~/recordings/rtlf/rtlfm.1725033204.flac | multimon-ng -r -v 0 -
 
 ## Packaging
 
+To stage an install into a packaging directory (typical for distribution
+packaging), use the standard `DESTDIR` variable:
+
 ```
-qmake multimon-ng.pro PREFIX=/usr/local
-make
-make install INSTALL_ROOT=/
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr
+cmake --build build --parallel 4
+DESTDIR=/path/to/pkgroot cmake --install build
 ```
+
+`DESTDIR` is prepended to the install paths, so files land under
+`/path/to/pkgroot/usr/bin/multimon-ng`, etc.
 
 ## Testing
 
