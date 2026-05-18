@@ -109,6 +109,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <inttypes.h>
+#include <stdarg.h>
 
 #include "cJSON.h"
 
@@ -126,6 +127,11 @@
 #define LOCK_LEN             24            // Number of symbols to check for phase locking (max 32)
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
+#define FLEX_GROUP_ADDR_MIN  2029568
+#define FLEX_GROUP_ADDR_MAX  2029583
+#define FLEX_GROUP_COUNT     (FLEX_GROUP_ADDR_MAX - FLEX_GROUP_ADDR_MIN + 1)
+#define FLEX_GROUP_CODE_COUNT 1000
+#define FLEX_GROUP_MAX_CODES (FLEX_GROUP_CODE_COUNT - 1)
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
 
 int flex_disable_timestamp = 0;
@@ -167,9 +173,9 @@ struct Flex_Demodulator {
 };
 
 struct Flex_GroupHandler {
-  int64_t                     GroupCodes[17][1000];
-  int                         GroupCycle[17];
-  int                         GroupFrame[17];
+  int64_t                     GroupCodes[FLEX_GROUP_COUNT][FLEX_GROUP_CODE_COUNT];
+  int                         GroupCycle[FLEX_GROUP_COUNT];
+  int                         GroupFrame[FLEX_GROUP_COUNT];
 };
 
 struct Flex_Modulation {
@@ -241,6 +247,31 @@ struct Flex {
 };
 
 extern int json_mode;
+
+static void flex_append_text(char *buffer, size_t buffer_size, int *offset, const char *format, ...) {
+  if (buffer==NULL || offset==NULL || format==NULL) return;
+  if (*offset < 0 || (size_t)*offset >= buffer_size) return;
+
+  va_list args;
+  va_start(args, format);
+  int written = vsnprintf(buffer + *offset, buffer_size - (size_t)*offset, format, args);
+  va_end(args);
+
+  if (written < 0) return;
+  if ((size_t)written >= buffer_size - (size_t)*offset)
+    *offset = (int)buffer_size - 1;
+  else
+    *offset += written;
+}
+
+static int flex_group_endpoint(struct Flex_GroupHandler *handler, int groupbit) {
+  if (handler==NULL || groupbit < 0 || groupbit >= FLEX_GROUP_COUNT) return 0;
+
+  int endpoint = handler->GroupCodes[groupbit][CAPCODES_INDEX];
+  if (endpoint < 0) return 0;
+  if (endpoint > FLEX_GROUP_MAX_CODES) return FLEX_GROUP_MAX_CODES;
+  return endpoint;
+}
 
 static int is_alphanumeric_page(struct Flex * flex) {
   if (flex==NULL) return 0;
@@ -456,7 +487,7 @@ static int decode_fiw(struct Flex * flex) {
         );
 
     // Lets check the FrameNo against the expected group message frames, if we have 'Missed a group message' tell the user and clear the Cap Codes
-                for(int g = 0; g < 17 ;g++)
+                for(int g = 0; g < FLEX_GROUP_COUNT ;g++)
                 {
       // Do we have a group message pending for this groupbit?
       if(flex->GroupHandler.GroupFrame[g] >= 0)
@@ -494,7 +525,7 @@ static int decode_fiw(struct Flex * flex) {
         if(Reset == 1)
         {
                               
-                      int endpoint = flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX];
+                      int endpoint = flex_group_endpoint(&flex->GroupHandler, g);
           if(REPORT_GROUP_CODES > 0)
           {
             verbprintf(3,"FLEX: Group messages seem to have been missed; Groupbit: %i; Total Capcodes: %i; Clearing Data; Capcodes: ", g, endpoint);
@@ -594,10 +625,10 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         verbprintf(0, "%s\n", message);
 
         if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-2029568;
+                int groupbit = flex->Decode.capcode-FLEX_GROUP_ADDR_MIN;
                 if(groupbit < 0) return;
 
-                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
+                int endpoint = flex_group_endpoint(&flex->GroupHandler, groupbit);
                 for(int g = 1; g <= endpoint;g++)
                 {
                         verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
@@ -616,17 +647,17 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
         static char pt_out[4096] = { 0 };
 
-        int pt_offset;
+        int pt_offset = 0;
 
         if (!json_mode) {
           if(flex_disable_timestamp)
           {
-            pt_offset = sprintf(pt_out, "FLEX|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
+            flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "FLEX|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
                           flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
           }
           else
           {
-            pt_offset = sprintf(pt_out, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
+            flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
                           gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
                           flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
           }
@@ -648,14 +679,15 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
         // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-2029568;
-                if(groupbit < 0) return;
+                int groupbit = flex->Decode.capcode-FLEX_GROUP_ADDR_MIN;
+                if(groupbit < 0 || groupbit >= FLEX_GROUP_COUNT) return;
 
-                int endpoint = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
+                int endpoint = flex_group_endpoint(&flex->GroupHandler, groupbit);
                 for(int g = 1; g <= endpoint;g++)
                 {
                         verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09" PRId64 "]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-                        pt_offset += sprintf(pt_out + pt_offset, " %09" PRId64, flex->GroupHandler.GroupCodes[groupbit][g]);
+                        if (!json_mode)
+                          flex_append_text(pt_out, sizeof(pt_out), &pt_offset, " %09" PRId64, flex->GroupHandler.GroupCodes[groupbit][g]);
                 }
 
                 // reset the value
@@ -664,7 +696,7 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
                 flex->GroupHandler.GroupCycle[groupbit] = -1;
         } 
         if (!json_mode) {
-          pt_offset += sprintf(pt_out + pt_offset, "|ALN|%s", message);
+          flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "|ALN|%s", message);
           verbprintf(0, "%s\n", pt_out);
         }
         else {
@@ -1011,7 +1043,7 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
       // i++;
     }
 
-          if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
+          if ((flex->Decode.capcode >= FLEX_GROUP_ADDR_MIN) && (flex->Decode.capcode <= FLEX_GROUP_ADDR_MAX)) {
              flex_groupmessage = 1;
           }
 
@@ -1039,9 +1071,17 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
                     // if (flex_groupmessage == 1) continue;
                     unsigned int iAssignedFrame = (int)((viw >> 10) & 0x7f);  // Frame with groupmessage
                     int groupbit = (int)((viw >> 17) & 0x7f);    // Listen to this groupcode
-                    
-        ////////#############################################################################                 
-        ////////#############################################################################                 
+
+                    if(groupbit < 0 || groupbit >= FLEX_GROUP_COUNT) {
+                      verbprintf(3, "FLEX: Invalid group bit: %i\n", groupbit);
+                      continue;
+                    }
+
+                    if(flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] >= FLEX_GROUP_MAX_CODES) {
+                      verbprintf(3, "FLEX: Too many capcodes for group bit: %i\n", groupbit);
+                      continue;
+                    }
+
                     flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]++;
                     int CapcodePlacement = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
                     verbprintf(1, "FLEX: Found Short Instruction, Group bit: %i capcodes in group so far %i, adding Capcode: [%09lld]\n", groupbit, CapcodePlacement, flex->Decode.capcode);
@@ -1530,7 +1570,7 @@ static struct Flex * Flex_New(unsigned int SampleFrequency) {
     /* Initialize BCH tables (does nothing if already initialized) */
     bch_init();
 
-    for(int g = 0; g < 17; g++)
+    for(int g = 0; g < FLEX_GROUP_COUNT; g++)
     {
       flex->GroupHandler.GroupFrame[g] = -1;
           flex->GroupHandler.GroupCycle[g] = -1;

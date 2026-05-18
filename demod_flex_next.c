@@ -125,7 +125,11 @@
 #define IDLE_THRESHOLD       0             // Number of idle codewords allowed in data section
 #define CAPCODES_INDEX       0
 #define DEMOD_TIMEOUT        100           // Maximum number of periods with no zero crossings before we decide that the system is not longer within a Timing lock.
-#define GROUP_BITS           17            // Centralized maximum of group msg cache
+#define FLEX_GROUP_ADDR_MIN  2029568
+#define FLEX_GROUP_ADDR_MAX  2029583
+#define GROUP_BITS           (FLEX_GROUP_ADDR_MAX - FLEX_GROUP_ADDR_MIN + 1) // Centralized maximum of group msg cache
+#define GROUP_CODE_COUNT     1000
+#define GROUP_MAX_CODES      (GROUP_CODE_COUNT - 1)
 #define PHASE_WORDS          88            // per spec, there are 88 4B words per frame
 // there are 3 chars per message word (mw)
 // there are at most 88 words per frame's phase buffer of a page
@@ -171,7 +175,7 @@ struct Flex_Demodulator {
 };
 
 struct Flex_GroupHandler {
-  int64_t                     GroupCodes[GROUP_BITS][1000];
+  int64_t                     GroupCodes[GROUP_BITS][GROUP_CODE_COUNT];
   int                         GroupCycle[GROUP_BITS];
   int                         GroupFrame[GROUP_BITS];
 };
@@ -244,6 +248,14 @@ struct Flex_Next {
         struct Flex_GroupHandler    GroupHandler;
 };
 
+static int flex_group_endpoint(struct Flex_GroupHandler *handler, int groupbit) {
+  if (handler==NULL || groupbit < 0 || groupbit >= GROUP_BITS) return 0;
+
+  int endpoint = handler->GroupCodes[groupbit][CAPCODES_INDEX];
+  if (endpoint < 0) return 0;
+  if (endpoint > GROUP_MAX_CODES) return GROUP_MAX_CODES;
+  return endpoint;
+}
 
 static int is_alphanumeric_page(struct Flex_Next * flex) {
   if (flex==NULL) return 0;
@@ -480,7 +492,7 @@ static int decode_fiw(struct Flex_Next * flex) {
         if(Reset == 1)
         {
                               
-                      int endpoint = flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX];
+                      int endpoint = flex_group_endpoint(&flex->GroupHandler, g);
           if(REPORT_GROUP_CODES > 0)
           {
             verbprintf(3,"FLEX_NEXT: Group messages seem to have been missed; Groupbit: %i; Total Capcodes: %i; Clearing Data; Capcodes: ", g, endpoint);
@@ -605,7 +617,9 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
 
 // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
         if(flex_groupmessage == 1) {
-                int endpoint = flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX];
+                if(flex_groupbit < 0 || flex_groupbit >= GROUP_BITS) return;
+
+                int endpoint = flex_group_endpoint(&flex->GroupHandler, flex_groupbit);
                 for(int g = 1; g <= endpoint;g++)
                 {
                         verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%010" PRId64 "]\n", flex_groupbit, endpoint, g, flex->GroupHandler.GroupCodes[flex_groupbit][g]);
@@ -795,9 +809,9 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
 
     flex_groupmessage = 0;
     flex_groupbit = 0;
-          if ((flex->Decode.capcode >= 2029568) && (flex->Decode.capcode <= 2029583)) {
+          if ((flex->Decode.capcode >= FLEX_GROUP_ADDR_MIN) && (flex->Decode.capcode <= FLEX_GROUP_ADDR_MAX)) {
              flex_groupmessage = 1;
-             flex_groupbit = flex->Decode.capcode - 2029568;
+             flex_groupbit = flex->Decode.capcode - FLEX_GROUP_ADDR_MIN;
              if(flex_groupbit < 0) continue;
           }
     if (flex_groupmessage && flex->Decode.long_address) {
@@ -849,9 +863,17 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                     // if (flex_groupmessage == 1) continue;
                     unsigned int iAssignedFrame = (int)((viw >> 10) & 0x7f);  // Frame with groupmessage
                     int groupbit = (int)((viw >> 17) & 0x7f);    // Listen to this groupcode
-                    
-        ////////#############################################################################                 
-        ////////#############################################################################                 
+
+                    if(groupbit < 0 || groupbit >= GROUP_BITS) {
+                      verbprintf(3, "FLEX_NEXT: Invalid group bit: %i\n", groupbit);
+                      continue;
+                    }
+
+                    if(flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] >= GROUP_MAX_CODES) {
+                      verbprintf(3, "FLEX_NEXT: Too many capcodes for group bit: %i\n", groupbit);
+                      continue;
+                    }
+
                     flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]++;
                     int CapcodePlacement = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
                     verbprintf(1, "FLEX_NEXT: Found Short Instruction, Group bit: %i capcodes in group so far %i, adding Capcode: [%010" PRId64 "]\n", groupbit, CapcodePlacement, flex->Decode.capcode);
