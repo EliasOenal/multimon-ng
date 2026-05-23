@@ -1070,6 +1070,8 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
   if (message)
     cJSON_AddStringToObject(json, "message", message);
   if (group_capcodes && group_count > 0) {
+    if (group_count > GROUP_MAX_CODES)
+      group_count = GROUP_MAX_CODES;
     cJSON *arr = cJSON_CreateArray();
     for (int gi = 0; gi < group_count; gi++)
       cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)group_capcodes[gi]));
@@ -1847,7 +1849,9 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
 
         // Group slot tag for temp group messages (empty for non-group)
         char grp_tag[8] = "";
-        if (flex_groupmessage && flex_groupbit >= 0 && flex_groupbit < 16)
+        int groupbit_valid = (flex_groupmessage && flex_groupbit >= 0 && flex_groupbit < GROUP_BITS);
+        int group_endpoint = groupbit_valid ? flex_group_endpoint(&flex->GroupHandler, flex_groupbit) : 0;
+        if (groupbit_valid)
           snprintf(grp_tag, sizeof(grp_tag), ".G%d", flex_groupbit);
 
         unsigned char message[MAX_ALN];
@@ -2147,15 +2151,15 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                                   msg_n, out_r, out_m,
                                   combined_k_fail ? 0 : 1, reassembled_sig_fail ? 0 : 1,
                                   reassembled,
-                                  flex_groupmessage ? &flex->GroupHandler.GroupCodes[flex_groupbit][1] : NULL,
-                                  flex_groupmessage ? (int)flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] : 0, extra);
+                                  groupbit_valid ? &flex->GroupHandler.GroupCodes[flex_groupbit][1] : NULL,
+                                  group_endpoint, extra);
             }
             // Debug logging AFTER level-0 line
             verbprintf(3, "FLEX_NEXT: Reassembled %u + %d bytes for cap %" PRId64 "\n",
                        flex->FragStore.slots[slot].data_len, currentChar, flex->Decode.capcode);
             frag_release(flex, slot);
             if (!json_mode) goto group_output;
-            if (flex_groupmessage) {
+            if (groupbit_valid) {
               flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
               flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
               flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
@@ -2174,7 +2178,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                                 (const char *)message, NULL, 0, NULL);
           }
           if (!json_mode) goto group_output;
-          if (flex_groupmessage) {
+          if (groupbit_valid) {
             flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
             flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
             flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
@@ -2197,8 +2201,8 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                               msg_n, msg_r, msg_m,
                               k_fail ? 0 : 1, sig_fail ? 0 : 1,
                               (const char *)message,
-                              flex_groupmessage ? &flex->GroupHandler.GroupCodes[flex_groupbit][1] : NULL,
-                              flex_groupmessage ? (int)flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] : 0, NULL);
+                              groupbit_valid ? &flex->GroupHandler.GroupCodes[flex_groupbit][1] : NULL,
+                              group_endpoint, NULL);
         }
 
 group_output:

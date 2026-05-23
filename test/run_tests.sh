@@ -87,6 +87,14 @@ run_test "FLEX_NEXT 1600/2FSK P2000 proef-alarm" "FLEX_NEXT" "flac" "$SAMPLES_DI
     "1600/2|00.038.A|0001123201|S|ALN|K.0/3.N0.R0.K+.SIG+|B2 Eindhoven Rit: 105012" \
     || FAILED=1
 
+run_test_with_opts "FLEX_NEXT JSON group capcodes" "FLEX_NEXT" "flac" "$SAMPLES_DIR/FLEX_1600_2fsk_P2000_proef_alarm.flac" "--json" \
+    '"addr_type":"T","is_group":true' \
+    '"group_slot":4' \
+    '"group_capcodes":[1420033,1420999]' \
+    '"group_slot":15' \
+    '"group_capcodes":[1220499,1220653]' \
+    || FAILED=1
+
 
 # =============================================================================
 # BCH reference tests (pre-generated files for regression testing)

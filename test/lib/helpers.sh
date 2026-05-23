@@ -128,6 +128,52 @@ run_test() {
     fi
 }
 
+# Generic test runner for sample files with extra multimon-ng options
+# Arguments: name decoder input_type input_file extra_multimon_opts expected1 [expected2 ...]
+run_test_with_opts() {
+    local name="$1"
+    local decoder="$2"
+    local input_type="$3"
+    local input_file="$4"
+    local extra_opts="$5"
+    shift 5
+    local expected_patterns=("$@")
+
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing $name... "
+
+    # Determine effective type for sox check
+    local effective_type="$input_type"
+    if [ "$input_type" = "auto" ]; then
+        effective_type="${input_file##*.}"
+    fi
+
+    # Skip if sox is needed but not available
+    if [ "$effective_type" != "raw" ] && ! command -v sox >/dev/null 2>&1; then
+        echo -e "${GREEN}SKIPPED${NC} (sox not installed)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    fi
+
+    local output
+    if [ -n "$WINE_CMD" ] && [ "$effective_type" != "raw" ]; then
+        output=$(sox -R -V1 --ignore-length -t "$effective_type" "$input_file" \
+            -t raw -esigned-integer -b16 -r 22050 - remix 1 2>/dev/null | \
+            run_multimon $extra_opts -t raw -q -a "$decoder" -)
+    elif [ "$input_type" = "auto" ]; then
+        output=$(run_multimon $extra_opts -q -a "$decoder" "$input_file")
+    else
+        output=$(run_multimon $extra_opts -t "$input_type" -q -a "$decoder" "$input_file")
+    fi
+
+    if check_patterns "$output" "${expected_patterns[@]}"; then
+        report_result "$name" 1
+    else
+        report_result "$name" 0 "$MISSING_PATTERN" "$output"
+        return 1
+    fi
+}
+
 # Generate signal with gen-ng and decode with multimon-ng
 # Arguments: name gen_opts decoder expected1 [expected2 ...]
 run_gen_decode_test() {
