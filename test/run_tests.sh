@@ -73,6 +73,21 @@ run_test "POCSAG2400" "POCSAG2400" "flac" "$SAMPLES_DIR/POCSAG_sample_-_2400_bps
     "POCSAG2400: Address: 1022869  Function: 1  Alpha:   +++TIME=0008300324" \
     || FAILED=1
 
+# FLEX_NEXT sample: real-world 1600/2FSK P2000 proef-alarm (Netherlands)
+# Tests: 1600/2FSK decode, fragment reassembly (F→C continuation),
+#        instruction messages (INS), group/tagged messages (TG),
+#        K checksum, signature validation
+run_test "FLEX_NEXT 1600/2FSK P2000 proef-alarm" "FLEX_NEXT" "flac" "$SAMPLES_DIR/FLEX_1600_2fsk_P2000_proef_alarm.flac" \
+    "1600/2|14.116.A|0001120103|S|ALN|K.0/3.N0.R0.K+.SIG+|test" \
+    "1600/2|00.012.A|0001180000|S|ALN|K.0/3.N0.R0.K+.SIG+|TESTOPROEP MOB" \
+    "1600/2|00.012.A|0001400521|S|ALN|K.0/3.N0.R0.K+.SIG+|Test: Proefalarm Ochtend Brandweer Veiligheidsregio Rotterdam Rijnmond." \
+    "1600/2|00.013.A|0001400141|S|ALN|C.1/0.N0.R0.K+.SIG+|Test: Proefalarm Ochtend Brandweer Veiligheidsregio Rotterdam Rijnmond." \
+    "1600/2|00.039.A|0001420033|S|INS|K.GRP|slot=4 deliver_frame=40" \
+    "1600/2|00.040.A|0002029572 0001420033 0001420999|T|ALN|K.0/3.N0.R0.K+.SIG+.G4|A2 (DIA: ja) AMBU 17133" \
+    "1600/2|00.038.A|0001123201|S|ALN|K.0/3.N0.R0.K+.SIG+|B2 Eindhoven Rit: 105012" \
+    || FAILED=1
+
+
 # =============================================================================
 # BCH reference tests (pre-generated files for regression testing)
 # =============================================================================
@@ -240,7 +255,7 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
     run_gen_decode_expect_fail "FLEX 3-bit error (uncorrectable)" \
         '-f "Error3" -F 22222 -e 3' "FLEX" || FAILED=1
     
-    run_gen_decode_test "FLEX_NEXT decoder" \
+    run_gen_decode_test "FLEX_NEXT decoder (gen-ng)" \
         '-f "FLEX_NEXT test" -F 777777' "FLEX_NEXT" "0000777777" "FLEX_NEXT test" || FAILED=1
     
     echo

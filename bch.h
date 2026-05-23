@@ -79,6 +79,29 @@ unsigned int bch_pocsag_encode(unsigned int data);
  */
 int bch_pocsag_correct(unsigned int *codeword);
 
+/* ========== FLEX_NEXT Functions ========== */
+
+/*
+ * Correct errors in a 32-bit FLEX word.
+ *
+ * Word layout:
+ *   Bits 0-20:  Information (21 bits)
+ *   Bits 21-30: BCH parity (10 bits)
+ *   Bit 31:     Even parity over bits 0-30
+ *
+ * BCH(31,21) corrects up to 2 errors in bits 0-30.
+ * Bit 31 is an independent even parity check that detects when
+ * the total error count across all 32 bits is odd.  This catches
+ * BCH miscorrections where the syndrome matches a 1-bit or 2-bit
+ * pattern but the actual error count is 3 or more.
+ *
+ * Input/Output: pointer to 32-bit word
+ *   On success: *codeword = 21-bit information (bits 0-20)
+ *   On failure: *codeword unchanged
+ * Returns: 0 = no errors, 1-2 = corrected bit count, -1 = uncorrectable
+ */
+int bch_flex_next_correct(unsigned int *codeword);
+
 /* ========== GSC Functions ========== */
 
 /*

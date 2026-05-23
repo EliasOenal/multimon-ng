@@ -35,7 +35,6 @@ struct uarttx {
 static void txb_addbyte(struct gen_state *s, struct uarttx *uarttx,
 			unsigned char bits, unsigned char nostart)
 {
-	int i,j;
 	if (uarttx->numbits >= 8) {
 		if (s->s.uart.datalen >= sizeof(s->s.uart.data))
 			return;
@@ -104,7 +103,7 @@ int gen_uart(signed short *buf, int buflen, struct gen_params *p, struct gen_sta
 {
 	int num = 0;
 
-	if (!s || s->s.uart.ch_idx < 0 || s->s.uart.ch_idx >= s->s.uart.datalen)
+	if (!s || s->s.uart.ch_idx < 0 || (unsigned)s->s.uart.ch_idx >= s->s.uart.datalen)
 		return 0;
 	for (; buflen > 0; buflen--, buf++, num++) {
 		s->s.uart.bitph += 0x10000*1200 / SAMPLE_RATE;
@@ -114,7 +113,7 @@ int gen_uart(signed short *buf, int buflen, struct gen_params *p, struct gen_sta
 			if (s->s.uart.bitmask >= 0x100) {
 				s->s.uart.bitmask = 1;
 				s->s.uart.ch_idx++;
-				if (s->s.uart.ch_idx >= s->s.uart.datalen)
+				if ((unsigned)s->s.uart.ch_idx >= s->s.uart.datalen)
 					return num;
 			}
 			s->s.uart.phinc = (s->s.uart.data[s->s.uart.ch_idx] & s->s.uart.bitmask) ? 

@@ -55,6 +55,7 @@ static const unsigned int col_freq[4] = {
 
 void gen_init_dtmf(struct gen_params *p, struct gen_state *s)
 {
+	(void)p;
 	memset(s, 0, sizeof(struct gen_state));
 }
 

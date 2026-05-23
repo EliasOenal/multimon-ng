@@ -181,7 +181,7 @@ int gen_hdlc(signed short *buf, int buflen, struct gen_params *p, struct gen_sta
 {
 	int num = 0;
 
-	if (!s || s->s.hdlc.ch_idx < 0 || s->s.hdlc.ch_idx >= s->s.hdlc.datalen)
+	if (!s || s->s.hdlc.ch_idx < 0 || (unsigned)s->s.hdlc.ch_idx >= s->s.hdlc.datalen)
 		return 0;
 	for (; buflen > 0; buflen--, buf++, num++) {
 		s->s.hdlc.bitph += 0x10000*1200 / SAMPLE_RATE;
@@ -191,7 +191,7 @@ int gen_hdlc(signed short *buf, int buflen, struct gen_params *p, struct gen_sta
 			if (s->s.hdlc.bitmask >= 0x100) {
 				s->s.hdlc.bitmask = 1;
 				s->s.hdlc.ch_idx++;
-				if (s->s.hdlc.ch_idx >= s->s.hdlc.datalen)
+				if ((unsigned)s->s.hdlc.ch_idx >= s->s.hdlc.datalen)
 					return num;
 			}
 			if (!(s->s.hdlc.data[s->s.hdlc.ch_idx] & s->s.hdlc.bitmask))

@@ -52,6 +52,17 @@
 
 /*---------------------------------------------------------------------------*/
 
+/* Encode 21-bit data into a 32-bit FLEX word with even parity (bit 31).
+ * Bits 0-20 = data, bits 21-30 = BCH parity, bit 31 = even parity over bits 0-30. */
+static uint32_t flex_encode_word(uint32_t data)
+{
+    uint32_t cw = bch_flex_encode(data & 0x1FFFFF);
+    /* Compute even parity over bits 0-30 and set bit 31 */
+    uint32_t p = 0, tmp = cw;
+    while (tmp) { p ^= 1; tmp &= tmp - 1; }
+    return cw | (p << 31);
+}
+
 /* Inject bit errors into a 31-bit codeword */
 static uint32_t inject_errors(uint32_t codeword, int num_errors, unsigned int *seed)
 {
@@ -121,7 +132,7 @@ static uint32_t build_fiw(int cycle, int frame)
     int checksum = (0xF - sum) & 0xF;
     fiw |= checksum;
     
-    return bch_flex_encode(fiw);
+    return flex_encode_word(fiw);
 }
 
 /* Build BIW (Block Information Word) - returns BCH-encoded 31-bit word */
@@ -137,7 +148,7 @@ static uint32_t build_biw(int voffset, int aoffset)
     biw |= (aoffset & 0x3) << 8;
     biw |= (voffset & 0x3F) << 10;
     
-    return bch_flex_encode(biw);
+    return flex_encode_word(biw);
 }
 
 /* Build address word - returns BCH-encoded 31-bit word */
@@ -147,17 +158,19 @@ static uint32_t build_address(uint32_t capcode)
      * The decoder does: capcode = aw1 - 0x8000
      * So we encode: aw1 = capcode + 0x8000
      */
-    return bch_flex_encode((capcode + 0x8000) & 0x1FFFFF);
+    return flex_encode_word((capcode + 0x8000) & 0x1FFFFF);
 }
 
 /* Build vector word - returns BCH-encoded 31-bit word */
 static uint32_t build_vector(int msg_type, int msg_start, int msg_len)
 {
-    /* Vector format (21 data bits) - as parsed by decoder:
-     * Bits 3:0   = unused/reserved  
-     * Bits 6:4   = message type (from decoder: (viw >> 4) & 0x7)
-     * Bits 13:7  = message word start (from decoder: (viw >> 7) & 0x7F)
-     * Bits 20:14 = message length in words (from decoder: (viw >> 14) & 0x7F)
+    /* Vector format (21 data bits):
+     * Bits 3:0   = 4-bit checksum
+     * Bits 6:4   = message type V
+     * Bits 13:7  = message word start (b)
+     * Bits 20:14 = message length in words (n)
+     *
+     * Checksum: sum of five 4-bit nibbles + bit 20, lower 4 bits = 0xF.
      */
     uint32_t vec = 0;
     
@@ -165,13 +178,20 @@ static uint32_t build_vector(int msg_type, int msg_start, int msg_len)
     vec |= (msg_start & 0x7F) << 7;
     vec |= (msg_len & 0x7F) << 14;
     
-    return bch_flex_encode(vec);
+    /* Compute 4-bit checksum: set bits 0-3 so that
+     * (nib0 + nib1 + nib2 + nib3 + nib4 + bit20) & 0xF == 0xF */
+    uint32_t sum = ((vec >> 4) & 0xF) + ((vec >> 8) & 0xF) +
+                   ((vec >> 12) & 0xF) + ((vec >> 16) & 0xF) + ((vec >> 20) & 0x1);
+    uint32_t checksum = (0xF - (sum & 0xF)) & 0xF;
+    vec |= checksum;
+    
+    return flex_encode_word(vec);
 }
 
 /* Build message word - returns BCH-encoded 31-bit word */
 static uint32_t build_message_word(uint32_t data)
 {
-    return bch_flex_encode(data & 0x1FFFFF);
+    return flex_encode_word(data & 0x1FFFFF);
 }
 
 /* Encode a string to FLEX message words (7-bit ASCII)
@@ -210,14 +230,6 @@ static int encode_message(const char *msg, uint32_t *words, int max_words, int s
 
 /*---------------------------------------------------------------------------*/
 
-/* Helper: add bits to bitstream, MSB first from value */
-static void add_bits_msb(unsigned char *data, int *idx, uint64_t value, int nbits)
-{
-    for (int i = nbits - 1; i >= 0; i--) {
-        data[(*idx)++] = (value >> i) & 1;
-    }
-}
-
 /* Helper: add bits to bitstream, MSB first, inverted (for sync patterns) */
 static void add_bits_msb_inv(unsigned char *data, int *idx, uint64_t value, int nbits)
 {
@@ -249,9 +261,9 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
      * Use alternating 0xAAAAAA/0x155555 patterns instead of all-1s */
     for (i = 0; i < FLEX_CODEWORDS_PER_PHASE; i++) {
         if (i % 2 == 0) {
-            codewords[i] = bch_flex_encode(0x0AAAAA);  /* 010101... pattern */
+            codewords[i] = flex_encode_word(0x0AAAAA);  /* 010101... pattern */
         } else {
-            codewords[i] = bch_flex_encode(0x155555);  /* 101010... pattern */
+            codewords[i] = flex_encode_word(0x155555);  /* 101010... pattern */
         }
     }
     
@@ -278,19 +290,85 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
     codewords[2] = build_vector(FLEX_PAGETYPE_ALPHANUMERIC, msg_start, total_msg_words);
     
     /* Message header word at msg_start:
-     * The decoder reads frag from bits 12:11, cont from bit 10.
-     * This word contains ONLY header info, no message characters.
-     * After reading header, the decoder increments mw1 and loops over content words.
+     *   bits 0-9:   K (10-bit fragment checksum, computed last)
+     *   bit  10:    C=0 (not continued)
+     *   bits 11-12: F=11 (complete message, frag=3)
+     *   bits 13-18: N=0 (message number)
+     *   bit  19:    R=1 (new message)
+     *   bit  20:    M=0 (no maildrop)
      */
-    uint32_t msg_header = (3 << 11);  /* frag=3, cont=0 */
+    uint32_t msg_header = 0;
+    msg_header |= (3 << 11);   /* F=11 */
+    msg_header |= (0 << 13);   /* N=0 */
+    msg_header |= (1 << 19);   /* R=1 */
+
+    /* First content word (msg_start+1): bits 0-6 = signature S.
+     * Signature = 1's complement of sum of all 7-bit character slots
+     * across all content words, excluding ETX (0x03).
+     * Characters start at bits 7-13 and 14-20 of the first content word,
+     * and bits 0-6, 7-13, 14-20 of subsequent content words.
+     *
+     * The message was encoded with skip_first_char=1, so msg_words[0]
+     * has bits 0-6 empty (signature slot), chars at bits 7-13 and 14-20.
+     */
+    {
+        /* Compute signature from the encoded content words (same as decoder).
+         * The decoder extracts 7-bit character slots from the transmitted words
+         * and sums them, so we must do the same — NOT sum the raw input string,
+         * which may be longer than what fits in 84 content words.
+         *
+         * First content word (msg_words[0]): bits 0-6 reserved for signature,
+         *   character slots at bits 7-13 and 14-20.
+         * Subsequent words: character slots at bits 0-6, 7-13, 14-20.
+         */
+        uint32_t sig_sum = 0;
+        uint32_t ch;
+        /* First word: skip bits 0-6 (signature slot), sum bits 7-13 and 14-20 */
+        ch = (msg_words[0] >> 7) & 0x7F;
+        if (ch != 0x03) sig_sum += ch;
+        ch = (msg_words[0] >> 14) & 0x7F;
+        if (ch != 0x03) sig_sum += ch;
+        /* Remaining words: sum all three 7-bit slots */
+        for (i = 1; i < num_msg_words; i++) {
+            ch = msg_words[i] & 0x7F;
+            if (ch != 0x03) sig_sum += ch;
+            ch = (msg_words[i] >> 7) & 0x7F;
+            if (ch != 0x03) sig_sum += ch;
+            ch = (msg_words[i] >> 14) & 0x7F;
+            if (ch != 0x03) sig_sum += ch;
+        }
+        uint32_t sig = (~sig_sum) & 0x7F;
+        /* Store signature in bits 0-6 of first content word */
+        msg_words[0] |= sig;
+    }
+
+    /* Place header and content words into frame */
     codewords[msg_start] = build_message_word(msg_header);
-    
-    /* Message content words start at msg_start+1
-     * When frag==3, the decoder skips the first char position of the first content word.
-     * So we encode the message with skip_first_char=1.
-     */
     for (i = 0; i < num_msg_words && (msg_start + 1 + i) < FLEX_CODEWORDS_PER_PHASE; i++) {
         codewords[msg_start + 1 + i] = build_message_word(msg_words[i]);
+    }
+
+    /* Compute K checksum (10-bit):
+     * 1's complement of binary sum of all message words (header + content)
+     * in three groups per word: bits 0-7, 8-15, 16-20.
+     * K field (bits 0-9 of header) is zeroed during computation.
+     */
+    {
+        uint32_t k_sum = 0;
+        /* Header word (K field already 0) */
+        k_sum += msg_header & 0xFF;
+        k_sum += (msg_header >> 8) & 0xFF;
+        k_sum += (msg_header >> 16) & 0x1F;
+        /* Content words */
+        for (i = 0; i < num_msg_words; i++) {
+            uint32_t w = msg_words[i] & 0x1FFFFF;
+            k_sum += w & 0xFF;
+            k_sum += (w >> 8) & 0xFF;
+            k_sum += (w >> 16) & 0x1F;
+        }
+        msg_header |= (~k_sum) & 0x3FF;  /* K in bits 0-9 */
+        /* Re-encode header with K checksum */
+        codewords[msg_start] = build_message_word(msg_header);
     }
     
     /* Inject errors if requested */
@@ -331,9 +409,31 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
     }
     add_bits_lsb(s->s.flex.data, &bit_idx, fiw, 32);
     
-    /* SYNC2: idle period (40 bits at 1600 baud), inverted */
-    for (i = 0; i < 40; i++) {
+    /* SYNC2: BS2(4) + C(16) + inv.BS2(4) + inv.C(16) = 40 bits at 1600/2FSK
+     * Per the FLEX standard:
+     *   C = 0xED84 (16 bits), inv.C = 0x127B
+     *   BS2 = alternating dotting (4 bits) */
+    /* BS2: 4 bits dotting */
+    for (i = 0; i < 4; i++) {
         s->s.flex.data[bit_idx++] = (i & 1) ? 1 : 0;
+    }
+    /* C pattern: 16 bits MSB first */
+    {
+        uint16_t c_pat = 0xED84u;
+        for (i = 15; i >= 0; i--) {
+            s->s.flex.data[bit_idx++] = (c_pat >> i) & 1;
+        }
+    }
+    /* inv.BS2: 4 bits dotting inverted */
+    for (i = 0; i < 4; i++) {
+        s->s.flex.data[bit_idx++] = (i & 1) ? 0 : 1;
+    }
+    /* inv.C pattern: 16 bits MSB first */
+    {
+        uint16_t cinv_pat = 0x127Bu;
+        for (i = 15; i >= 0; i--) {
+            s->s.flex.data[bit_idx++] = (cinv_pat >> i) & 1;
+        }
     }
     
     /* DATA: 88 codewords, interleaved transmission

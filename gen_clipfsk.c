@@ -34,7 +34,6 @@ struct clipfsktx {
 static void txb_addbyte(struct gen_state *s, struct clipfsktx *clipfsktx,
 			unsigned char bits, unsigned char nostart)
 {
-	int i,j;
 	if (clipfsktx->numbits >= 8) {
 		if (s->s.clipfsk.datalen >= sizeof(s->s.clipfsk.data))
 			return;
@@ -97,7 +96,7 @@ int gen_clipfsk(signed short *buf, int buflen, struct gen_params *p, struct gen_
 {
 	int num = 0;
 
-	if (!s || s->s.clipfsk.ch_idx < 0 || s->s.clipfsk.ch_idx >= s->s.clipfsk.datalen)
+	if (!s || s->s.clipfsk.ch_idx < 0 || (unsigned)s->s.clipfsk.ch_idx >= s->s.clipfsk.datalen)
 		return 0;
 	for (; buflen > 0; buflen--, buf++, num++) {
 		s->s.clipfsk.bitph += 0x10000*1200 / SAMPLE_RATE;
@@ -107,7 +106,7 @@ int gen_clipfsk(signed short *buf, int buflen, struct gen_params *p, struct gen_
 			if (s->s.clipfsk.bitmask >= 0x100) {
 				s->s.clipfsk.bitmask = 1;
 				s->s.clipfsk.ch_idx++;
-				if (s->s.clipfsk.ch_idx >= s->s.clipfsk.datalen)
+				if ((unsigned)s->s.clipfsk.ch_idx >= s->s.clipfsk.datalen)
 					return num;
 			}
 			s->s.clipfsk.phinc = (s->s.clipfsk.data[s->s.clipfsk.ch_idx] & s->s.clipfsk.bitmask) ? 

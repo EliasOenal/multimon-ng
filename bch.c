@@ -475,6 +475,77 @@ void bch_init(void)
     bch_initialized = 1;
 }
 
+/* ========== FLEX_NEXT Functions ========== */
+
+/*
+ * BCH(31,21) + even parity correction for FLEX_NEXT.
+ *
+ * FLEX standard defines a 32-bit word:
+ *   Bits 0-20:  Information (21 bits)
+ *   Bits 21-30: BCH parity (10 bits, from generator polynomial G(x))
+ *   Bit 31:     Even parity over bits 0-30
+ *
+ * The original bch_flex_correct() operates on 31 bits only and does
+ * not use bit 31.  This function adds the even parity check per the
+ * standard to reject BCH miscorrections.
+ *
+ * When a word has 3+ bit errors, BCH may find a valid 1-bit or 2-bit
+ * correction pattern that differs from the actual errors.  Applying
+ * this wrong correction produces a valid-looking but incorrect word.
+ * The even parity bit catches this: if the total error count across
+ * all 32 bits is odd, parity will be wrong after BCH correction,
+ * and we reject the word as uncorrectable.
+ *
+ * Algorithm:
+ *   1. Compute syndrome on bits 0-30 (the BCH codeword)
+ *   2. Syndrome = 0:
+ *      - Parity OK  -> clean, no errors
+ *      - Parity BAD -> only bit 31 is wrong, code data is correct
+ *   3. Syndrome != 0, correction found:
+ *      - Apply correction to bits 0-30
+ *      - Check even parity on (corrected bits 0-30 | received bit 31)
+ *      - Parity OK  -> accept correction
+ *      - Parity BAD -> reject as uncorrectable (3+ errors)
+ *   4. Syndrome != 0, no correction -> uncorrectable
+ */
+int bch_flex_next_correct(unsigned int *codeword)
+{
+    if (!bch_initialized)
+        bch_init();
+    
+    unsigned int code31 = *codeword & 0x7FFFFFFF;
+    unsigned int key = flex_syndrome_key(code31);
+    
+    if (key == 0) {
+        /* Syndrome clean - bits 0-30 form a valid BCH codeword.
+         * Check bit 31 (even parity over bits 0-30). */
+        if (parity32(*codeword)) {
+            /* Only bit 31 is wrong.  Code data is correct. */
+            *codeword = code31 & 0x1FFFFF;
+            return 1;
+        }
+        /* No errors */
+        *codeword = code31 & 0x1FFFFF;
+        return 0;
+    }
+    
+    unsigned int error = flex_err_tbl[key];
+    
+    if (error == 0)
+        return -1;  /* No matching correction pattern */
+    
+    /* Apply BCH correction to bits 0-30, then verify even parity.
+     * Reassemble the corrected code with the received parity bit
+     * and check that the total popcount is even.  If not, the
+     * actual error count is odd and exceeds BCH capability. */
+    code31 ^= error;
+    if (parity32((*codeword & 0x80000000) | code31))
+        return -1;  /* Parity bad after correction - reject */
+    
+    *codeword = code31 & 0x1FFFFF;
+    return popcount32(error);
+}
+
 /* ========== GSC: Golay(23,12) + BCH(15,7) ========== */
 
 /*

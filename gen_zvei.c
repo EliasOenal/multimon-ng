@@ -37,15 +37,19 @@ static const unsigned int zvei_freq[16] = {
 	PHINC(970), PHINC(886), PHINC(2600), PHINC(0)
 };
 
+/* ZVEI-S frequency table (currently unused, kept for future ZVEI-S support) */
+#if 0
 static const unsigned int zveis_freq[16] = {
 	PHINC(2400), PHINC(1060), PHINC(1160), PHINC(1270), 
 	PHINC(1400), PHINC(1530), PHINC(1670), PHINC(1830), 
 	PHINC(2000), PHINC(2200), PHINC(886), PHINC(810), 
 	PHINC(740), PHINC(680), PHINC(970), PHINC(0)
 };
+#endif
 
 void gen_init_zvei(struct gen_params *p, struct gen_state *s)
 {
+	(void)p;
 	memset(s, 0, sizeof(struct gen_state));
 }
 

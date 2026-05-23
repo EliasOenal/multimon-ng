@@ -737,9 +737,14 @@ static void input_sound(unsigned int sample_rate, unsigned int overlap,
         perror("ioctl: SNDCTL_DSP_SPEED");
         exit (10);
     }
-    if ((10*abs(sndparam-sample_rate)) > sample_rate) {
-        perror("ioctl: SNDCTL_DSP_SPEED");
-        exit (10);
+    /* Signed diff avoids unsigned underflow when sndparam < sample_rate */
+    {
+        long diff = (long)sndparam - (long)sample_rate;
+        if (diff < 0) diff = -diff;
+        if ((unsigned long)(10 * diff) > sample_rate) {
+            perror("ioctl: SNDCTL_DSP_SPEED");
+            exit (10);
+        }
     }
     if (sndparam != sample_rate) {
         fprintf(stderr, "Warning: Sampling rate is %u, "
