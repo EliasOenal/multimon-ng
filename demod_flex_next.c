@@ -3889,9 +3889,18 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       int cap_pos = snprintf(cap_field, sizeof(cap_field), "%010" PRId64, flex->Decode.capcode);
       if (flex_groupmessage == 1) {
         int endpoint = flex_group_endpoint(&flex->GroupHandler, flex_groupbit);
-        for (int g = 1; g <= endpoint; g++)
-          cap_pos += snprintf(cap_field + cap_pos, sizeof(cap_field) - cap_pos,
-                              " %010" PRId64, flex->GroupHandler.GroupCodes[flex_groupbit][g]);
+        for (int g = 1; g <= endpoint; g++) {
+          if (cap_pos >= (int)sizeof(cap_field) - 1)
+            break;
+          size_t cap_rem = sizeof(cap_field) - (size_t)cap_pos;
+          int wrote = snprintf(cap_field + cap_pos, cap_rem, " %010" PRId64,
+                               flex->GroupHandler.GroupCodes[flex_groupbit][g]);
+          if (wrote < 0 || (size_t)wrote >= cap_rem) {
+            cap_pos = (int)sizeof(cap_field) - 1;
+            break;
+          }
+          cap_pos += wrote;
+        }
       }
       // Build line prefix into flex->line_prefix for atomic output by parse functions
       snprintf(flex->line_prefix, sizeof(flex->line_prefix),
