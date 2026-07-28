@@ -12,7 +12,7 @@ multimon-ng is the successor of multimon. It decodes the following digital trans
 - FSK9600
 - DTMF
 - ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI
-- EEA EIA CCIR
+- EEA EIA CCIR CCIR_FAST
 - MORSE_CW
 - DUMPCSV X10 SCOPE SDL_SCOPE
 - GSC (Golay Sequential Code)

@@ -143,6 +143,7 @@ set( SOURCES ${SOURCES}
 	demod_pzvei.c
 	demod_dzvei.c
 	demod_ccir.c
+	demod_ccir_fast.c
 	demod_eia.c
 	demod_eea.c
 	demod_ufsk12.c
