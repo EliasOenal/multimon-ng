@@ -188,7 +188,8 @@ static int encode_message(const char *msg, int function, uint32_t *codewords, in
         unsigned char buffer[256] = {0};
         int bit_count = 0;
         
-        for (int i = 0; i < len; i++) {
+        int max_chars = (int)(sizeof(buffer) * 8 / 7);
+        for (int i = 0; i < len && i < max_chars; i++) {
             unsigned char c = rev7(msg[i] & 0x7F);
             put7(buffer, i, c);
             bit_count += 7;
@@ -274,9 +275,10 @@ void gen_init_pocsag(struct gen_params *p, struct gen_state *s)
     
     /* Build the transmission */
     int bit_idx = 0;
+    int max_bits = sizeof(s->s.pocsag.data) * 8;  /* output buffer capacity, in bits */
     
     /* Preamble: alternating 1010... pattern (starts with 1) */
-    for (i = 0; i < POCSAG_PREAMBLE_BITS; i++) {
+    for (i = 0; i < POCSAG_PREAMBLE_BITS && bit_idx < max_bits; i++) {
         if ((i & 1) == 0)
             s->s.pocsag.data[bit_idx / 8] |= (0x80 >> (bit_idx % 8));
         bit_idx++;
@@ -286,20 +288,20 @@ void gen_init_pocsag(struct gen_params *p, struct gen_state *s)
     int msg_cw_idx = 0;
     int address_sent = 0;
     
-    for (int batch = 0; batch < batch_count; batch++) {
+    for (int batch = 0; batch < batch_count && bit_idx < max_bits; batch++) {
         /* Sync codeword (32 bits, MSB first) - also inject errors if requested */
         uint32_t sync_word = POCSAG_SYNC;
         if (p->p.pocsag.errors > 0)
             sync_word = inject_errors(sync_word, p->p.pocsag.errors, &error_seed);
-        for (i = 31; i >= 0; i--) {
+        for (i = 31; i >= 0 && bit_idx < max_bits; i--) {
             if (sync_word & (1u << i))
                 s->s.pocsag.data[bit_idx / 8] |= (0x80 >> (bit_idx % 8));
             bit_idx++;
         }
         
         /* 16 codewords (8 frames x 2 codewords) */
-        for (int frame = 0; frame < 8; frame++) {
-            for (int cw = 0; cw < 2; cw++) {
+        for (int frame = 0; frame < 8 && bit_idx < max_bits; frame++) {
+            for (int cw = 0; cw < 2 && bit_idx < max_bits; cw++) {
                 uint32_t codeword;
                 
                 if (!address_sent && frame == frame_position && cw == 0) {
@@ -322,7 +324,7 @@ void gen_init_pocsag(struct gen_params *p, struct gen_state *s)
                 }
                 
                 /* Output codeword (32 bits, MSB first) */
-                for (i = 31; i >= 0; i--) {
+                for (i = 31; i >= 0 && bit_idx < max_bits; i--) {
                     if (codeword & (1u << i))
                         s->s.pocsag.data[bit_idx / 8] |= (0x80 >> (bit_idx % 8));
                     bit_idx++;
@@ -333,6 +335,8 @@ void gen_init_pocsag(struct gen_params *p, struct gen_state *s)
     
     s->s.pocsag.bit_idx = 0;
     s->s.pocsag.datalen = (bit_idx + 7) / 8;
+    if (s->s.pocsag.datalen > sizeof(s->s.pocsag.data))
+        s->s.pocsag.datalen = sizeof(s->s.pocsag.data);
     s->s.pocsag.baud = p->p.pocsag.baud;
     s->s.pocsag.bitph = 0;
 }

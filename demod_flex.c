@@ -732,7 +732,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
 
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  cJSON *json_output = cJSON_CreateObject();
+  cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
   static char json_temp[100];
 
   if (!json_mode) {
@@ -840,7 +840,7 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
   
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  cJSON *json_output = cJSON_CreateObject();
+  cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
   static char json_temp[100];
 
   if (!json_mode) {
@@ -926,7 +926,7 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
   if (flex==NULL) return;
   time_t now=time(NULL);
   struct tm * gmt=gmtime(&now);
-  cJSON *json_output = cJSON_CreateObject();
+  cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
   static char json_temp[100];
 
   if (!json_mode) {

@@ -351,6 +351,10 @@ static void sdl_scope_init(struct demod_state *s)
         SDL_DestroyRenderer(sdl_state.renderer);
         SDL_DestroyWindow(sdl_state.window);
         SDL_Quit();
+        free(sdl_state.intensity);
+        free(sdl_state.pixels);
+        sdl_state.intensity = NULL;
+        sdl_state.pixels = NULL;
         return;
     }
 

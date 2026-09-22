@@ -335,8 +335,11 @@ end:;
 static void morse_init(struct demod_state * restrict s)
 {
     memset(&s->l1.morse, 0, sizeof(s->l1.morse));
-    s->l1.morse.time_unit_dit_dah_samples = FREQ_SAMP / (1000 / cw_dit_length);
-    s->l1.morse.time_unit_gaps_samples = FREQ_SAMP / (1000 / cw_gap_length);
+    // Reject dit/gap lengths where 1000/length truncates to 0 (0 or |length| > 1000 ms)
+    if(cw_dit_length && cw_gap_length && (1000 / cw_dit_length) && (1000 / cw_gap_length)) {
+        s->l1.morse.time_unit_dit_dah_samples = FREQ_SAMP / (1000 / cw_dit_length);
+        s->l1.morse.time_unit_gaps_samples = FREQ_SAMP / (1000 / cw_gap_length);
+    }
     s->l1.morse.detection_threshold = cw_threshold;
     s->l1.morse.lowpass_strength = SMOOTHING_MAGNITUDE;
     if(HOLDOFF_MS) s->l1.morse.holdoff_samples = FREQ_SAMP / (1000 / HOLDOFF_MS);

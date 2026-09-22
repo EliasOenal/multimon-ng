@@ -145,6 +145,8 @@ static inline int ctz32(unsigned int x)
 /* Compute FLEX syndrome key (S1<<5)|S3 using GF(2^5) field tables */
 static unsigned int flex_syndrome_key(unsigned int codeword)
 {
+    /* Mask to 31-bit codeword; guards against unmasked 32-bit callers */
+    codeword &= 0x7FFFFFFF;
     unsigned int s1 = 0, s3 = 0;
     
     /* Iterate only over set bits for efficiency */

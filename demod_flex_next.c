@@ -1009,7 +1009,7 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
                                 cJSON *extra)
 {
   cJSON *json = cJSON_CreateObject();
-  if (!json) return;
+  if (!json) { cJSON_Delete(extra); return; }
 
   time_t now = time(NULL);
   struct tm *gmt = gmtime(&now);
