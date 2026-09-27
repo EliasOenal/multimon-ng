@@ -11,6 +11,7 @@ multimon-ng is the successor of multimon. It decodes the following digital trans
 - HAPN4800
 - FSK9600
 - DTMF
+- DUALTONE (siren activation dualtone, TR-BOS C 4.6)
 - ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI
 - EEA EIA CCIR
 - MORSE_CW
@@ -98,7 +99,7 @@ Files can be easily converted into multimon-ng's native raw format using *sox*. 
 
     sox -R -t wav pocsag_short.wav -esigned-integer -b16 -r 22050 -t raw pocsag_short.raw
 
-GNURadio can also generate the format using the file sink in input mode *short*. 
+GNURadio can also generate the format using the file sink in input mode *short*.
 
 ### Pipe sox to multimon-ng
 

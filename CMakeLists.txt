@@ -212,6 +212,7 @@ set( SOURCES ${SOURCES}
 	demod_hapn48.c
 	demod_fsk96.c
 	demod_dtmf.c
+	demod_dualtone.c
 	demod_clipfsk.c
 	demod_fmsfsk.c
 	demod_afsk24.c
