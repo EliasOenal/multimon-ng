@@ -335,6 +335,8 @@ void gen_init_pocsag(struct gen_params *p, struct gen_state *s)
     
     s->s.pocsag.bit_idx = 0;
     s->s.pocsag.datalen = (bit_idx + 7) / 8;
+    if (bit_idx >= max_bits && total_bits > max_bits)
+        fprintf(stderr, "gen_pocsag: message truncated\n");
     if (s->s.pocsag.datalen > sizeof(s->s.pocsag.data))
         s->s.pocsag.datalen = sizeof(s->s.pocsag.data);
     s->s.pocsag.baud = p->p.pocsag.baud;

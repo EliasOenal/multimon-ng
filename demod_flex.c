@@ -579,8 +579,11 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         char message[1024];
         int  currentChar = 0; 
         char frag_flag = '?';
-        cJSON *json_output = cJSON_CreateObject();
+        cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
         static char json_temp[100];
+
+        if (json_mode && !json_output)
+                return;
 
         int frag = (phaseptr[mw1] >> 11) & 0x03;
         int cont = (phaseptr[mw1] >> 0x0A) & 0x01;
@@ -797,7 +800,7 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
           if (!json_mode) {
             verbprintf(0, "%c", flex_bcd[digit]);
           }
-          else {
+          else if (strlen(json_temp) < sizeof(json_temp) - 1) {
             strncat(json_temp, (char*)&flex_bcd[digit], 1);
           }
         }
@@ -963,8 +966,10 @@ static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char Phas
     if (!json_mode) {
       verbprintf(0, " %08x", phaseptr[i]);
     }
-    else {
-      strncat(json_temp, (char*)&phaseptr[i], 1);
+    else if (strlen(json_temp) + 8 < sizeof(json_temp)) {
+      char hex[9];
+      snprintf(hex, sizeof(hex), "%08x", phaseptr[i]);
+      strncat(json_temp, hex, sizeof(json_temp) - strlen(json_temp) - 1);
     }
   }
   if (!json_mode) {
@@ -1006,6 +1011,9 @@ static void decode_phase(struct Flex * flex, char PhaseNo) {
     case 'B': phaseptr=flex->Data.PhaseB.buf; break;
     case 'C': phaseptr=flex->Data.PhaseC.buf; break;
     case 'D': phaseptr=flex->Data.PhaseD.buf; break;
+    default:
+      verbprintf(3, "FLEX: Invalid phase %c\n", PhaseNo);
+      return;
   }
 
   for (i=0; i<PHASE_WORDS; i++) {

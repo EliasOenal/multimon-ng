@@ -2253,6 +2253,10 @@ static void parse_numeric(struct Flex_Next * flex, unsigned int * phaseptr, int 
 
   // Get first dataword from message field or from second
   // vector word if long address
+  if (flex->Decode.long_address && j + 1 >= PHASE_WORDS) {
+    verbprintf(3, "FLEX_NEXT: Numeric long-address offset %d out of frame bounds, skipping\n", j);
+    return;
+  }
   int dw;
   int dw_bad = 0;
   if(!flex->Decode.long_address) {
@@ -2917,6 +2921,9 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
     case 'B': phaseptr=flex->Data.PhaseB.buf; break;
     case 'C': phaseptr=flex->Data.PhaseC.buf; break;
     case 'D': phaseptr=flex->Data.PhaseD.buf; break;
+    default:
+      verbprintf(3, "FLEX_NEXT: Invalid phase %c\n", PhaseNo);
+      return;
   }
 
   // BCH decode all 88 words first
