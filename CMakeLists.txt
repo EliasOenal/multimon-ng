@@ -13,10 +13,10 @@ else( NOT WIN32 )
 endif( NOT WIN32 )
 
 set( TARGET "${PROJECT_NAME}" )
-set( VERSION "1.6.1" )
+set( VERSION "1.6.2" )
 set( MAJOR "1" )
 set( MINOR "6" )
-set( PATCH "1" )
+set( PATCH "2" )
 set( CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra" )
 
 option( ENABLE_HARDENING "Enable supported compiler and linker hardening" ON )
