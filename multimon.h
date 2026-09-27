@@ -226,6 +226,20 @@ struct demod_state {
             int timeout;
         } selcall;
 
+#define CCIR_FAST_MAXTONES 16
+        struct l1_state_ccir_fast {
+            unsigned int ph[16];
+            float energy[6];        /* NBLK block history */
+            float tenergy[6][32];
+            int blkcount;
+            int last_detected;
+            int stable_count;
+            int last_committed;
+            int silence_blocks;
+            int frame[CCIR_FAST_MAXTONES];
+            int frame_len;
+        } ccir_fast;
+
         struct l1_state_morse {
             uint64_t current_sequence;
             int_fast16_t threshold_ctr;
@@ -321,6 +335,7 @@ extern const struct demod_param demod_pzvei;
 extern const struct demod_param demod_eea;
 extern const struct demod_param demod_eia;
 extern const struct demod_param demod_ccir;
+extern const struct demod_param demod_ccir_fast;
 
 extern const struct demod_param demod_morse;
 
@@ -349,7 +364,7 @@ extern const struct demod_param demod_sdl_scope;
 #define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_flex, &demod_flex_next, &demod_gsc, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
     &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
     &demod_fsk9600, &demod_dtmf, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
-    &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD SDL_SCOPE_DEMOD
+    &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_ccir_fast, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD SDL_SCOPE_DEMOD
 
 
 /* ---------------------------------------------------------------------- */
