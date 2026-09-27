@@ -1,6 +1,8 @@
 /*
  *      demod_dualtone.c -- dualtone evaluator (TR-BOS C 4.6)
  *
+ *      Copyright (C) 2026 https://github.com/stahmatt
+ *
  *      Decodes the dualtone (Doppelton) continuous tone used to trigger
  *      sirens, as defined by the group M continuous tone per DIN 45012.
  *      Only the following two frequency pairs are recognised (tolerances
@@ -14,6 +16,11 @@
  *      Evaluated only
  *          a) when both tone frequencies are present simultaneously and
  *          b) after a response delay of 2 s +/- 0,5 s.
+ *
+ *      This program is free software; you can redistribute it and/or modify
+ *      it under the terms of the GNU General Public License as published by
+ *      the Free Software Foundation; either version 2 of the License, or
+ *      (at your option) any later version.
  */
 
 /* ---------------------------------------------------------------------- */
