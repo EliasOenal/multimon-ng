@@ -566,6 +566,10 @@ static const char usage_str[] = "Generates test signals\n"
 "  -c <str>   : encode CLIP FSK string\n"
 "  -f <msg>   : encode FLEX pager message\n"
 "     -F <capcode> : FLEX pager address (default: 1234567)\n"
+"     -G <start:count>  : encode as FLEX_NEXT group call; enroll `count` consecutive\n"
+"                         capcodes starting at `start` (e.g. -G 1000000:93).\n"
+"                         Also accepts a comma-separated list for small groups.\n"
+"                         Max members: 22016 (FLEX protocol ceiling).\n"
 "  -P <msg>   : encode POCSAG pager message\n"
 "     -A <address> : POCSAG pager address/capcode (default: 1234567)\n"
 "     -B <baud>    : POCSAG baud rate: 512, 1200, 2400 (default: 1200)\n"
@@ -587,7 +591,7 @@ int main(int argc, char *argv[])
 
 	fprintf(stdout, "gen-ng - (C) 1997 by Tom Sailer HB9JNX/AE4WA\n"
                     "         (C) 2012/2013 by Elias Oenal\n");	
-	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:e:P:A:B:S:NIh")) != EOF) {
+	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:G:e:P:A:B:S:NIh")) != EOF) {
 		switch (c) {
 		case 'h':
 		case '?':
@@ -758,6 +762,70 @@ int main(int argc, char *argv[])
 			}
 			params[num_gen-1].p.flex.capcode = strtoul(optarg, NULL, 0);
 			break;
+
+		case 'G': {
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_flex) {
+				fprintf(stderr, "gen: -G requires -f first\n");
+				errflg++;
+				break;
+			}
+			/* -G start:count  -- enroll `count` consecutive capcodes
+			 * starting at `start` (e.g. -G 1000000:93).
+			 * Also accepts a comma-separated list for small counts. */
+			{
+				char *colon = strchr(optarg, ':');
+				if (colon) {
+					uint32_t start = (uint32_t)strtoul(optarg, NULL, 0);
+					int count = atoi(colon + 1);
+					if (count <= 0 || count > FLEX_GEN_GROUP_MAX) {
+						fprintf(stderr, "gen: -G count must be 1..%d\n",
+						        FLEX_GEN_GROUP_MAX);
+						errflg++;
+						break;
+					}
+					params[num_gen-1].p.flex.group_capcodes =
+						(uint32_t *)malloc((size_t)count * sizeof(uint32_t));
+					if (!params[num_gen-1].p.flex.group_capcodes) {
+						fprintf(stderr, "gen: out of memory for -G\n");
+						errflg++;
+						break;
+					}
+					for (int gi = 0; gi < count; gi++)
+						params[num_gen-1].p.flex.group_capcodes[gi] = start + (uint32_t)gi;
+					params[num_gen-1].p.flex.group_count = count;
+				} else {
+					/* Comma-separated list fallback */
+					int count = 0;
+					char buf[65536];
+					snprintf(buf, sizeof(buf), "%s", optarg);
+					char *tok = strtok(buf, ",");
+					while (tok) { count++; tok = strtok(NULL, ","); }
+					if (count == 0 || count > FLEX_GEN_GROUP_MAX) {
+						fprintf(stderr, "gen: -G requires 1..%d capcodes\n",
+						        FLEX_GEN_GROUP_MAX);
+						errflg++;
+						break;
+					}
+					params[num_gen-1].p.flex.group_capcodes =
+						(uint32_t *)malloc((size_t)count * sizeof(uint32_t));
+					if (!params[num_gen-1].p.flex.group_capcodes) {
+						fprintf(stderr, "gen: out of memory for -G\n");
+						errflg++;
+						break;
+					}
+					snprintf(buf, sizeof(buf), "%s", optarg);
+					int gi = 0;
+					tok = strtok(buf, ",");
+					while (tok && gi < count) {
+						params[num_gen-1].p.flex.group_capcodes[gi++] =
+							(uint32_t)strtoul(tok, NULL, 0);
+						tok = strtok(NULL, ",");
+					}
+					params[num_gen-1].p.flex.group_count = gi;
+				}
+			}
+			break;
+		}
 
 		case 'e':
 			if (num_gen <= 0) {

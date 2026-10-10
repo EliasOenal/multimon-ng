@@ -29,6 +29,7 @@
 #include "bch.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 /*
  * FLEX Protocol Constants
@@ -246,244 +247,242 @@ static void add_bits_lsb(unsigned char *data, int *idx, uint32_t value, int nbit
     }
 }
 
+/* Bits in one FLEX 1600/2FSK Phase-A frame written by build_flex_frame:
+ *   960 preamble + 64 SYNC1 + 16 dotting + 32 FIW
+ *   + 40 SYNC2 (BS2+C+inv.BS2+inv.C) + 2816 data (11*8*32) + 64 trailing
+ *   = 3992 bits (one byte per bit in the data[] array)
+ */
+#define FLEX_BITS_PER_FRAME  3992
+
+/* FLEX group address range: capcodes 2029568-2029583 (aw 0x1F7800-0x1F780F) */
+#define FLEX_GROUP_ADDR_MIN  2029568u
+
+/* Enrollments per frame: floor((88-1) / 2) = 43 (1 BIW + 43 addr/vec pairs) */
+#define FLEX_ENROLL_PER_FRAME 43
+
+/* Build a Short Instruction Vector word for group enrollment:
+ *   bits 0-3:   4-bit checksum (nibble sum = 0xF)
+ *   bits 4-6:   V=001 (Short Instruction)
+ *   bits 7-9:   instr_type=0 (temp_addr assignment)
+ *   bits 10-16: iAssignedFrame (7-bit delivery frame number)
+ *   bits 17-20: groupbit (4-bit group slot index, 0-15)
+ */
+static uint32_t build_instruction_vector(unsigned int assign_frame, int groupbit)
+{
+    uint32_t vec = 0;
+    vec |= (1u << 4);                        /* V=001 */
+    vec |= (0u << 7);                        /* instr_type=0 (temp_addr) */
+    vec |= ((assign_frame & 0x7F) << 10);   /* 7-bit delivery frame */
+    vec |= ((groupbit & 0x0F) << 17);       /* 4-bit group slot */
+
+    /* 4-bit checksum: sum of five nibbles + bit20 = 0xF */
+    uint32_t sum = ((vec >> 4) & 0xF) + ((vec >> 8) & 0xF) +
+                   ((vec >> 12) & 0xF) + ((vec >> 16) & 0xF) + ((vec >> 20) & 0x1);
+    vec |= (0xF - (sum & 0xF)) & 0xF;
+    return flex_encode_word(vec);
+}
+
+/* Write one FLEX 1600/2FSK frame to data[bit_idx..].
+ * codewords[0..87] must be pre-built.  Returns the new bit_idx. */
+static int build_flex_frame(const uint32_t *codewords, int cycle, int frame,
+                             unsigned char *data, int bit_idx)
+{
+    int i;
+
+    /* Preamble: 960 alternating bits (01010101...) */
+    for (i = 0; i < 960; i++)
+        data[bit_idx++] = (i & 1) ? 1 : 0;
+
+    /* SYNC1: 64 bits MSB-first, inverted */
+    uint64_t sync1 = build_sync1();
+    add_bits_msb_inv(data, &bit_idx, sync1, 64);
+
+    /* Dotting before FIW: 16 bits (01010101...) */
+    for (i = 0; i < 16; i++)
+        data[bit_idx++] = (i & 1) ? 1 : 0;
+
+    /* FIW: 32 bits LSB-first */
+    add_bits_lsb(data, &bit_idx, build_fiw(cycle, frame), 32);
+
+    /* SYNC2: BS2(4) + C(16) + inv.BS2(4) + inv.C(16) */
+    for (i = 0; i < 4; i++)
+        data[bit_idx++] = (i & 1) ? 1 : 0;
+    { uint16_t c = 0xED84u; for (i = 15; i >= 0; i--) data[bit_idx++] = (c >> i) & 1; }
+    for (i = 0; i < 4; i++)
+        data[bit_idx++] = (i & 1) ? 0 : 1;
+    { uint16_t ci = 0x127Bu; for (i = 15; i >= 0; i--) data[bit_idx++] = (ci >> i) & 1; }
+
+    /* DATA: 88 codewords, block-interleaved (8 codewords/block, 11 blocks) */
+    for (int block = 0; block < 11; block++) {
+        int base_cw = block * 8;
+        for (int bit = 0; bit < 32; bit++)
+            for (int cw = 0; cw < 8; cw++)
+                data[bit_idx++] = (codewords[base_cw + cw] >> bit) & 1;
+    }
+
+    /* Trailing idle: 64 bits */
+    for (i = 0; i < 64; i++)
+        data[bit_idx++] = (i & 1) ? 1 : 0;
+
+    return bit_idx;
+}
+
 void gen_init_flex(struct gen_params *p, struct gen_state *s)
 {
-    int i, bit_idx;
+    int i;
     uint32_t codewords[FLEX_CODEWORDS_PER_PHASE];
     uint32_t msg_words[84];  /* Max 84 content words in single-phase frame */
     int num_msg_words;
-    unsigned int error_seed = 12345;  /* Seed for error injection */
-    
+    unsigned int error_seed = 12345;
+
     memset(s, 0, sizeof(struct gen_state));
-    
-    /* Initialize all codewords to idle with alternating patterns
-     * This ensures signal transitions for demodulator timing recovery.
-     * Use alternating 0xAAAAAA/0x155555 patterns instead of all-1s */
-    for (i = 0; i < FLEX_CODEWORDS_PER_PHASE; i++) {
-        if (i % 2 == 0) {
-            codewords[i] = flex_encode_word(0x0AAAAA);  /* 010101... pattern */
-        } else {
-            codewords[i] = flex_encode_word(0x155555);  /* 101010... pattern */
-        }
+
+    /* ------------------------------------------------------------------
+     * Determine how many frames we need:
+     *   group call: ceil(group_count / FLEX_ENROLL_PER_FRAME) enrollment
+     *               frames + 1 delivery frame
+     *   plain message: 1 frame
+     * ------------------------------------------------------------------ */
+    int group_count  = p->p.flex.group_count;
+    int enroll_frames = (group_count > 0)
+                        ? (group_count + FLEX_ENROLL_PER_FRAME - 1) / FLEX_ENROLL_PER_FRAME
+                        : 0;
+    int total_frames  = enroll_frames + 1;   /* +1 for message/delivery frame */
+    unsigned int total_bits = (unsigned int)total_frames * FLEX_BITS_PER_FRAME;
+
+    s->s.flex.data = (unsigned char *)malloc(total_bits);
+    if (!s->s.flex.data) {
+        fprintf(stderr, "gen_flex: out of memory\n");
+        return;
     }
-    
-    /* Encode the message
-     * When frag==3 (complete message), the decoder skips the first char position
-     * of the first content word. So we need to leave it empty (skip_first_char=1).
-     * Max 84 content words = 251 characters (2 + 83*3)
-     */
+
+    int bit_idx = 0;
+
+    /* ------------------------------------------------------------------
+     * Enrollment frames (group call only)
+     *   Each frame enrolls up to FLEX_ENROLL_PER_FRAME member capcodes
+     *   into group slot 0 using Short Instruction Vectors (V=001, type=0).
+     *   The delivery frame is always (enroll_frames % 128) in the same
+     *   cycle, ensuring it is always after the last enrollment frame.
+     * ------------------------------------------------------------------ */
+    unsigned int deliver_frame = (unsigned int)(enroll_frames % 128);
+
+    for (int ef = 0; ef < enroll_frames; ef++) {
+        /* Idle fill */
+        for (i = 0; i < FLEX_CODEWORDS_PER_PHASE; i++)
+            codewords[i] = flex_encode_word((i % 2 == 0) ? 0x0AAAAA : 0x155555);
+
+        int members_in_frame = group_count - ef * FLEX_ENROLL_PER_FRAME;
+        if (members_in_frame > FLEX_ENROLL_PER_FRAME)
+            members_in_frame = FLEX_ENROLL_PER_FRAME;
+
+        /* BIW: aoffset field encodes (desired_start - 1) because the decoder
+         * does aoffset = ((biw >> 8) & 0x3) + 1.
+         * We want addresses starting at codeword[1] (0 = BIW), so encode 0. */
+        int aoff = 0;   /* decoder reads: 0+1 = 1 → first address at codeword[1] */
+        int voff = 1 + members_in_frame;  /* vectors start right after last address */
+        codewords[0] = build_biw(voff, aoff);
+
+        for (int m = 0; m < members_in_frame; m++) {
+            int member_idx = ef * FLEX_ENROLL_PER_FRAME + m;
+            codewords[1 + m] = build_address(p->p.flex.group_capcodes[member_idx]);
+            codewords[voff + m] = build_instruction_vector(deliver_frame, /*groupbit=*/0);
+        }
+
+        bit_idx = build_flex_frame(codewords, p->p.flex.cycle,
+                                   (ef % 128), s->s.flex.data, bit_idx);
+    }
+
+    /* ------------------------------------------------------------------
+     * Message / delivery frame
+     * ------------------------------------------------------------------ */
+    for (i = 0; i < FLEX_CODEWORDS_PER_PHASE; i++)
+        codewords[i] = flex_encode_word((i % 2 == 0) ? 0x0AAAAA : 0x155555);
+
     num_msg_words = encode_message(p->p.flex.message, msg_words, 84, 1);
-    
-    /* Build frame structure:
-     * Word 0: BIW
-     * Word 1: Address
-     * Word 2: Vector
-     * Word 3+: Message data
-     */
-    int voffset = 2;  /* Vector starts at word 2 */
-    int aoffset = 0;  /* Address offset */
-    int msg_start = 3;  /* Message header at word 3, content starts at word 4 */
+
+    /* For a group call: use the group delivery address (capcode =
+     * FLEX_GROUP_ADDR_MIN + groupbit); for a plain message: use capcode. */
+    uint32_t delivery_capcode = (group_count > 0)
+                                ? (FLEX_GROUP_ADDR_MIN + 0u)  /* groupbit=0 */
+                                : p->p.flex.capcode;
+
+    int voffset = 2;
+    int aoffset = 0;
+    int msg_start = 3;
     int total_msg_words = num_msg_words + 1;  /* +1 for header word */
-    
+
     codewords[0] = build_biw(voffset, aoffset);
-    codewords[1] = build_address(p->p.flex.capcode);
+    codewords[1] = build_address(delivery_capcode);
     codewords[2] = build_vector(FLEX_PAGETYPE_ALPHANUMERIC, msg_start, total_msg_words);
-    
-    /* Message header word at msg_start:
-     *   bits 0-9:   K (10-bit fragment checksum, computed last)
-     *   bit  10:    C=0 (not continued)
-     *   bits 11-12: F=11 (complete message, frag=3)
-     *   bits 13-18: N=0 (message number)
-     *   bit  19:    R=1 (new message)
-     *   bit  20:    M=0 (no maildrop)
-     */
-    uint32_t msg_header = 0;
-    msg_header |= (3 << 11);   /* F=11 */
-    msg_header |= (0 << 13);   /* N=0 */
-    msg_header |= (1 << 19);   /* R=1 */
 
-    /* First content word (msg_start+1): bits 0-6 = signature S.
-     * Signature = 1's complement of sum of all 7-bit character slots
-     * across all content words, excluding ETX (0x03).
-     * Characters start at bits 7-13 and 14-20 of the first content word,
-     * and bits 0-6, 7-13, 14-20 of subsequent content words.
-     *
-     * The message was encoded with skip_first_char=1, so msg_words[0]
-     * has bits 0-6 empty (signature slot), chars at bits 7-13 and 14-20.
-     */
+    /* Message header: F=11 (complete), N=0, R=1, M=0, K computed below */
+    uint32_t msg_header = (3u << 11) | (1u << 19);
+
+    /* Compute message signature over content words */
     {
-        /* Compute signature from the encoded content words (same as decoder).
-         * The decoder extracts 7-bit character slots from the transmitted words
-         * and sums them, so we must do the same — NOT sum the raw input string,
-         * which may be longer than what fits in 84 content words.
-         *
-         * First content word (msg_words[0]): bits 0-6 reserved for signature,
-         *   character slots at bits 7-13 and 14-20.
-         * Subsequent words: character slots at bits 0-6, 7-13, 14-20.
-         */
-        uint32_t sig_sum = 0;
-        uint32_t ch;
-        /* First word: skip bits 0-6 (signature slot), sum bits 7-13 and 14-20 */
-        ch = (msg_words[0] >> 7) & 0x7F;
-        if (ch != 0x03) sig_sum += ch;
-        ch = (msg_words[0] >> 14) & 0x7F;
-        if (ch != 0x03) sig_sum += ch;
-        /* Remaining words: sum all three 7-bit slots */
+        uint32_t sig_sum = 0, ch;
+        ch = (msg_words[0] >> 7) & 0x7F; if (ch != 0x03) sig_sum += ch;
+        ch = (msg_words[0] >> 14) & 0x7F; if (ch != 0x03) sig_sum += ch;
         for (i = 1; i < num_msg_words; i++) {
-            ch = msg_words[i] & 0x7F;
-            if (ch != 0x03) sig_sum += ch;
-            ch = (msg_words[i] >> 7) & 0x7F;
-            if (ch != 0x03) sig_sum += ch;
-            ch = (msg_words[i] >> 14) & 0x7F;
-            if (ch != 0x03) sig_sum += ch;
+            ch = msg_words[i] & 0x7F;        if (ch != 0x03) sig_sum += ch;
+            ch = (msg_words[i] >> 7) & 0x7F; if (ch != 0x03) sig_sum += ch;
+            ch = (msg_words[i] >> 14) & 0x7F;if (ch != 0x03) sig_sum += ch;
         }
-        uint32_t sig = (~sig_sum) & 0x7F;
-        /* Store signature in bits 0-6 of first content word */
-        msg_words[0] |= sig;
+        msg_words[0] |= (~sig_sum) & 0x7F;
     }
 
-    /* Place header and content words into frame */
     codewords[msg_start] = build_message_word(msg_header);
-    for (i = 0; i < num_msg_words && (msg_start + 1 + i) < FLEX_CODEWORDS_PER_PHASE; i++) {
+    for (i = 0; i < num_msg_words && (msg_start + 1 + i) < FLEX_CODEWORDS_PER_PHASE; i++)
         codewords[msg_start + 1 + i] = build_message_word(msg_words[i]);
-    }
 
-    /* Compute K checksum (10-bit):
-     * 1's complement of binary sum of all message words (header + content)
-     * in three groups per word: bits 0-7, 8-15, 16-20.
-     * K field (bits 0-9 of header) is zeroed during computation.
-     */
+    /* Compute K checksum */
     {
         uint32_t k_sum = 0;
-        /* Header word (K field already 0) */
         k_sum += msg_header & 0xFF;
         k_sum += (msg_header >> 8) & 0xFF;
         k_sum += (msg_header >> 16) & 0x1F;
-        /* Content words */
         for (i = 0; i < num_msg_words; i++) {
             uint32_t w = msg_words[i] & 0x1FFFFF;
-            k_sum += w & 0xFF;
-            k_sum += (w >> 8) & 0xFF;
-            k_sum += (w >> 16) & 0x1F;
+            k_sum += w & 0xFF; k_sum += (w >> 8) & 0xFF; k_sum += (w >> 16) & 0x1F;
         }
-        msg_header |= (~k_sum) & 0x3FF;  /* K in bits 0-9 */
-        /* Re-encode header with K checksum */
+        msg_header |= (~k_sum) & 0x3FF;
         codewords[msg_start] = build_message_word(msg_header);
     }
-    
-    /* Inject errors if requested */
-    if (p->p.flex.errors > 0) {
-        /* Inject errors into specific codewords for testing */
-        for (i = 0; i < FLEX_CODEWORDS_PER_PHASE; i++) {
-            if (i < 10) {  /* Apply errors to first 10 codewords */
-                codewords[i] = inject_errors(codewords[i], p->p.flex.errors, &error_seed);
-            }
-        }
+
+    /* Error injection applies only to plain-message frames */
+    if (p->p.flex.errors > 0 && group_count == 0) {
+        for (i = 0; i < 10 && i < FLEX_CODEWORDS_PER_PHASE; i++)
+            codewords[i] = inject_errors(codewords[i], p->p.flex.errors, &error_seed);
     }
-    
-    /* Build the complete bitstream - one bit per byte */
-    bit_idx = 0;
-    
-    /* Preamble: alternating bits for sync detection
-     * Sync detector uses negative=1 convention, so we output inverted
-     * Original sync expects 10101010, but with positive=1 output, we need 01010101 */
-    for (i = 0; i < 960; i++) {
-        s->s.flex.data[bit_idx++] = (i & 1) ? 1 : 0;  /* Inverted: 01010101... */
-    }
-    
-    /* SYNC1: 64 bits, MSB first, inverted for sync convention */
-    uint64_t sync1 = build_sync1();
-    add_bits_msb_inv(s->s.flex.data, &bit_idx, sync1, 64);
-    
-    /* Dotting bits before FIW: 16 bits, inverted for sync convention */
-    for (i = 0; i < 16; i++) {
-        s->s.flex.data[bit_idx++] = (i & 1) ? 1 : 0;  /* Inverted: 01010101... */
-    }
-    
-    /* FIW: 32 bits, LSB first (bit 0 transmitted first)
-     * The parity table is computed to give zero syndrome after the decoder's
-     * bit reversal during BCH processing */
-    uint32_t fiw = build_fiw(p->p.flex.cycle, p->p.flex.frame);
-    if (p->p.flex.errors > 0 && p->p.flex.errors <= 2) {
-        fiw = inject_errors(fiw, p->p.flex.errors, &error_seed);
-    }
-    add_bits_lsb(s->s.flex.data, &bit_idx, fiw, 32);
-    
-    /* SYNC2: BS2(4) + C(16) + inv.BS2(4) + inv.C(16) = 40 bits at 1600/2FSK
-     * Per the FLEX standard:
-     *   C = 0xED84 (16 bits), inv.C = 0x127B
-     *   BS2 = alternating dotting (4 bits) */
-    /* BS2: 4 bits dotting */
-    for (i = 0; i < 4; i++) {
-        s->s.flex.data[bit_idx++] = (i & 1) ? 1 : 0;
-    }
-    /* C pattern: 16 bits MSB first */
-    {
-        uint16_t c_pat = 0xED84u;
-        for (i = 15; i >= 0; i--) {
-            s->s.flex.data[bit_idx++] = (c_pat >> i) & 1;
-        }
-    }
-    /* inv.BS2: 4 bits dotting inverted */
-    for (i = 0; i < 4; i++) {
-        s->s.flex.data[bit_idx++] = (i & 1) ? 0 : 1;
-    }
-    /* inv.C pattern: 16 bits MSB first */
-    {
-        uint16_t cinv_pat = 0x127Bu;
-        for (i = 15; i >= 0; i--) {
-            s->s.flex.data[bit_idx++] = (cinv_pat >> i) & 1;
-        }
-    }
-    
-    /* DATA: 88 codewords, interleaved transmission
-     * FLEX uses block interleaving: 8 codewords per block, 11 blocks total
-     * For each block: transmit bit 0 of all 8 codewords, then bit 1, etc.
-     * This provides burst error protection across adjacent codewords.
-     */
-    for (int block = 0; block < 11; block++) {
-        int base_cw = block * 8;
-        for (int bit = 0; bit < 32; bit++) {
-            for (int cw_in_block = 0; cw_in_block < 8; cw_in_block++) {
-                int cw = base_cw + cw_in_block;
-                int tx_bit = (codewords[cw] >> bit) & 1;
-                s->s.flex.data[bit_idx++] = tx_bit;
-            }
-        }
-    }
-    
-    /* Add some trailing idle bits to ensure decoder triggers decode_data */
-    for (i = 0; i < 64; i++) {
-        s->s.flex.data[bit_idx++] = (i & 1) ? 1 : 0;
-    }
-    
-    s->s.flex.datalen = bit_idx;
+
+    int delivery_frame_no = (group_count > 0) ? (int)deliver_frame : p->p.flex.frame;
+    bit_idx = build_flex_frame(codewords, p->p.flex.cycle,
+                               delivery_frame_no, s->s.flex.data, bit_idx);
+
+    s->s.flex.datalen = (unsigned int)bit_idx;
 }
 
 int gen_flex(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s)
 {
     int num = 0;
-    
-    if (!s || s->s.flex.bit_idx >= (int)s->s.flex.datalen)
+
+    if (!s || !s->s.flex.data || s->s.flex.bit_idx >= (int)s->s.flex.datalen)
         return 0;
-    
+
     for (; buflen > 0; buflen--, buf++, num++) {
-        /* Advance bit timing at 1600 baud */
         s->s.flex.bitph += (unsigned int)(0x10000 * FLEX_BAUD / SAMPLE_RATE);
-        
+
         if (s->s.flex.bitph >= 0x10000u) {
             s->s.flex.bitph &= 0xFFFFu;
             s->s.flex.bit_idx++;
             if (s->s.flex.bit_idx >= (int)s->s.flex.datalen)
                 return num;
         }
-        
-        /* Output baseband signal:
-         * bit=1 -> positive amplitude -> decoder sees logic 1
-         * bit=0 -> negative amplitude -> decoder sees logic 0 */
+
         int bit = s->s.flex.data[s->s.flex.bit_idx];
         *buf += bit ? p->ampl : -p->ampl;
     }
-    
+
     return num;
 }

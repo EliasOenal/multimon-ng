@@ -162,9 +162,55 @@ extern int json_mode;
 #define FLEX_GROUP_ADDR_MIN  2029568
 #define FLEX_GROUP_ADDR_MAX  2029583
 #define GROUP_BITS           (FLEX_GROUP_ADDR_MAX - FLEX_GROUP_ADDR_MIN + 1) // Centralized maximum of group msg cache
-#define GROUP_CODE_COUNT     1000
-#define GROUP_MAX_CODES      (GROUP_CODE_COUNT - 1)
 #define PHASE_WORDS          88            // per spec, there are 88 4B words per frame
+
+/* ----------------------------------------------------------------------
+ * Group-call member ceiling, derived from the FLEX standard (RCR STD-43A),
+ * NOT an arbitrary constant.
+ *
+ * A dynamic group call (ARIB STD-43A section 5.7) is built by enrolling
+ * pagers one at a time via a Short Instruction Vector that assigns a
+ * Temporary Address (section 3.9.6).  The standard sets no fixed group-size
+ * limit, so the real worst case is the maximum number of enrollments the
+ * protocol can physically transmit into the window that keeps a pending
+ * group alive.  That window is bounded by the fragment/segment timeout of
+ * one Cycle = 128 frames (section 5.6 / FLEX_FRAG_TIMEOUT below).
+ *
+ *   enrollment window  = 128 frames (1 Cycle)            [sec. 3.1.1 / 5.6]
+ *   phases per frame   = 4   (A/B/C/D @ 6400 bps)        [sec. 3.1.1]
+ *   usable words/phase = PHASE_WORDS - 1 (one BIW)       [sec. 3.4.1 Fig 3.4.1-1]
+ *   words/enrollment   = 2   (1 Address Word + 1 Vector  [sec. 3.4.1 Fig 3.4.1-2,
+ *                             Word; AF/VF keep a 1:1 pair) sec. 3.9.6 / 5.7]
+ *   enrollments/phase  = (PHASE_WORDS - 1) / 2 = 43
+ *
+ *   MAX members = 128 * 4 * 43 = 22016
+ *
+ * Cycle rollover does NOT raise this: iAssignedFrame is a 7-bit in-Cycle
+ * frame number (0-127) and a slot not delivered/reused within 128 frames is
+ * torn down (fragment-timeout age check).  An enrollment burst that straddles
+ * a Cycle boundary still spans <= 128 frames in total -- the window slides,
+ * it does not accumulate across Cycles -- so 128 frames is the whole horizon.
+ * ---------------------------------------------------------------------- */
+#define FLEX_FRAME_WINDOW     128                                  /* frames in 1 Cycle (sec. 3.1.1 / 5.6) */
+#define FLEX_PHASES_PER_FRAME 4                                    /* A/B/C/D @ 6400 bps (sec. 3.1.1) */
+#define FLEX_WORDS_PER_ENROLL 2                                    /* 1 Address Word + 1 Vector Word (sec. 3.4.1) */
+#define FLEX_ENROLL_PER_PHASE ((PHASE_WORDS - 1) / FLEX_WORDS_PER_ENROLL)  /* = 43 */
+/* Physical worst-case group membership permitted by the FLEX protocol. */
+#define GROUP_MAX_CODES      (FLEX_FRAME_WINDOW * FLEX_PHASES_PER_FRAME * FLEX_ENROLL_PER_PHASE) /* = 22016 */
+/* Member capcodes live at indices 1..count; index 0 (CAPCODES_INDEX) holds the count. */
+#define GROUP_CODE_COUNT     (GROUP_MAX_CODES + 1)
+
+/* Max capcode = 4,297,068,542 (10 digits, hard-checked in decode).  The piped
+ * capcode field is "<group-addr> member1 member2 ..." -- the leading group
+ * address (10 digits) followed by up to GROUP_MAX_CODES members, each " " + 10
+ * digits, plus a terminating NUL.  Total tokens = 1 + GROUP_MAX_CODES.  Sized
+ * for the full protocol ceiling so every accepted member is always emitted;
+ * never truncated.  (~242 KB; heap-allocated, never on the stack.) */
+#define FLEX_CAPCODE_DIGITS  10
+#define GROUP_FIELD_MAX      (FLEX_CAPCODE_DIGITS + GROUP_MAX_CODES * (FLEX_CAPCODE_DIGITS + 1) + 1)
+/* line_prefix holds the capcode field plus the fixed "FLEX_NEXT|ts|baud|..|addr"
+ * header; 256 bytes of headroom covers the fixed fields with margin. */
+#define LINE_PREFIX_MAX      (GROUP_FIELD_MAX + 256)
 
 // S2 C-pattern per ARIB STD-43A Table 3.2-6
 // S2 = BS2 + C(16 bits) + inv.BS2 + inv.C(16 bits)
@@ -218,7 +264,14 @@ struct Flex_Demodulator {
 };
 
 struct Flex_GroupHandler {
-  int64_t                     GroupCodes[GROUP_BITS][GROUP_CODE_COUNT];
+  /* Per-slot member capcode storage, grown on demand (see flex_group_ensure).
+   * codes[g] is NULL until the slot's first enrollment; codes[g][CAPCODES_INDEX]
+   * holds the member count, members occupy indices 1..count.  cap[g] is the
+   * number of int64_t slots currently allocated for codes[g].  Sized on demand
+   * up to GROUP_CODE_COUNT (= GROUP_MAX_CODES + 1, the FLEX protocol ceiling),
+   * so a typical ~100-member group uses ~1 KB and an idle decoder uses none. */
+  int64_t                    *GroupCodes[GROUP_BITS];
+  int                         GroupCap[GROUP_BITS];        // allocated int64_t slots in GroupCodes[g]
   int                         GroupCycle[GROUP_BITS];
   int                         GroupFrame[GROUP_BITS];
   int                         GroupDelivering[GROUP_BITS]; // 1 = delivery in progress (fragments)
@@ -882,13 +935,100 @@ struct Flex_Next {
   char                        last_flextime[80];   // Last emitted FLEXTIME (change detection)
   /* Piped output line prefix, built by main loop before calling parse functions.
    * Format: "FLEX_NEXT|timestamp|baud/levels|cycle.frame.phase|capcodes|addr"
-   * Parse functions append "|TYPE|flags|message\n" to form a complete line. */
-  char                        line_prefix[1200];
+   * Parse functions append "|TYPE|flags|message\n" to form a complete line.
+   * Heap-allocated (LINE_PREFIX_MAX) so a full-size group capcode list fits
+   * without truncation; allocated in Flex_New, freed in Flex_Delete. */
+  char                       *line_prefix;
+  char                       *cap_field;           // Heap scratch for the capcode field (GROUP_FIELD_MAX)
+  /* Snapshot of the current group call's member capcodes, captured when the
+   * group message is identified (before parse dispatch and teardown).  Both
+   * the text and JSON output paths read members from here, so they always
+   * agree even if the live GroupHandler store is reset during delivery. */
+  int64_t                    *grp_snapshot;        // members at [0..grp_snapshot_count-1]
+  int                         grp_snapshot_cap;     // allocated int64_t slots
+  int                         grp_snapshot_count;   // members captured for the current message
   const char                 *line_type_tag;       // Current message type tag for piped output
 };
 
+/* Ensure GroupCodes[groupbit] has room for at least `need` int64_t slots
+ * (index 0 for the count plus the member indices).  Grows geometrically,
+ * capped at GROUP_CODE_COUNT (the FLEX protocol ceiling).  Newly allocated
+ * slots are zeroed, so the count at index 0 is preserved/initialised to 0 on
+ * first allocation.  Returns 1 on success, 0 if allocation failed or `need`
+ * exceeds the protocol ceiling. */
+static int flex_group_ensure(struct Flex_GroupHandler *handler, int groupbit, int need) {
+  if (handler==NULL || groupbit < 0 || groupbit >= GROUP_BITS) return 0;
+  if (need > GROUP_CODE_COUNT) return 0;
+  if (need < 1) need = 1;                       /* always room for the count slot */
+  if (handler->GroupCodes[groupbit] != NULL && handler->GroupCap[groupbit] >= need)
+    return 1;
+
+  int newcap = handler->GroupCap[groupbit] > 0 ? handler->GroupCap[groupbit] : 16;
+  while (newcap < need) {
+    if (newcap > GROUP_CODE_COUNT / 2) { newcap = GROUP_CODE_COUNT; break; }
+    newcap *= 2;
+  }
+  if (newcap > GROUP_CODE_COUNT) newcap = GROUP_CODE_COUNT;
+
+  int64_t *grown = (int64_t *)realloc(handler->GroupCodes[groupbit],
+                                      (size_t)newcap * sizeof(int64_t));
+  if (grown == NULL) return 0;                  /* keep old buffer intact on failure */
+
+  /* Zero the freshly added tail (and the whole buffer on first allocation). */
+  int oldcap = handler->GroupCap[groupbit];
+  if (oldcap < 0) oldcap = 0;
+  memset(grown + oldcap, 0, (size_t)(newcap - oldcap) * sizeof(int64_t));
+
+  handler->GroupCodes[groupbit] = grown;
+  handler->GroupCap[groupbit] = newcap;
+  return 1;
+}
+
+/* Reset a group slot's member count without freeing its buffer (the buffer is
+ * retained for reuse by the next group assigned to this slot). */
+static void flex_group_reset(struct Flex_GroupHandler *handler, int groupbit) {
+  if (handler==NULL || groupbit < 0 || groupbit >= GROUP_BITS) return;
+  if (handler->GroupCodes[groupbit] != NULL)
+    handler->GroupCodes[groupbit][CAPCODES_INDEX] = 0;
+}
+
+/* Free all per-slot group buffers (called from Flex_Delete). */
+static void flex_group_free_all(struct Flex_GroupHandler *handler) {
+  if (handler==NULL) return;
+  for (int g = 0; g < GROUP_BITS; g++) {
+    free(handler->GroupCodes[g]);
+    handler->GroupCodes[g] = NULL;
+    handler->GroupCap[g] = 0;
+  }
+}
+
+/* Capture the current group call's member capcodes into flex->grp_snapshot so
+ * BOTH output paths render the identical member list regardless of when the
+ * live GroupHandler store is reset during delivery.  Call when a group message
+ * is identified, before parse dispatch.  A non-group message clears the count. */
+static int flex_group_endpoint(struct Flex_GroupHandler *handler, int groupbit);
+static void flex_group_snapshot(struct Flex_Next *flex, int is_group, int groupbit) {
+  if (flex == NULL) return;
+  flex->grp_snapshot_count = 0;
+  if (!is_group || groupbit < 0 || groupbit >= GROUP_BITS) return;
+  int n = flex_group_endpoint(&flex->GroupHandler, groupbit);
+  if (n <= 0) return;
+  if (flex->grp_snapshot_cap < n) {
+    int64_t *grown = (int64_t *)realloc(flex->grp_snapshot, (size_t)n * sizeof(int64_t));
+    if (grown == NULL) return;              /* leave count 0 on OOM */
+    flex->grp_snapshot = grown;
+    flex->grp_snapshot_cap = n;
+  }
+  int64_t *codes = flex->GroupHandler.GroupCodes[groupbit];
+  if (codes == NULL) return;
+  for (int i = 0; i < n; i++)
+    flex->grp_snapshot[i] = codes[i + 1];   /* members live at indices 1..n */
+  flex->grp_snapshot_count = n;
+}
+
 static int flex_group_endpoint(struct Flex_GroupHandler *handler, int groupbit) {
   if (handler==NULL || groupbit < 0 || groupbit >= GROUP_BITS) return 0;
+  if (handler->GroupCodes[groupbit] == NULL) return 0;
 
   int endpoint = handler->GroupCodes[groupbit][CAPCODES_INDEX];
   if (endpoint < 0) return 0;
@@ -1418,7 +1558,7 @@ static int decode_fiw(struct Flex_Next * flex) {
             flex->GroupHandler.GroupTimeoutCount[g]++;
             if (flex->GroupHandler.GroupTimeoutCount[g] >= 2) {
               verbprintf(3, "FLEX_NEXT: Group %d fragment delivery timeout (age=%u frames)\n", g, age);
-              flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX] = 0;
+              flex_group_reset(&flex->GroupHandler, g);
               flex->GroupHandler.GroupFrame[g] = -1;
               flex->GroupHandler.GroupCycle[g] = -1;
               flex->GroupHandler.GroupDelivering[g] = 0;
@@ -1490,7 +1630,7 @@ static int decode_fiw(struct Flex_Next * flex) {
                                         }
 
                       // reset the value
-                      flex->GroupHandler.GroupCodes[g][CAPCODES_INDEX] = 0;
+                      flex_group_reset(&flex->GroupHandler, g);
                       flex->GroupHandler.GroupFrame[g] = -1;
                       flex->GroupHandler.GroupCycle[g] = -1;
                       flex->GroupHandler.GroupDelivering[g] = 0;
@@ -2069,7 +2209,9 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                                 flex->Decode.addr_type, flex_groupmessage, flex->Decode.type,
                                 "ALN", is_initial ? "fragment_start" : "fragment_mid",
                                 msg_n, out_r, out_m, k_fail ? 0 : -1, -1,
-                                (const char *)message, NULL, 0, extra);
+                                (const char *)message,
+                                (flex_groupmessage && flex->grp_snapshot_count > 0) ? flex->grp_snapshot : NULL,
+                                flex_groupmessage ? flex->grp_snapshot_count : 0, extra);
           }
           // Debug logging AFTER the level-0 line is complete
           if (is_initial)
@@ -2148,8 +2290,8 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                                   msg_n, out_r, out_m,
                                   combined_k_fail ? 0 : 1, reassembled_sig_fail ? 0 : 1,
                                   reassembled,
-                                  flex_groupmessage ? &flex->GroupHandler.GroupCodes[flex_groupbit][1] : NULL,
-                                  flex_groupmessage ? (int)flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] : 0, extra);
+                                  (flex_groupmessage && flex->grp_snapshot_count > 0) ? flex->grp_snapshot : NULL,
+                                  flex_groupmessage ? flex->grp_snapshot_count : 0, extra);
             }
             // Debug logging AFTER level-0 line
             verbprintf(3, "FLEX_NEXT: Reassembled %u + %d bytes for cap %" PRId64 "\n",
@@ -2157,7 +2299,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
             frag_release(flex, slot);
             if (!json_mode) goto group_output;
             if (flex_groupmessage) {
-              flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
+              flex_group_reset(&flex->GroupHandler, flex_groupbit);
               flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
               flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
               flex->GroupHandler.GroupDelivering[flex_groupbit] = 0;
@@ -2172,11 +2314,13 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                                 flex->Decode.addr_type, flex_groupmessage, flex->Decode.type,
                                 "ALN", "fragment_end",
                                 msg_n, -1, -1, k_fail ? 0 : -1, -1,
-                                (const char *)message, NULL, 0, NULL);
+                                (const char *)message,
+                                (flex_groupmessage && flex->grp_snapshot_count > 0) ? flex->grp_snapshot : NULL,
+                                flex_groupmessage ? flex->grp_snapshot_count : 0, NULL);
           }
           if (!json_mode) goto group_output;
           if (flex_groupmessage) {
-            flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
+            flex_group_reset(&flex->GroupHandler, flex_groupbit);
             flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
             flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
             flex->GroupHandler.GroupDelivering[flex_groupbit] = 0;
@@ -2198,8 +2342,8 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                               msg_n, msg_r, msg_m,
                               k_fail ? 0 : 1, sig_fail ? 0 : 1,
                               (const char *)message,
-                              flex_groupmessage ? &flex->GroupHandler.GroupCodes[flex_groupbit][1] : NULL,
-                              flex_groupmessage ? (int)flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] : 0, NULL);
+                              (flex_groupmessage && flex->grp_snapshot_count > 0) ? flex->grp_snapshot : NULL,
+                              flex_groupmessage ? flex->grp_snapshot_count : 0, NULL);
         }
 
 group_output:
@@ -2214,7 +2358,7 @@ group_output:
                 }
 
                 // reset the value
-                flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
+                flex_group_reset(&flex->GroupHandler, flex_groupbit);
                 flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
                 flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
                 flex->GroupHandler.GroupDelivering[flex_groupbit] = 0;
@@ -3634,7 +3778,7 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                       verbprintf(3, "FLEX_NEXT: Group slot %d reused (old frame=%d new frame=%u delivering=%d), tearing down\n",
                                  groupbit, flex->GroupHandler.GroupFrame[groupbit], iAssignedFrame,
                                  flex->GroupHandler.GroupDelivering[groupbit]);
-                      flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
+                      flex_group_reset(&flex->GroupHandler, groupbit);
                       flex->GroupHandler.GroupFrame[groupbit] = -1;
                       flex->GroupHandler.GroupCycle[groupbit] = -1;
                       flex->GroupHandler.GroupDelivering[groupbit] = 0;
@@ -3648,8 +3792,20 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                       continue;
                     }
 
-                    if(flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] >= GROUP_MAX_CODES) {
-                      verbprintf(3, "FLEX_NEXT: Too many capcodes for group bit: %i\n", groupbit);
+                    /* Current member count (0 if slot never allocated). */
+                    int cur_count = (flex->GroupHandler.GroupCodes[groupbit] != NULL)
+                                    ? (int)flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]
+                                    : 0;
+                    if(cur_count >= GROUP_MAX_CODES) {
+                      verbprintf(3, "FLEX_NEXT: Too many capcodes for group bit: %i (at protocol max %i)\n", groupbit, GROUP_MAX_CODES);
+                      vec_used += flex->Decode.long_address ? 2 : 1;
+                      if (flex->Decode.long_address) i++;
+                      continue;
+                    }
+
+                    /* Grow storage to hold the new member (index cur_count+1). */
+                    if(!flex_group_ensure(&flex->GroupHandler, groupbit, cur_count + 2)) {
+                      verbprintf(3, "FLEX_NEXT: Group capcode storage allocation failed for group bit: %i\n", groupbit);
                       vec_used += flex->Decode.long_address ? 2 : 1;
                       if (flex->Decode.long_address) i++;
                       continue;
@@ -3888,36 +4044,46 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       }
     }
 
+    /* Snapshot the group members ONCE, before parse dispatch and teardown, so
+     * text and JSON render the identical list even if the store is reset mid-
+     * delivery.  Runs in both modes. */
+    flex_group_snapshot(flex, flex_groupmessage == 1, flex_groupbit);
+
     if (!json_mode) {
       char flex_ts[32];
       flex_local_timestamp(flex_ts, sizeof(flex_ts));
-      // Build group member capcodes for the capcode field (space-separated)
-      // per FLEX output format: capcode member1 member2|...
-      char cap_field[1024];
-      int cap_pos = snprintf(cap_field, sizeof(cap_field), "%010" PRId64, flex->Decode.capcode);
-      if (flex_groupmessage == 1) {
-        int endpoint = flex_group_endpoint(&flex->GroupHandler, flex_groupbit);
-        for (int g = 1; g <= endpoint; g++) {
-          if (cap_pos >= (int)sizeof(cap_field) - 1)
-            break;
-          size_t cap_rem = sizeof(cap_field) - (size_t)cap_pos;
-          int wrote = snprintf(cap_field + cap_pos, cap_rem, " %010" PRId64,
-                               flex->GroupHandler.GroupCodes[flex_groupbit][g]);
-          if (wrote < 0 || (size_t)wrote >= cap_rem) {
-            cap_pos = (int)sizeof(cap_field) - 1;
-            break;
+      /* Build the capcode field "capcode member1 member2 ..." directly into a
+       * heap scratch buffer sized for the full FLEX protocol ceiling.  Every
+       * accepted group member is emitted -- no truncation.  The separator is a
+       * prefix on members 2..N, so the field never ends in a trailing space. */
+      if (flex->cap_field == NULL)
+        flex->cap_field = (char *)malloc(GROUP_FIELD_MAX);
+      if (flex->line_prefix == NULL)
+        flex->line_prefix = (char *)malloc(LINE_PREFIX_MAX);
+      if (flex->cap_field != NULL && flex->line_prefix != NULL) {
+        char *cap_field = flex->cap_field;
+        int cap_pos = snprintf(cap_field, GROUP_FIELD_MAX, "%010" PRId64, flex->Decode.capcode);
+        if (cap_pos < 0) cap_pos = 0;
+        if (flex_groupmessage == 1) {
+          for (int g = 0; g < flex->grp_snapshot_count; g++) {
+            size_t cap_rem = (size_t)GROUP_FIELD_MAX - (size_t)cap_pos;
+            int wrote = snprintf(cap_field + cap_pos, cap_rem, " %010" PRId64, flex->grp_snapshot[g]);
+            /* Buffer is sized to the protocol max, so this can never overflow;
+             * the guard is defensive only. */
+            if (wrote < 0 || (size_t)wrote >= cap_rem)
+              break;
+            cap_pos += wrote;
           }
-          cap_pos += wrote;
         }
+        // Build line prefix for atomic output by parse functions
+        snprintf(flex->line_prefix, LINE_PREFIX_MAX,
+                 "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|%s|%c",
+                 flex_ts,
+                 flex->Sync.baud, flex->Sync.levels,
+                 flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
+                 cap_field,
+                 flex->Decode.addr_type);
       }
-      // Build line prefix into flex->line_prefix for atomic output by parse functions
-      snprintf(flex->line_prefix, sizeof(flex->line_prefix),
-               "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|%s|%c",
-               flex_ts,
-               flex->Sync.baud, flex->Sync.levels,
-               flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
-               cap_field,
-               flex->Decode.addr_type);
     }
 
     // Special address handling per ARIB STD-43A Section 3.8.2.
@@ -4059,7 +4225,10 @@ page_done:
         if (!json_mode) {
           char flex_ts[32];
           flex_local_timestamp(flex_ts, sizeof(flex_ts));
-          snprintf(flex->line_prefix, sizeof(flex->line_prefix),
+          if (flex->line_prefix == NULL)
+            flex->line_prefix = (char *)malloc(LINE_PREFIX_MAX);
+          if (flex->line_prefix != NULL)
+          snprintf(flex->line_prefix, LINE_PREFIX_MAX,
                    "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|SysMsg_A%d|",
                    flex_ts,
                    flex->Sync.baud, flex->Sync.levels,
@@ -4874,6 +5043,10 @@ static void Flex_Demodulate(struct Flex_Next * flex, double sample) {
 
 static void Flex_Delete(struct Flex_Next * flex) {
   if (flex==NULL) return;
+  flex_group_free_all(&flex->GroupHandler);
+  free(flex->line_prefix);
+  free(flex->cap_field);
+  free(flex->grp_snapshot);
   free(flex);
 }
 
@@ -4890,6 +5063,20 @@ static struct Flex_Next * Flex_New(unsigned int SampleFrequency) {
 
     /* Initialize BCH tables (does nothing if already initialized) */
     bch_init();
+
+    /* Heap scratch for piped-output formatting, sized to the FLEX protocol
+     * ceiling so a maximal group capcode list is emitted without truncation.
+     * These buffers are used unsafely in many verbprintf paths, so treat
+     * allocation failure as fatal: free the struct and return NULL so the
+     * caller propagates the error instead of operating with a NULL pointer. */
+    flex->line_prefix = (char *)malloc(LINE_PREFIX_MAX);
+    flex->cap_field   = (char *)malloc(GROUP_FIELD_MAX);
+    if (!flex->line_prefix || !flex->cap_field) {
+      free(flex->line_prefix);
+      free(flex->cap_field);
+      free(flex);
+      return NULL;
+    }
 
     for(int g = 0; g < GROUP_BITS; g++)
     {
