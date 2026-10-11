@@ -226,6 +226,18 @@ struct demod_state {
             int timeout;
         } selcall;
 
+        struct l1_state_dualtone {
+            float window[2205];     /* 100 ms coarse sliding window @22050 Hz */
+            float window_long[22050]; /* 1 s ring for the fine frequency check */
+            double coeff[3][3];      /* Goertzel coefficients (3 tones × band bins) */
+            unsigned int wpos;      /* oldest sample within the coarse window */
+            unsigned int wpos_long; /* oldest sample within the long window */
+            unsigned int hopcount;  /* samples since last window analysis */
+            unsigned int consec;    /* consecutive windows with the same pair */
+            int pair;               /* currently detected dualtone pair */
+            int triggered;          /* once-only trigger per dualtone */
+        } dualtone;
+
         struct l1_state_morse {
             uint64_t current_sequence;
             int_fast16_t threshold_ctr;
@@ -313,6 +325,8 @@ extern const struct demod_param demod_fsk9600;
 
 extern const struct demod_param demod_dtmf;
 
+extern const struct demod_param demod_dualtone;
+
 extern const struct demod_param demod_zvei1;
 extern const struct demod_param demod_zvei2;
 extern const struct demod_param demod_zvei3;
@@ -348,7 +362,7 @@ extern const struct demod_param demod_sdl_scope;
 
 #define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_flex, &demod_flex_next, &demod_gsc, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
     &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
-    &demod_fsk9600, &demod_dtmf, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
+    &demod_fsk9600, &demod_dtmf, &demod_dualtone, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
     &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD SDL_SCOPE_DEMOD
 
 
