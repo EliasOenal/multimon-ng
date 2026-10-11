@@ -59,7 +59,55 @@ static const unsigned int dtmf_phinc[8] = {
 	PHINC(697), PHINC(770), PHINC(852), PHINC(941)
 };
 
-extern int json_mode;
+
+/* ---------------------------------------------------------------------- */
+
+/* One decoded DTMF digit.  Populated at the call site in dtmf_demod() and
+ * consumed by dtmf_emit(). */
+typedef struct {
+    char digit;             /* decoded DTMF digit */
+    const char *demod_name; /* always "DTMF" */
+} DtmfFrame;
+
+/* Text output for one DTMF digit.  Called by dtmf_emit() when no JSON mode
+ * is active. */
+static void dtmf_text_emit(const DtmfFrame *f)
+{
+    verbprintf(0, "%s: %c\n", f->demod_name, f->digit);
+}
+
+/* Single dispatch point for all DTMF output.  The call site builds a
+ * DtmfFrame and calls this. */
+static void dtmf_emit(const DtmfFrame *f)
+{
+    char digit[2] = { f->digit, '\0' };
+
+    if (json_format == JSON_FORMAT_NONE) {
+        dtmf_text_emit(f);
+        return;
+    }
+
+    if (json_format == JSON_FORMAT_UNIFIED) {
+        cJSON *v1 = json_new(f->demod_name, "dtmf", "message", "dtmf");
+        if (v1) {
+            json_set_capcode(v1, -1, NULL);
+            json_set_message(v1, digit);
+            /* encodings stays [] (no wire byte buffer) */
+            json_emit(v1);
+        }
+        return;
+    }
+
+    /* Legacy JSON */
+    {
+        cJSON *json_output = cJSON_CreateObject();
+        cJSON_AddStringToObject(json_output, "demod_name", f->demod_name);
+        cJSON_AddStringToObject(json_output, "digit", digit);
+        addJsonTimestamp(json_output);
+        printJson(json_output);
+        cJSON_Delete(json_output);
+    }
+}
 
 /* ---------------------------------------------------------------------- */
 	
@@ -148,18 +196,10 @@ static void dtmf_demod(struct demod_state *s, buffer_t buffer, int length)
 			s->l1.dtmf.blkcount = BLOCKLEN;
 			i = process_block(s);
 			if (i != s->l1.dtmf.lastch && i >= 0) {
-				if (!json_mode) {
-					verbprintf(0, "DTMF: %c\n", dtmf_transl[i]);
-				}
-				else {
-					cJSON *json_output = cJSON_CreateObject();
-					cJSON_AddStringToObject(json_output, "demod_name", "DTMF");
-					char digit[2] = {dtmf_transl[i], '\0'};
-					cJSON_AddStringToObject(json_output, "digit", digit);
-					addJsonTimestamp(json_output);
-					printJson(json_output);
-					cJSON_Delete(json_output);
-				}
+				DtmfFrame f;
+				f.digit = dtmf_transl[i];
+				f.demod_name = "DTMF";
+				dtmf_emit(&f);
 			}
 			s->l1.dtmf.lastch = i;
 		}

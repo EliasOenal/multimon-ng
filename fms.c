@@ -22,6 +22,7 @@
 
 #include "multimon.h"
 #include <string.h>
+#include <stdio.h>
 
 /* ---------------------------------------------------------------------- */
 
@@ -248,66 +249,239 @@ static char fms_is_crc_correct(uint64_t message)
     return 1;
 }
 
+/* Return the service (BOS-Kennung) label for a service_id, trimmed of trailing
+ * whitespace.  Mirrors the switch in fms_disp_service_id(). */
+static const char *fms_service_label(uint8_t service_id)
+{
+    switch (service_id)
+    {
+        case 0x0: return "UNKNOWN";
+        case 0x1: return "POLIZEI";
+        case 0x2: return "BGS";
+        case 0x3: return "BKA";
+        case 0x4: return "KatS";
+        case 0x5: return "ZOLL";
+        case 0x6: return "Feuerwehr";
+        case 0x7: return "THW";
+        case 0x8: return "ASB";
+        case 0x9: return "Rotkreuz";
+        case 0xa: return "Johanniter";
+        case 0xb: return "Malteser";
+        case 0xc: return "DLRG";
+        case 0xd: return "Rettungsdienst";
+        case 0xe: return "ZivilSchutz";
+        case 0xf: return "FernWirk";
+        default:  return NULL;
+    }
+}
+
+/* Return the state (Landeskennung) label for a state_id, trimmed of trailing
+ * whitespace.  Mirrors the switch in fms_disp_state_id(), including the
+ * loc_id-dependent cases 0xe/0xf. */
+static const char *fms_state_label(uint8_t state_id, uint8_t loc_id)
+{
+    switch (state_id)
+    {
+        case 0x0: return "Sachsen";
+        case 0x1: return "Bund";
+        case 0x2: return "Baden-Wurtemberg";
+        case 0x3: return "Bayern 1";
+        case 0x4: return "Berlin";
+        case 0x5: return "Bremen";
+        case 0x6: return "Hamburg";
+        case 0x7: return "Hessen";
+        case 0x8: return "Niedersachsen";
+        case 0x9: return "Nordrhein-Wesfal";
+        case 0xa: return "Rheinland-Pfalz";
+        case 0xb: return "Schleswig-Holste";
+        case 0xc: return "Saarland";
+        case 0xd: return "Bayern 2";
+        case 0xe: return (loc_id < 50) ? "Meckl-Vorpommern" : "Sachsen-Anhalt";
+        case 0xf: return (loc_id < 50) ? "Brandenburg" : "Thuringen";
+        default:  return NULL;
+    }
+}
+
+/* Return the status (vehicle-state) label for an FMS status nibble.
+ * direction=0: FZG->LST messages, direction=1: LST->FZG messages.
+ * Mirrors the text in fms_disp_state() but returns a string for JSON use. */
+static const char *fms_status_label(uint8_t status, uint8_t direction)
+{
+    if (direction == 0) {
+        switch (status) {
+            case 0x0: return "Notfall";
+            case 0x1: return "Einbuchen";
+            case 0x2: return "Bereit Wache";
+            case 0x3: return "Einsatz Ab";
+            case 0x4: return "Am EinsatzZiel";
+            case 0x5: return "Sprechwunsch";
+            case 0x6: return "Nicht Bereit";
+            case 0x7: return "Patient aufgen";
+            case 0x8: return "Am TranspZiel";
+            case 0x9: return "Arzt Aufgenomm";
+            case 0xa: return "Vorbertg Folge";
+            case 0xb: return "Beendig Folge";
+            case 0xc: return "Sonder 1";
+            case 0xd: return "Sonder 2";
+            case 0xe: return "AutomatQuittun";
+            case 0xf: return "Sprechtaste";
+            default:  return NULL;
+        }
+    } else {
+        switch (status) {
+            case 0x0: return "StatusAbfrage";
+            case 0x1: return "SammelRuf";
+            case 0x2: return "Einrucken/Abbr";
+            case 0x3: return "Ubernahme";
+            case 0x4: return "Kommen Draht";
+            case 0x5: return "Fahre Wache";
+            case 0x6: return "Sprechaufford";
+            case 0x7: return "Lagemeldung";
+            case 0x8: return "FernWirk 1";
+            case 0x9: return "FernWirk 2";
+            case 0xa: return "Vorbertg TXT";
+            case 0xb: return "Beendig TXT";
+            case 0xc: return "KurzTXT C";
+            case 0xd: return "KurzTXT D";
+            case 0xe: return "KurzTXT E";
+            case 0xf: return "AutomatQuittun";
+            default:  return NULL;
+        }
+    }
+}
+
+/* All decoded fields of one FMS telegram.
+ * Populated by fms_decode() and consumed by both the text and JSON paths,
+ * ensuring a single point of bit-extraction for every field. */
+typedef struct {
+    char        raw_hex[13];      /* "%08x%04x" of the 12 significant bytes */
+    uint8_t     service_id;       /* BOS-Kennung (4 bits) */
+    const char *service;          /* fms_service_label() result */
+    uint8_t     state_id;         /* Landeskennung (4 bits) */
+    const char *state_name;       /* fms_state_label() result */
+    uint8_t     loc_id;           /* Ortskennung (8 bits) */
+    uint16_t    vehicle_id;       /* Fahrzeugkennung (16 bits) */
+    char        vehicle_hex[5];   /* "%04x" of vehicle_id */
+    uint8_t     status;           /* Status/Betriebszustand (4 bits, bits 48-51) */
+    uint8_t     direction;        /* Richtungskennung (1 bit) */
+    const char *status_text;      /* fms_status_label() result */
+    uint8_t     short_info;       /* taktische Kurzinformation (2 bits) */
+    int8_t      crc_ok;           /* 1 = CRC correct */
+    int8_t      crc_swapped;      /* 1 = correct after 1-bit swap */
+} FmsFrame;
+
+/* Decode one FMS telegram into an FmsFrame.  All bit extraction happens here;
+ * neither the text path nor the JSON path should touch the raw bits directly. */
+static void fms_decode(uint64_t message, FmsFrame *fr)
+{
+    fr->service_id = (message >> 16) & 0xF;
+    fr->state_id   = (message >> 20) & 0xF;
+    fr->loc_id     = (message >> 24) & 0xFF;
+    fr->vehicle_id = (message >> 32) & 0xFFFF;
+    fr->status     = (message >> 48) & 0xF;
+    /* bit 52: model (Baustufenkennung) -- not emitted */
+    fr->direction  = (message >> 53) & 0x1;
+    fr->short_info = (message >> 54) & 0x3;
+    fr->crc_ok     = fms_is_crc_correct(message);
+    fr->crc_swapped = (fr->crc_ok && (message & 1)) ? 1 : 0;
+
+    snprintf(fr->raw_hex, sizeof(fr->raw_hex), "%08x%04x",
+             (uint32_t)(message >> 32), (uint32_t)((message >> 16) & 0xFFFF));
+    snprintf(fr->vehicle_hex, sizeof(fr->vehicle_hex), "%04x", fr->vehicle_id);
+
+    fr->service     = fms_service_label(fr->service_id);
+    fr->state_name  = fms_state_label(fr->state_id, fr->loc_id);
+    fr->status_text = fms_status_label(fr->status, fr->direction);
+}
+
+/* Emit one JSON v2 object for an FMS message. See docs/json-output-schema-v2.md.
+ * FMS has no subscriber address (capcode null) and no byte buffer (encodings
+ * empty); all decoded fields live in the nested fms{} object.
+ * Takes a pre-decoded FmsFrame so no bit extraction happens here. */
+static void fms_emit_json_v1(const FmsFrame *fr)
+{
+    cJSON *obj = json_new("FMS", "fms", "message", "fms");
+    if (!obj) return;
+
+    json_set_capcode(obj, -1, NULL);
+    json_set_message(obj, NULL);
+    /* encodings[] intentionally left empty for FMS. */
+
+    cJSON *f = json_proto(obj, "fms");
+    if (f) {
+        cJSON_AddStringToObject(f, "raw", fr->raw_hex);
+
+        cJSON_AddNumberToObject(f, "service_id", fr->service_id);
+        if (fr->service) cJSON_AddStringToObject(f, "service", fr->service);
+        else             cJSON_AddNullToObject(f, "service");
+
+        cJSON_AddNumberToObject(f, "state_id", fr->state_id);
+        if (fr->state_name) cJSON_AddStringToObject(f, "state", fr->state_name);
+        else                cJSON_AddNullToObject(f, "state");
+
+        cJSON_AddNumberToObject(f, "location", fr->loc_id);
+        cJSON_AddStringToObject(f, "vehicle", fr->vehicle_hex);
+
+        /* status: vehicle/dispatch state nibble (bits 48-51). */
+        cJSON_AddNumberToObject(f, "status", fr->status);
+        if (fr->status_text) cJSON_AddStringToObject(f, "status_text", fr->status_text);
+        else                 cJSON_AddNullToObject(f, "status_text");
+
+        cJSON_AddNumberToObject(f, "direction", fr->direction);
+        cJSON_AddNumberToObject(f, "short_info", fr->short_info);
+        cJSON_AddBoolToObject(f, "crc_ok", fr->crc_ok ? 1 : 0);
+        cJSON_AddBoolToObject(f, "crc_swapped", fr->crc_swapped ? 1 : 0);
+    }
+
+    json_emit(obj);
+}
+
 /*
  *  As specified in http://www.lfs-bw.de/Fachthemen/Digitalfunk-Funk/Documents/Pruefstelle/TRBOS-FMS.pdf
  */
 static void fms_disp_packet(uint64_t message)
 {
-    uint8_t service_id;  // BOS-Kennung
-    uint8_t state_id;    // Landeskennung
-    uint8_t loc_id;      // Ortskennung
-    uint16_t vehicle_id; // Fahrzeugkennung
-    uint8_t state;       // Status
-    // uint8_t model;       // Baustufenkennung
-    uint8_t direction;   // Richtungskennung
-    uint8_t short_info;  // taktische Kurzinformation
-    uint8_t crc;         // Redundanz
+    /* Decode once into a struct; both paths read from it. */
+    FmsFrame fr;
+    fms_decode(message, &fr);
+
+    if (json_format == JSON_FORMAT_UNIFIED) {
+        fms_emit_json_v1(&fr);
+        return;
+    }
 
     fms_print_message_hex(message);
 
-    verbprintf(0, "FMS: %08x%04x", message >> 32, ((uint32_t)message >> 16));
+    /* Print the raw hex bytes (same as before). */
+    verbprintf(0, "FMS: %s", fr.raw_hex);
 
-    if(!fms_justhex)
+    if (!fms_justhex)
     {
         verbprintf(0, " (");
-        service_id = (message >> 16) & 0xF;
-        fms_disp_service_id(service_id);
-
-        state_id = (message >> 20) & 0xF;
-        loc_id = (message >> 24) & 0xFF;
-        fms_disp_state_id(state_id, loc_id);
-        fms_disp_loc_id(loc_id);
-
-        vehicle_id = (message >> 32) & 0xFFFF;
-        fms_disp_vehicle_id(vehicle_id);
-
-        state = (message >> 48) & 0xF;
-
-        //model = (message >> 52) & 0x1;
-        direction = (message >> 53) & 0x1;
-        fms_disp_state(state, direction);
-
-        fms_disp_direction(direction);
-
-        short_info = (message >> 54) & 0x3;
-        fms_disp_shortinfo(short_info);
-
-        crc = (message >> 55) & 0x3F;
-
+        fms_disp_service_id(fr.service_id);
+        fms_disp_state_id(fr.state_id, fr.loc_id);
+        fms_disp_loc_id(fr.loc_id);
+        fms_disp_vehicle_id(fr.vehicle_id);
+        fms_disp_state(fr.status, fr.direction);
+        fms_disp_direction(fr.direction);
+        fms_disp_shortinfo(fr.short_info);
         verbprintf(0, ") ");
     }
     else verbprintf(0, " ");
 
-    if (fms_is_crc_correct(message))
+    if (fr.crc_ok)
     {
         verbprintf(0, "CRC correct");
-        if (message & 1)
-        {
+        if (fr.crc_swapped)
             verbprintf(0, " AFTER SWAPPING ONE BIT");
-        }
     }
-    else verbprintf(0, "CRC INCORRECT (%x)", crc);
-    
+    else
+    {
+        /* CRC nibble for error display: bits 55-60 (6 bits). */
+        uint8_t crc = (message >> 55) & 0x3F;
+        verbprintf(0, "CRC INCORRECT (%x)", crc);
+    }
+
     verbprintf(0, "\n");
 }
 

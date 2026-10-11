@@ -7,6 +7,7 @@
  *
  *-----------------------------------------------------------------------*/
 #include "multimon.h"
+#include "cJSON.h"
 #include <string.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -239,6 +240,102 @@ static inline void auto_timing(const bool state, struct demod_state * restrict c
     }
 }
 
+// Append a decoded character string to the morse message buffer.
+static inline void morse_msg_append(struct demod_state * restrict const s,
+                                    const char * restrict str)
+{
+    if (!str) return;
+    size_t len = strlen(str);
+    if (s->l1.morse.msglen + (int)len >= (int)sizeof(s->l1.morse.msg))
+        len = sizeof(s->l1.morse.msg) - 1 - s->l1.morse.msglen;
+    if ((int)len <= 0) return;
+    memcpy(s->l1.morse.msg + s->l1.morse.msglen, str, len);
+    s->l1.morse.msglen += (int)len;
+    s->l1.morse.msg[s->l1.morse.msglen] = '\0';
+}
+
+/* All output for one flushed morse word.  Populated from s->l1.morse at the
+ * word boundary and consumed by both the text and JSON paths, so neither
+ * reads the demod state directly.  The text path accumulates the raw per-
+ * character strings (including failed-decode "<...>" art and the trailing
+ * inter-word space); the JSON path accumulates only successful decodes. */
+typedef struct {
+    char        msg[256];       /* accumulated morse word */
+    int         msglen;
+    const char *demod_name;     /* e.g. "MORSE_CW" */
+} MorseFrame;
+
+static void morse_text_emit(const MorseFrame *f);
+static void morse_emit(const MorseFrame *f);
+static void morse_emit_json_v1(const MorseFrame *f);
+
+// Emit one JSON v2 object for a morse word (leading/trailing whitespace
+// trimmed).  See docs/json-output-schema-v2.md.
+static void morse_emit_json_v1(const MorseFrame *f)
+{
+    // Trim leading and trailing whitespace from a local view of the word.
+    const char *start = f->msg;
+    const char *endp  = f->msg + f->msglen;
+    while (start < endp && (*start == ' ' || *start == '\t'))
+        start++;
+    while (endp > start && (endp[-1] == ' ' || endp[-1] == '\t'))
+        endp--;
+
+    if (endp > start) {
+        char trimmed[256];
+        int n = (int)(endp - start);
+        if (n > (int)sizeof(trimmed) - 1)
+            n = (int)sizeof(trimmed) - 1;
+        memcpy(trimmed, start, (size_t)n);
+        trimmed[n] = '\0';
+
+        cJSON *obj = json_new(f->demod_name, "morse", "message", "morse");
+        if (obj) {
+            json_set_capcode(obj, -1, NULL);
+            json_set_message(obj, trimmed);
+            json_emit(obj);
+        }
+    }
+}
+
+// Text output for one flushed morse word: the accumulated per-character
+// strings verbatim (the former inline verbprintf("%s", ...) calls, plus the
+// trailing inter-word space when the last character decoded).
+static void morse_text_emit(const MorseFrame *f)
+{
+    if (f->msglen > 0)
+        verbprintf(0, "%s", f->msg);
+}
+
+// Single dispatch point for all morse word output.
+static void morse_emit(const MorseFrame *f)
+{
+    if (json_format == JSON_FORMAT_UNIFIED)
+        morse_emit_json_v1(f);
+    else
+        morse_text_emit(f);
+}
+
+// Build a MorseFrame from the accumulated buffer and dispatch, then reset.
+static void morse_flush(struct demod_state * restrict const s)
+{
+    MorseFrame f;
+    int n = s->l1.morse.msglen;
+    if (n < 0)
+        n = 0;
+    if (n > (int)sizeof(f.msg) - 1)
+        n = (int)sizeof(f.msg) - 1;
+    memcpy(f.msg, s->l1.morse.msg, (size_t)n);
+    f.msg[n] = '\0';
+    f.msglen = n;
+    f.demod_name = s->dem_par->name;
+
+    morse_emit(&f);
+
+    s->l1.morse.msglen = 0;
+    s->l1.morse.msg[0] = '\0';
+}
+
 // This one gets about 60% of our cycles.
 static void morse_demod(struct demod_state * restrict const s,
                         const buffer_t buffer, const int length)
@@ -288,9 +385,20 @@ static void morse_demod(struct demod_state * restrict const s,
                     if(s->l1.morse.current_sequence)
                     {
                         rtn = decode_character(s);
-                        if(SHOW_FAILED_DECODES) verbprintf(0, "%s", rtn.string_ptr);
-                        else if(rtn.status) verbprintf(0, "%s", rtn.string_ptr);
-                        
+                        if (json_format == JSON_FORMAT_UNIFIED) {
+                            // Accumulate successful decodes into the message
+                            // buffer; emit as a v1 object on end-of-word.
+                            if (rtn.status)
+                                morse_msg_append(s, rtn.string_ptr);
+                        } else {
+                            // Text path: accumulate the raw per-character
+                            // string (success char, or failed-decode "<...>"
+                            // art when SHOW_FAILED_DECODES); flushed verbatim
+                            // by morse_text_emit() at the word boundary.
+                            if (SHOW_FAILED_DECODES || rtn.status)
+                                morse_msg_append(s, rtn.string_ptr);
+                        }
+
                         if(rtn.status) s->l1.morse.decoded_chars++;
                         else s->l1.morse.erroneous_chars++;
                         s->l1.morse.current_sequence = 0; // Start a new sequence
@@ -298,12 +406,20 @@ static void morse_demod(struct demod_state * restrict const s,
                     
                     if(s->l1.morse.samples_since_change < 5*s->l1.morse.time_unit_gaps_samples) // End of Char
                     {
+                        /* End-of-char: letters within a word run together with
+                         * no separator.  A word gap exceeds the timeout and is
+                         * handled by the End-of-word branch, which flushes the
+                         * accumulated word as its own v1 object. */
                         if(DEBUG) verbprintf(0, "<EOC %dms>", s->l1.morse.samples_since_change * 1000 / FREQ_SAMP);
                     }
                     else if(timeout) // End of word - timeout
                     {
-                        if(rtn.status)
-                            verbprintf(0," "); //Don't print additional spaces if last character failed to decode
+                        // Append the inter-word space to the text buffer only
+                        // when the last character decoded (same rule as the
+                        // former verbprintf(" ")); the v1 path trims it anyway.
+                        if (json_format != JSON_FORMAT_UNIFIED && rtn.status)
+                            morse_msg_append(s, " ");
+                        morse_flush(s); // dispatch + reset the accumulated word
                         if(DEBUG) verbprintf(0, "<EOW %dms>", s->l1.morse.samples_since_change * 1000 / FREQ_SAMP);
                         goto end; // Don't reset samples, since there wasn't any change in state.
                     }
@@ -354,6 +470,7 @@ static void morse_init(struct demod_state * restrict s)
 
 static void morse_deinit(struct demod_state * const restrict s)
 {
+    morse_flush(s); // flush any trailing word (both text and JSON paths)
     verbprintf(1, "\nMAX: %d THRESHOLD: %d GLITCHES: %d FAILED: %d "
                "DECODED: %d TIMING_GAP: %d TIMING_DIT: %d",
                s->l1.morse.signal_max,

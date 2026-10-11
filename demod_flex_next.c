@@ -141,7 +141,6 @@
 #define __STDC_FORMAT_MACROS
 #include <inttypes.h>
 
-extern int json_mode;
 
 /* ---------------------------------------------------------------------- */
 
@@ -947,6 +946,7 @@ static void flextime_emit(struct Flex_Next *flex, char phase) {
   }
   if (ot->has_tz) {
     int off = ot->tz_offset_min;
+    /* tz_dst: 0=DST active, 1=standard time (per spec); invert for display */
     const char *dst_str = ot->tz_dst ? "" : " DST";
     int abs_off = off < 0 ? -off : off;
     if (pos > 0) ota[pos++] = ' ';
@@ -994,7 +994,328 @@ static char addr_type_char(uint32_t aiw, int is_long) {
   return 'S';  // Normal short address
 }
 
-// JSON output helper: emit a complete JSON message object.
+/* --- JSON schema v2 helpers (docs/json-output-schema-v2.md) --- */
+
+/* Map addr_type char to capcode_type string for JSON output.
+ * S/N/I/O/R -> "short"; L -> "long"; T (temporary group) -> "group". */
+static const char *flex_v1_capcode_type(char addr_type, int is_group) {
+  if (is_group) return "group";
+  switch (addr_type) {
+    case 'L': return "long";
+    case 'T': return "group";
+    default:  return "short";  /* S, N, I, O, R all use short address form */
+  }
+}
+
+/* Pack a decoded 7-bit ALN message string into bytes, 7-bit codepoints
+ * packed MSB-first, and emit as lowercase hex. Returns total bit count. */
+static int flex_v1_pack_alpha_hex(const char *msg, char *out, size_t out_sz) {
+  static const char hexd[] = "0123456789abcdef";
+  size_t n = msg ? strlen(msg) : 0;
+  uint32_t acc = 0;
+  int acc_bits = 0;
+  size_t oi = 0;
+  int total_bits = 0;
+  for (size_t i = 0; i < n; i++) {
+    acc = (acc << 7) | ((uint32_t)(unsigned char)msg[i] & 0x7F);
+    acc_bits += 7;
+    total_bits += 7;
+    while (acc_bits >= 8) {
+      unsigned char b = (unsigned char)((acc >> (acc_bits - 8)) & 0xFF);
+      acc_bits -= 8;
+      if (oi + 2 < out_sz) {
+        out[oi++] = hexd[(b >> 4) & 0xF];
+        out[oi++] = hexd[b & 0xF];
+      }
+    }
+  }
+  if (acc_bits > 0) {
+    unsigned char b = (unsigned char)((acc << (8 - acc_bits)) & 0xFF);
+    if (oi + 2 < out_sz) {
+      out[oi++] = hexd[(b >> 4) & 0xF];
+      out[oi++] = hexd[b & 0xF];
+    }
+  }
+  if (oi < out_sz) out[oi] = '\0'; else if (out_sz) out[out_sz - 1] = '\0';
+  return total_bits;
+}
+
+/* Pack a decoded BCD numeric string into packed nibbles and emit as
+ * lowercase hex. Each character maps back to its BCD code per the
+ * flex_bcd table ("0123456789.U -]["). Returns total bit count. */
+static int flex_v1_pack_numeric_hex(const char *msg, char *out, size_t out_sz) {
+  static const char hexd[] = "0123456789abcdef";
+  static const char flex_bcd[17] = "0123456789.U -][";
+  size_t n = msg ? strlen(msg) : 0;
+  size_t oi = 0;
+  int nibbles = 0;
+  unsigned char pending = 0;
+  int have_pending = 0;
+  for (size_t i = 0; i < n; i++) {
+    unsigned char code = 0x0C;  /* default to space fill for unknowns */
+    for (int k = 0; k < 16; k++) {
+      if (flex_bcd[k] == msg[i]) { code = (unsigned char)k; break; }
+    }
+    nibbles++;
+    if (!have_pending) {
+      pending = code & 0x0F;
+      have_pending = 1;
+    } else {
+      unsigned char b = (unsigned char)((pending << 4) | (code & 0x0F));
+      if (oi + 2 < out_sz) {
+        out[oi++] = hexd[(b >> 4) & 0xF];
+        out[oi++] = hexd[b & 0xF];
+      }
+      have_pending = 0;
+    }
+  }
+  if (have_pending) {
+    unsigned char b = (unsigned char)(pending << 4);
+    if (oi + 2 < out_sz) {
+      out[oi++] = hexd[(b >> 4) & 0xF];
+      out[oi++] = hexd[b & 0xF];
+    }
+  }
+  if (oi < out_sz) out[oi] = '\0'; else if (out_sz) out[out_sz - 1] = '\0';
+  return nibbles * 4;
+}
+
+/* Emit one JSON v2 object for a FLEX_NEXT message/event, mapping the
+ * fields threaded through flex_next_json_emit into the v1 schema.
+ * See docs/json-output-schema-v2.md. The caller still owns `extra`:
+ * its keys are migrated into the nested flex{} object here. */
+static void flex_next_emit_json_v1(struct Flex_Next *flex, char phase,
+                                   int64_t capcode, char addr_type,
+                                   int is_group, int msg_type,
+                                   const char *type_tag,
+                                   const char *fragment,
+                                   int msg_n, int msg_r, int msg_m,
+                                   int k_ok, int sig_ok,
+                                   const char *message,
+                                   int64_t *group_capcodes, int group_count,
+                                   cJSON *extra)
+{
+  /* fragment carries the fragmentation flag string ("complete", "fragment_start",
+   * "fragment_mid", "fragment_end", "reassembled", "reassembled_partial"). */
+
+  /* Classify kind + v1 msg_type from the page type.
+   *   message kinds: alphanumeric/numeric/special_numeric/numbered_numeric/
+   *                  binary/secure/short_msg
+   *   event kinds:   tone_only  (TON / tone-only short message)
+   * BIW/BCH/INS are emitted by their own call sites, not here. */
+  const char *kind = "message";
+  const char *v1_type = "unknown";
+  int is_numeric_enc = 0;  /* 1 => numeric encoding, 0 => alpha encoding */
+  int has_payload = 1;     /* 0 => event: no encodings, message null */
+
+  switch (msg_type) {
+    case FLEX_PAGETYPE_SECURE:            v1_type = "secure";           break;
+    case FLEX_PAGETYPE_SHORT_INSTRUCTION: v1_type = "instruction"; kind = "event"; has_payload = 0; break;
+    case FLEX_PAGETYPE_SHORT_MESSAGE:     v1_type = "short_msg";        break;
+    case FLEX_PAGETYPE_STANDARD_NUMERIC:  v1_type = "numeric";          is_numeric_enc = 1; break;
+    case FLEX_PAGETYPE_SPECIAL_NUMERIC:   v1_type = "special_numeric";  is_numeric_enc = 1; break;
+    case FLEX_PAGETYPE_ALPHANUMERIC:      v1_type = "alphanumeric";     break;
+    case FLEX_PAGETYPE_BINARY:            v1_type = "binary";           break;
+    case FLEX_PAGETYPE_NUMBERED_NUMERIC:  v1_type = "numbered_numeric"; is_numeric_enc = 1; break;
+    case FLEX_PAGETYPE_TONE_ONLY:         v1_type = "tone_only"; kind = "event"; has_payload = 0; break;
+    default:                              v1_type = "unknown";          break;
+  }
+
+  /* type_tag drives sub-classification the page type alone cannot carry:
+   *   SMSG "TON" -> tone-only event; SEC:BIN/VEN/RSV -> hex (binary) encoding. */
+  int is_hex_enc = 0;
+  if (type_tag) {
+    if (strcmp(type_tag, "TON") == 0) { kind = "event"; v1_type = "tone_only"; has_payload = 0; }
+    else if (strncmp(type_tag, "SEC:", 4) == 0) {
+      if (strcmp(type_tag, "SEC:ALN") != 0) is_hex_enc = 1;  /* BIN/VEN/RSV are hex */
+    }
+    else if (strcmp(type_tag, "HEX") == 0) is_hex_enc = 1;
+  }
+  if (msg_type == FLEX_PAGETYPE_BINARY) is_hex_enc = 1;
+
+  cJSON *obj = json_new("FLEX_NEXT", "flex", kind, v1_type);
+  if (!obj) { cJSON_Delete(extra); return; }
+
+  json_set_capcode(obj, (capcode >= 0) ? (long long)capcode : -1,
+                     (capcode >= 0) ? flex_v1_capcode_type(addr_type, is_group) : NULL);
+
+  /* message shortcut: decoded text for message kinds, null for events. */
+  json_set_message(obj, (has_payload && message) ? message : NULL);
+
+  /* encodings: raw + (alpha|numeric). Empty for events. */
+  if (has_payload && message && message[0]) {
+    char raw_hex[2048];
+    if (is_hex_enc) {
+      /* HEX/BIN message bodies are already a hex string; raw == data. */
+      json_add_encoding(obj, "raw", message, -1, (int)strlen(message) * 4);
+    } else if (is_numeric_enc) {
+      int bits = flex_v1_pack_numeric_hex(message, raw_hex, sizeof(raw_hex));
+      json_add_encoding(obj, "raw", raw_hex, -1, bits);
+      json_add_encoding(obj, "numeric", message, -1, -1);
+    } else {
+      int bits = flex_v1_pack_alpha_hex(message, raw_hex, sizeof(raw_hex));
+      json_add_encoding(obj, "raw", raw_hex, -1, bits);
+      json_add_encoding(obj, "alpha", message, -1, -1);
+    }
+  }
+
+  /* Nested flex{} object. */
+  cJSON *f = json_proto(obj, "flex");
+  if (f) {
+    cJSON_AddNumberToObject(f, "baud", flex->Sync.baud);
+    cJSON_AddNumberToObject(f, "levels", flex->Sync.levels);
+    cJSON_AddNumberToObject(f, "cycle", flex->FIW.cycleno);
+    cJSON_AddNumberToObject(f, "frame", flex->FIW.frameno);
+    { char ph[2] = { phase, '\0' }; cJSON_AddStringToObject(f, "phase", ph); }
+
+    { char at[2] = { addr_type, '\0' }; cJSON_AddStringToObject(f, "addr_type", at); }
+    if (type_tag)  cJSON_AddStringToObject(f, "type_tag",  type_tag);
+    if (fragment)  cJSON_AddStringToObject(f, "fragment",  fragment);
+    cJSON_AddBoolToObject(f, "is_group", is_group ? 1 : 0);
+    if (flex->Decode.is_priority) cJSON_AddBoolToObject(f, "is_priority", 1);
+
+    /* Temporary group slot + member capcodes */
+    if (is_group && capcode >= FLEX_GROUP_ADDR_MIN && capcode <= FLEX_GROUP_ADDR_MAX)
+      cJSON_AddNumberToObject(f, "group_slot", (int)(capcode - FLEX_GROUP_ADDR_MIN));
+    if (group_capcodes && group_count > 0) {
+      cJSON *arr = cJSON_CreateArray();
+      for (int gi = 0; gi < group_count; gi++)
+        cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)group_capcodes[gi]));
+      cJSON_AddItemToObject(f, "group_capcodes", arr);
+    }
+
+    if (msg_n >= 0) cJSON_AddNumberToObject(f, "msg_number", msg_n);
+    if (msg_r >= 0) cJSON_AddNumberToObject(f, "retrieval", msg_r);
+    if (msg_m >= 0) cJSON_AddNumberToObject(f, "maildrop", msg_m);
+    if (k_ok  >= 0) cJSON_AddBoolToObject(f, "k_ok", k_ok ? 1 : 0);
+    if (sig_ok >= 0) cJSON_AddBoolToObject(f, "sig_ok", sig_ok ? 1 : 0);
+
+    if (flex->Decode.sec_subtype) cJSON_AddStringToObject(f, "sec_subtype", flex->Decode.sec_subtype);
+    if (flex->Decode.opr_category) cJSON_AddStringToObject(f, "opr_category", flex->Decode.opr_category);
+
+    /* Migrate caller-supplied extra fields (frag_*, special_format,
+     * smsg_*, blocking/display_rtl/..., total_*) into flex{}. */
+    if (extra) {
+      cJSON *item = NULL;
+      cJSON_ArrayForEach(item, extra) {
+        cJSON_AddItemToObject(f, item->string, cJSON_Duplicate(item, 1));
+      }
+    }
+
+    /* flextime nested object: reuse the same confirmed OTA state the
+     * legacy path emits, expiring stale components first. */
+    if (flex->ota_time.has_date || flex->ota_time.has_time || flex->ota_time.has_tz) {
+      unsigned int cur_frame = flex->FIW.cycleno * 128 + flex->FIW.frameno;
+      flextime_expire(&flex->ota_time, cur_frame);
+      if (flex->ota_time.has_date || flex->ota_time.has_time || flex->ota_time.has_tz) {
+        cJSON *ft = cJSON_CreateObject();
+        if (flex->ota_time.has_date && flex->ota_time.has_time) {
+          double base_sec = (double)flex->ota_time.min * 60.0 +
+                            (double)flex->ota_time.sec_coarse * 7.5;
+          if (flex->ota_time.has_tz) base_sec += (double)flex->ota_time.sec_ext * 0.9375;
+          if (flex->ota_time.tmode_detected == 0) base_sec += (double)flex->FIW.frameno * 1.875;
+          unsigned int j_hour = flex->ota_time.hour;
+          unsigned int j_min = (unsigned int)(base_sec / 60.0);
+          double j_sec = base_sec - (double)j_min * 60.0;
+          if (j_min >= 60) { j_min -= 60; j_hour = (j_hour + 1) % 24; }
+          char ota_ts[80];
+          snprintf(ota_ts, sizeof(ota_ts), "%04u-%02u-%02u %02u:%02u:%05.2f",
+                   flex->ota_time.year, flex->ota_time.month, flex->ota_time.day,
+                   j_hour, j_min, j_sec);
+          cJSON_AddStringToObject(ft, "timestamp", ota_ts);
+          cJSON_AddNumberToObject(ft, "precision_seconds", flex->ota_time.has_tz ? 0.9375 : 7.5);
+        }
+        cJSON_AddStringToObject(ft, "time_mode",
+                                flex->ota_time.tmode_detected == 0 ? "standard" : "direct");
+        if (flex->ota_time.has_date) {
+          cJSON *d = cJSON_CreateObject();
+          char dval[16];
+          snprintf(dval, sizeof(dval), "%04u-%02u-%02u", flex->ota_time.year, flex->ota_time.month, flex->ota_time.day);
+          cJSON_AddStringToObject(d, "value", dval);
+          int af = (int)flextime_age_frames(cur_frame, flex->ota_time.frame_date);
+          cJSON_AddNumberToObject(d, "age_frames", af);
+          cJSON_AddNumberToObject(d, "age_seconds", ((int)(af * 187.5)) / 100.0);
+          cJSON_AddItemToObject(ft, "date", d);
+        }
+        if (flex->ota_time.has_time) {
+          cJSON *t = cJSON_CreateObject();
+          char tval[24];
+          double tsec = (double)flex->ota_time.sec_coarse * 7.5;
+          if (flex->ota_time.has_tz) tsec += (double)flex->ota_time.sec_ext * 0.9375;
+          snprintf(tval, sizeof(tval), "%02u:%02u:%04.1f",
+                   flex->ota_time.hour, flex->ota_time.min, tsec);
+          cJSON_AddStringToObject(t, "value", tval);
+          cJSON_AddNumberToObject(t, "sec_coarse", flex->ota_time.sec_coarse);
+          int af = (int)flextime_age_frames(cur_frame, flex->ota_time.frame_time);
+          cJSON_AddNumberToObject(t, "age_frames", af);
+          cJSON_AddNumberToObject(t, "age_seconds", ((int)(af * 187.5)) / 100.0);
+          cJSON_AddItemToObject(ft, "time", t);
+        }
+        if (flex->ota_time.has_tz) {
+          cJSON *tz = cJSON_CreateObject();
+          char tzval[32];
+          int off = flex->ota_time.tz_offset_min;
+          /* tz_dst: 0=DST active, 1=standard time (per spec); invert for output */
+      const char *dst_str = flex->ota_time.tz_dst ? "" : " DST";
+          int abs_off = off < 0 ? -off : off;
+          if (abs_off % 60 == 0)
+            snprintf(tzval, sizeof(tzval), "%+dh%s", off / 60, dst_str);
+          else
+            snprintf(tzval, sizeof(tzval), "%+dh%02dm%s", off / 60, abs_off % 60, dst_str);
+          cJSON_AddStringToObject(tz, "value", tzval);
+          cJSON_AddNumberToObject(tz, "offset_min", flex->ota_time.tz_offset_min);
+          cJSON_AddBoolToObject(tz, "dst", flex->ota_time.tz_dst ? 0 : 1); /* true = DST active */
+          cJSON_AddNumberToObject(tz, "zone_code", flex->ota_time.tz_zone);
+          cJSON_AddNumberToObject(tz, "sec_ext", flex->ota_time.sec_ext);
+          if (flex->ota_time.has_time) {
+            double sec_combined = (double)flex->ota_time.sec_coarse * 7.5 +
+                                  (double)flex->ota_time.sec_ext * 0.9375;
+            cJSON_AddNumberToObject(tz, "sec_combined", sec_combined);
+          }
+          int af = (int)flextime_age_frames(cur_frame, flex->ota_time.frame_tz);
+          cJSON_AddNumberToObject(tz, "age_frames", af);
+          cJSON_AddNumberToObject(tz, "age_seconds", ((int)(af * 187.5)) / 100.0);
+          cJSON_AddItemToObject(ft, "tz", tz);
+        }
+        cJSON_AddItemToObject(f, "flextime", ft);
+      }
+    }
+  }
+
+  if (extra) cJSON_Delete(extra);
+  json_emit(obj);
+}
+
+/* Emit a v1 BIW event (kind=event, msg_type=biw_*).  The nested flex{}
+ * carries baud/levels/cycle/frame/phase + biw_position + the type_tag and
+ * the per-subtype numeric fields supplied via the `extra` object (consumed). */
+static void flex_v1_emit_biw(struct Flex_Next *flex, char phase,
+                             const char *v1_msg_type, const char *type_tag,
+                             int biw_position, cJSON *extra) {
+  cJSON *obj = json_new("FLEX_NEXT", "flex", "event", v1_msg_type);
+  if (!obj) { cJSON_Delete(extra); return; }
+  json_set_capcode(obj, -1, NULL);
+  json_set_message(obj, NULL);
+  cJSON *f = json_proto(obj, "flex");
+  if (f) {
+    cJSON_AddNumberToObject(f, "baud", flex->Sync.baud);
+    cJSON_AddNumberToObject(f, "levels", flex->Sync.levels);
+    cJSON_AddNumberToObject(f, "cycle", flex->FIW.cycleno);
+    cJSON_AddNumberToObject(f, "frame", flex->FIW.frameno);
+    { char ph[2] = { phase, '\0' }; cJSON_AddStringToObject(f, "phase", ph); }
+    if (type_tag) cJSON_AddStringToObject(f, "type_tag", type_tag);
+    cJSON_AddNumberToObject(f, "biw_position", biw_position);
+    if (extra) {
+      cJSON *item = NULL;
+      cJSON_ArrayForEach(item, extra)
+        cJSON_AddItemToObject(f, item->string, cJSON_Duplicate(item, 1));
+    }
+  }
+  if (extra) cJSON_Delete(extra);
+  json_emit(obj);
+}
+
+
 // Called from decode_phase after message parsing is complete.
 // All fields are optional (pass NULL/negative to omit).
 static void flex_next_json_emit(struct Flex_Next *flex, char phase,
@@ -1008,6 +1329,15 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
                                 int64_t *group_capcodes, int group_count,
                                 cJSON *extra)
 {
+  /* v1 schema: single self-describing object, then done. The legacy
+   * body below runs only for --json-old (JSON_FORMAT_LEGACY). */
+  if (json_format == JSON_FORMAT_UNIFIED) {
+    flex_next_emit_json_v1(flex, phase, capcode, addr_type, is_group, msg_type,
+                           type_tag, fragment, msg_n, msg_r, msg_m,
+                           k_ok, sig_ok, message, group_capcodes, group_count, extra);
+    return;
+  }
+
   cJSON *json = cJSON_CreateObject();
   if (!json) { cJSON_Delete(extra); return; }
 
@@ -1678,7 +2008,7 @@ static void frag_expire(struct Flex_Next * flex, unsigned int current_frame) {
         verbprintf(3, "FLEX_NEXT: Fragment expired slot %d cap=%" PRId64 " age=%u\n", i, flex->FragStore.slots[i].capcode, age);
         /* Emit partial message if slot has data */
         if (flex->FragStore.slots[i].data_len > 0) {
-          if (json_mode) {
+          if (json_format != JSON_FORMAT_NONE) {
             flex_next_json_emit(flex, flex->FragStore.slots[i].phase,
                                 flex->FragStore.slots[i].capcode,
                                 flex->FragStore.slots[i].addr_type, 0,
@@ -1979,7 +2309,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
           if (slot >= 0 && is_initial) {
             /* New initial fragment for same capcode: emit old partial, then release */
             if (flex->FragStore.slots[slot].data_len > 0) {
-              if (json_mode) {
+              if (json_format != JSON_FORMAT_NONE) {
                 flex_next_json_emit(flex, flex->FragStore.slots[slot].phase,
                                     flex->FragStore.slots[slot].capcode,
                                     flex->FragStore.slots[slot].addr_type, 0,
@@ -2046,7 +2376,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
             }
           }
           // Output complete level-0 line FIRST (before any debug)
-          if (!json_mode) {
+          if (json_format == JSON_FORMAT_NONE) {
             int out_r = is_initial ? msg_r : (slot >= 0 ? flex->FragStore.slots[slot].msg_r : -1);
             int out_m = is_initial ? msg_m : (slot >= 0 ? flex->FragStore.slots[slot].msg_m : -1);
             const char *k_str = k_fail ? ".K-" : ".K+";
@@ -2118,7 +2448,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
             int total_frags = flex->FragStore.slots[slot].frag_index + 2; // +1 for initial, +1 for this final
             int total_chars = (int)flex->FragStore.slots[slot].data_len + currentChar;
             // Output complete level-0 line atomically (message + group capcodes in prefix)
-            if (!json_mode) {
+            if (json_format == JSON_FORMAT_NONE) {
               int out_r = flex->FragStore.slots[slot].msg_r;
               int out_m = flex->FragStore.slots[slot].msg_m;
               int combined_k_fail = k_fail || flex->FragStore.slots[slot].k_fail;
@@ -2155,7 +2485,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
             verbprintf(3, "FLEX_NEXT: Reassembled %u + %d bytes for cap %" PRId64 "\n",
                        flex->FragStore.slots[slot].data_len, currentChar, flex->Decode.capcode);
             frag_release(flex, slot);
-            if (!json_mode) goto group_output;
+            if (json_format == JSON_FORMAT_NONE) goto group_output;
             if (flex_groupmessage) {
               flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
               flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
@@ -2165,7 +2495,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
             return;
           }
           // No buffered fragment found, output what we have
-          if (!json_mode) {
+          if (json_format == JSON_FORMAT_NONE) {
             verbprintf(0, "%s|%s|%c.0/%d.N%d%s%s|%s\n", flex->line_prefix, flex->line_type_tag, frag_flag, frag, msg_n, k_fail ? ".K-" : ".K+", grp_tag, message);
           } else {
             flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode,
@@ -2174,7 +2504,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                                 msg_n, -1, -1, k_fail ? 0 : -1, -1,
                                 (const char *)message, NULL, 0, NULL);
           }
-          if (!json_mode) goto group_output;
+          if (json_format == JSON_FORMAT_NONE) goto group_output;
           if (flex_groupmessage) {
             flex->GroupHandler.GroupCodes[flex_groupbit][CAPCODES_INDEX] = 0;
             flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
@@ -2185,7 +2515,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
         }
 
         // K (complete) or unknown: output directly
-        if (!json_mode) {
+        if (json_format == JSON_FORMAT_NONE) {
           const char *dup_str = (dedup_flag == 2) ? ".DUP+" : (dedup_flag == 1) ? ".DUP" : "";
           const char *k_str = k_fail ? ".K-" : ".K+";
           const char *sig_str = sig_fail ? ".SIG-" : ".SIG+";
@@ -2376,7 +2706,7 @@ static void parse_numeric(struct Flex_Next * flex, unsigned int * phaseptr, int 
     }
   }
 
-  if (!json_mode) {
+  if (json_format == JSON_FORMAT_NONE) {
     const char *dup_str = (dedup_flag == 2) ? ".DUP+" : (dedup_flag == 1) ? ".DUP" : "";
     const char *k_str = num_k_fail ? ".K-" : ".K+";
     const char *prio_str = flex->Decode.is_priority ? ".P" : "";
@@ -2384,7 +2714,7 @@ static void parse_numeric(struct Flex_Next * flex, unsigned int * phaseptr, int 
     verbprintf(0, "%s|%s|K.0/3.N%d.R%d%s%s%s%s|%s\n", flex->line_prefix, flex->line_type_tag, msg_n, msg_r, msg_m ? ".M" : "", prio_str, k_str, dup_str, num_msg);
   }
 
-  if (json_mode) {
+  if (json_format != JSON_FORMAT_NONE) {
     num_msg[num_pos] = '\0';
     const char *tag = (flex->Decode.type == FLEX_PAGETYPE_SPECIAL_NUMERIC) ? "SNUM" :
                       (flex->Decode.type == FLEX_PAGETYPE_NUMBERED_NUMERIC) ? "NNUM" : "NUM";
@@ -2437,7 +2767,7 @@ static void parse_short_message(struct Flex_Next * flex, unsigned int * phaseptr
       unsigned int area_id = (phaseptr[j] >> 9) & 0x1F;
       unsigned int multiplier = (phaseptr[j] >> 14) & 0x07;
       unsigned int tmf = (phaseptr[j] >> 17) & 0x0F;
-      if (!json_mode) {
+      if (json_format == JSON_FORMAT_NONE) {
         verbprintf(0, "%s|SMSG|K.NID|service_area=%u multiplier=%u traffic_flags=0x%X\n", flex->line_prefix, area_id, multiplier, tmf);
       } else {
         cJSON *extra = cJSON_CreateObject();
@@ -2483,7 +2813,7 @@ static void parse_short_message(struct Flex_Next * flex, unsigned int * phaseptr
 
     if (all_space) {
       // Pure tone-only: all digits are space fill, no data content
-      if (!json_mode) {
+      if (json_format == JSON_FORMAT_NONE) {
         verbprintf(0, "%s|SMSG|K.TON|\n", flex->line_prefix);
       } else {
         flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
@@ -2492,7 +2822,7 @@ static void parse_short_message(struct Flex_Next * flex, unsigned int * phaseptr
       }
     } else {
       // Short numeric message with actual digit content
-      if (!json_mode) {
+      if (json_format == JSON_FORMAT_NONE) {
         verbprintf(0, "%s|SMSG|K.NUM|%s\n", flex->line_prefix, digits);
       } else {
         cJSON *extra = cJSON_CreateObject();
@@ -2508,7 +2838,7 @@ static void parse_short_message(struct Flex_Next * flex, unsigned int * phaseptr
     // t=01: Source Code
     // d0-d2 = S2S1S0 (source code 0-7)
     unsigned int source = (phaseptr[j] >> 9) & 0x07;
-    if (!json_mode) {
+    if (json_format == JSON_FORMAT_NONE) {
       verbprintf(0, "%s|SMSG|K.SRC|SRC=%u\n", flex->line_prefix, source);
     } else {
       cJSON *extra = cJSON_CreateObject();
@@ -2530,7 +2860,7 @@ static void parse_short_message(struct Flex_Next * flex, unsigned int * phaseptr
     unsigned int source = (phaseptr[j] >> 9) & 0x07;
     unsigned int msg_n  = (phaseptr[j] >> 12) & 0x3F;
     unsigned int msg_r  = (phaseptr[j] >> 18) & 0x01;
-    if (!json_mode) {
+    if (json_format == JSON_FORMAT_NONE) {
       verbprintf(0, "%s|SMSG|K.SRC.N%u.R%u|SRC=%u\n", flex->line_prefix, msg_n, msg_r, source);
     } else {
       cJSON *extra = cJSON_CreateObject();
@@ -2546,7 +2876,7 @@ static void parse_short_message(struct Flex_Next * flex, unsigned int * phaseptr
   }
   default:
     // t=11: Reserved
-    if (!json_mode) {
+    if (json_format == JSON_FORMAT_NONE) {
       verbprintf(0, "%s|SMSG|K.RSV|subtype=%u data=0x%03X\n", flex->line_prefix, sub_type, (phaseptr[j] >> 9) & 0xFFF);
     } else {
       cJSON *extra = cJSON_CreateObject();
@@ -2807,7 +3137,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
                  flex->Decode.capcode, flex->FragStore.slots[fslot].data_len, fslot);
     }
     // Output frag flags
-    if (!json_mode) {
+    if (json_format == JSON_FORMAT_NONE) {
       int blk = is_initial_hex ? (hex_blocking ? hex_blocking : 16) : (fslot >= 0 ? (flex->FragStore.slots[fslot].hex_blocking ? flex->FragStore.slots[fslot].hex_blocking : 16) : 0);
       const char *dir = is_initial_hex ? (hex_display_rtl ? "RTL" : "LTR") : (fslot >= 0 ? (flex->FragStore.slots[fslot].hex_display_rtl ? "RTL" : "LTR") : "LTR");
       int out_r = is_initial_hex ? msg_r : (fslot >= 0 ? flex->FragStore.slots[fslot].msg_r : -1);
@@ -2837,7 +3167,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
         flex->FragStore.slots[fslot].f_mismatch = 1;
         frag_append(flex, fslot, (const unsigned char *)"<...>", 5);
       }
-      if (!json_mode) {
+      if (json_format == JSON_FORMAT_NONE) {
         int out_r = flex->FragStore.slots[fslot].msg_r;
         int out_m = flex->FragStore.slots[fslot].msg_m;
         if (out_r >= 0)
@@ -2867,7 +3197,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
       return;
     }
     // No buffered fragment, output what we have
-    if (!json_mode) {
+    if (json_format == JSON_FORMAT_NONE) {
       verbprintf(0, "%s|%s|%c.0/%d.N%d|%s\n", flex->line_prefix, flex->line_type_tag, frag_flag, frag, msg_n, hex);
     } else {
       flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
@@ -2880,7 +3210,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
   }
 
   // K (complete): output with frag flags and DUP status
-  if (!json_mode) {
+  if (json_format == JSON_FORMAT_NONE) {
     const char *dup_str = (dedup_flag == 2) ? ".DUP+" : (dedup_flag == 1) ? ".DUP" : "";
     const char *sig_str = hex_sig_fail ? ".SIG-" : ".SIG+";
     const char *prio_str = flex->Decode.is_priority ? ".P" : "";
@@ -3042,7 +3372,12 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
           unsigned int lid = (bword >> 7) & 0x1FF;
           unsigned int cov = (bword >> 16) & 0x1F;
           verbprintf(2, "FLEX_NEXT: BIW SSID1: LID=%u CZ=%u (phase %c)\n", lid, cov, PhaseNo);
-          if (json_mode) {
+          if (json_format == JSON_FORMAT_UNIFIED) {
+            cJSON *bx = cJSON_CreateObject();
+            cJSON_AddNumberToObject(bx, "lid", lid);
+            cJSON_AddNumberToObject(bx, "cov", cov);
+            flex_v1_emit_biw(flex, PhaseNo, "biw_sysid", "BIW_SSID1", (int)bw, bx);
+          } else if (json_format == JSON_FORMAT_LEGACY) {
             cJSON *json = cJSON_CreateObject();
             if (json) {
               time_t now = time(NULL);
@@ -3097,7 +3432,13 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
             verbprintf(3, "FLEX_NEXT: BIW DATE out of range: year=%u mon=%u day=%u, discarding\n", year, mon, day);
             break;
           }
-          if (json_mode) {
+          if (json_format == JSON_FORMAT_UNIFIED) {
+            cJSON *bx = cJSON_CreateObject();
+            cJSON_AddNumberToObject(bx, "year", year);
+            cJSON_AddNumberToObject(bx, "month", mon);
+            cJSON_AddNumberToObject(bx, "day", day);
+            flex_v1_emit_biw(flex, PhaseNo, "biw_date", "BIW_DATE", (int)bw, bx);
+          } else if (json_format == JSON_FORMAT_LEGACY) {
             cJSON *json = cJSON_CreateObject();
             if (json) {
               time_t now = time(NULL);
@@ -3141,7 +3482,13 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
             verbprintf(3, "FLEX_NEXT: BIW TIME out of range: hour=%u min=%u sec=%u, discarding\n", hour, min, sec);
             break;
           }
-          if (json_mode) {
+          if (json_format == JSON_FORMAT_UNIFIED) {
+            cJSON *bx = cJSON_CreateObject();
+            cJSON_AddNumberToObject(bx, "hour", hour);
+            cJSON_AddNumberToObject(bx, "min", min);
+            cJSON_AddNumberToObject(bx, "sec", sec * 7.5);
+            flex_v1_emit_biw(flex, PhaseNo, "biw_time", "BIW_TIME", (int)bw, bx);
+          } else if (json_format == JSON_FORMAT_LEGACY) {
             cJSON *json = cJSON_CreateObject();
             if (json) {
               time_t now = time(NULL);
@@ -3200,7 +3547,12 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
           } else {
             verbprintf(3, "FLEX_NEXT: BIW SYSINFO: A=%u I=0x%03X (phase %c)\n", a_type, info, PhaseNo);
           }
-          if (json_mode) {
+          if (json_format == JSON_FORMAT_UNIFIED) {
+            cJSON *bx = cJSON_CreateObject();
+            cJSON_AddNumberToObject(bx, "a_type", a_type);
+            cJSON_AddNumberToObject(bx, "info", info);
+            flex_v1_emit_biw(flex, PhaseNo, "biw_sysinfo", "BIW_SYSINFO", (int)bw, bx);
+          } else if (json_format == JSON_FORMAT_LEGACY) {
             cJSON *json = cJSON_CreateObject();
             if (json) {
               time_t now = time(NULL);
@@ -3232,7 +3584,12 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
           unsigned int tmf = (bword >> 7) & 0xF;
           unsigned int country = (bword >> 11) & 0x3FF;
           verbprintf(2, "FLEX_NEXT: BIW SSID2: CC=%u TMF=0x%X (phase %c)\n", country, tmf, PhaseNo);
-          if (json_mode) {
+          if (json_format == JSON_FORMAT_UNIFIED) {
+            cJSON *bx = cJSON_CreateObject();
+            cJSON_AddNumberToObject(bx, "country", country);
+            cJSON_AddNumberToObject(bx, "tmf", tmf);
+            flex_v1_emit_biw(flex, PhaseNo, "biw_countrycode", "BIW_SSID2", (int)bw, bx);
+          } else if (json_format == JSON_FORMAT_LEGACY) {
             cJSON *json = cJSON_CreateObject();
             if (json) {
               time_t now = time(NULL);
@@ -3494,13 +3851,13 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       }
       // Tone-only: address with no vector, output at debug level
       if (flex->Decode.capcode != 1) {  // skip idle artifact capcode 1
-        if (!json_mode)
+        if (json_format == JSON_FORMAT_NONE)
           verbprintf(3, "FLEX_NEXT|%i/%i|%02i.%03i.%c|%010" PRId64 "|%c|TON|\n",
                    flex->Sync.baud, flex->Sync.levels,
                    flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
                    flex->Decode.capcode,
                    addr_type_char(phaseptr[i], flex->Decode.long_address));
-        if (json_mode)
+        if (json_format != JSON_FORMAT_NONE)
           flex_next_json_emit(flex, PhaseNo, flex->Decode.capcode, flex->Decode.addr_type,
                               0, FLEX_PAGETYPE_TONE_ONLY, "TON", "complete",
                               -1, -1, -1, -1, -1, NULL, NULL, 0, NULL);
@@ -3539,7 +3896,7 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                     int groupbit = (viw >> 17) & 0x0f;                 // 4-bit slot index
 
                     // Output the instruction for visibility
-                    if (!json_mode) {
+                    if (json_format == JSON_FORMAT_NONE) {
                       char flex_ts[32];
                       flex_local_timestamp(flex_ts, sizeof(flex_ts));
                       if (instr_type == 0) {
@@ -3586,7 +3943,33 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                                  addr_type_char(phaseptr[i], flex->Decode.long_address),
                                  instr_type, raw_data);
                       }
-                    } else {
+                    } else if (json_format == JSON_FORMAT_UNIFIED) {
+                      cJSON *obj = json_new("FLEX_NEXT", "flex", "event", "instruction");
+                      if (obj) {
+                        json_set_capcode(obj, (long long)flex->Decode.capcode,
+                                           flex_v1_capcode_type(flex->Decode.addr_type, 0));
+                        json_set_message(obj, NULL);
+                        cJSON *fo = json_proto(obj, "flex");
+                        if (fo) {
+                          cJSON_AddNumberToObject(fo, "baud", flex->Sync.baud);
+                          cJSON_AddNumberToObject(fo, "levels", flex->Sync.levels);
+                          cJSON_AddNumberToObject(fo, "cycle", flex->FIW.cycleno);
+                          cJSON_AddNumberToObject(fo, "frame", flex->FIW.frameno);
+                          { char ph[2] = { PhaseNo, '\0' }; cJSON_AddStringToObject(fo, "phase", ph); }
+                          { char at[2] = { flex->Decode.addr_type, '\0' }; cJSON_AddStringToObject(fo, "addr_type", at); }
+                          cJSON_AddStringToObject(fo, "type_tag", "INS");
+                          {
+                            const char *itype_name = "reserved";
+                            if (instr_type == 0) itype_name = "temp_addr";
+                            else if (instr_type == 1) itype_name = "sys_event";
+                            cJSON_AddStringToObject(fo, "instruction_type", itype_name);
+                          }
+                          cJSON_AddNumberToObject(fo, "target_frame", iAssignedFrame);
+                          cJSON_AddNumberToObject(fo, "group_slot", groupbit);
+                        }
+                        json_emit(obj);
+                      }
+                    } else if (json_format == JSON_FORMAT_LEGACY) {
                       cJSON *json = cJSON_CreateObject();
                       if (json) {
                         time_t now = time(NULL);
@@ -3888,7 +4271,7 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       }
     }
 
-    if (!json_mode) {
+    if (json_format == JSON_FORMAT_NONE) {
       char flex_ts[32];
       flex_local_timestamp(flex_ts, sizeof(flex_ts));
       // Build group member capcodes for the capcode field (space-separated)
@@ -3942,7 +4325,7 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       else if (lsb == 0xE) cat = "SSIDChange";
       else if (lsb == 0xF) cat = "SysEvent";
       flex->Decode.opr_category = cat;
-      if (!json_mode) {
+      if (json_format == JSON_FORMAT_NONE) {
         if (lsb <= 3)        flex->line_type_tag = "OPR/SysMsg";
         else if (lsb == 0xE) flex->line_type_tag = "OPR/SSIDChange";
         else if (lsb == 0xF) flex->line_type_tag = "OPR/SysEvent";
@@ -4056,7 +4439,7 @@ page_done:
       int sv_mw1 = (sv >> 7) & 0x7F;
       int sv_len = (sv >> 14) & 0x7F;
       if (sv_len > 0 && sv_mw1 < PHASE_WORDS) {
-        if (!json_mode) {
+        if (json_format == JSON_FORMAT_NONE) {
           char flex_ts[32];
           flex_local_timestamp(flex_ts, sizeof(flex_ts));
           snprintf(flex->line_prefix, sizeof(flex->line_prefix),
@@ -4098,13 +4481,34 @@ page_done:
     }
     if (ph) {
       int errbits = ph->bch_1err + ph->bch_2err * 2 + ph->bch_uncorr * 3;
-      if (!json_mode) {
+      if (json_format == JSON_FORMAT_NONE) {
         verbprintf(1, "FLEX_NEXT|%i/%i|%02i.%03i.%c|BCH|%s|0:%d|1:%d|2:%d|U:%d|errbits:%d\n",
                    flex->Sync.baud, flex->Sync.levels,
                    flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
                    flex->Sync.polarity ? "NEG" : "POS",
                    ph->bch_0err, ph->bch_1err, ph->bch_2err, ph->bch_uncorr, errbits);
-      } else {
+      } else if (json_format == JSON_FORMAT_UNIFIED) {
+        cJSON *obj = json_new("FLEX_NEXT", "flex", "diagnostic", "bch_stats");
+        if (obj) {
+          json_set_capcode(obj, -1, NULL);
+          json_set_message(obj, NULL);
+          cJSON *fo = json_proto(obj, "flex");
+          if (fo) {
+            cJSON_AddNumberToObject(fo, "baud", flex->Sync.baud);
+            cJSON_AddNumberToObject(fo, "levels", flex->Sync.levels);
+            cJSON_AddNumberToObject(fo, "cycle", flex->FIW.cycleno);
+            cJSON_AddNumberToObject(fo, "frame", flex->FIW.frameno);
+            { char phs[2] = { PhaseNo, '\0' }; cJSON_AddStringToObject(fo, "phase", phs); }
+            cJSON_AddStringToObject(fo, "polarity", flex->Sync.polarity ? "NEG" : "POS");
+            cJSON_AddNumberToObject(fo, "bch_0err", ph->bch_0err);
+            cJSON_AddNumberToObject(fo, "bch_1err", ph->bch_1err);
+            cJSON_AddNumberToObject(fo, "bch_2err", ph->bch_2err);
+            cJSON_AddNumberToObject(fo, "bch_uncorr", ph->bch_uncorr);
+            cJSON_AddNumberToObject(fo, "errbits", errbits);
+          }
+          json_emit(obj);
+        }
+      } else if (json_format == JSON_FORMAT_LEGACY) {
         cJSON *json = cJSON_CreateObject();
         if (json) {
           cJSON_AddNumberToObject(json, "baud", flex->Sync.baud);

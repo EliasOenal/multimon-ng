@@ -36,6 +36,34 @@
 #define BLOCKNUM 4    /* must match numbers in multimon.h */
 #define TIMEOUT_LIMIT 5 //50ms
 
+/* All fields of one completed selcall code.  Populated at the flush point
+ * from s->l1.selcall and consumed by both the text and JSON paths, so neither
+ * reads the demod state directly.  See docs/json-output-schema-v2.md. */
+typedef struct {
+    char        code[64];       /* accumulated digit string */
+    int         codelen;        /* length of code */
+    const char *demod_name;     /* e.g. "ZVEI1", "DZVEI" */
+} SelcallFrame;
+
+static void selcall_text_emit(const SelcallFrame *f);
+static void selcall_emit(const SelcallFrame *f);
+static void selcall_emit_json_v1(const SelcallFrame *f);
+
+/* Copy the completed code out of the demod state into a SelcallFrame. */
+static void selcall_fill_frame(const struct demod_state *s, const char *name,
+                               SelcallFrame *f)
+{
+    int n = s->l1.selcall.codelen;
+    if (n < 0)
+        n = 0;
+    if (n > (int)sizeof(f->code) - 1)
+        n = (int)sizeof(f->code) - 1;
+    memcpy(f->code, s->l1.selcall.code, (size_t)n);
+    f->code[n] = '\0';
+    f->codelen = n;
+    f->demod_name = name;
+}
+
 void selcall_init(struct demod_state *s)
 {
     memset(&s->l1.selcall, 0, sizeof(s->l1.selcall));
@@ -44,7 +72,15 @@ void selcall_init(struct demod_state *s)
 void selcall_deinit(struct demod_state *s)
 {
     if(s->l1.selcall.timeout != 0)
-        verbprintf(0, "\n");
+    {
+        if (s->l1.selcall.codelen > 0) {
+            SelcallFrame f;
+            selcall_fill_frame(s, s->dem_par->name, &f);
+            selcall_emit(&f);
+        }
+        s->l1.selcall.codelen = 0;
+        s->l1.selcall.code[0] = '\0';
+    }
 }
 
 int find_max_idx(const float *f)
@@ -100,6 +136,38 @@ static inline int process_block(struct demod_state *s)
     return i;
 }
 
+/* Emit one JSON v2 object for a selcall (ZVEI/DZVEI/PZVEI) code.
+ * See docs/json-output-schema-v2.md: no capcode, no message, empty
+ * encodings[], the accumulated digit string under selcall.code. */
+static void selcall_emit_json_v1(const SelcallFrame *f)
+{
+    cJSON *obj = json_new(f->demod_name, "selcall", "message", "selcall");
+    if (!obj) return;
+    json_set_capcode(obj, -1, NULL);
+    json_set_message(obj, NULL);
+    cJSON *p = json_proto(obj, "selcall");
+    if (p)
+        cJSON_AddStringToObject(p, "code", f->code);
+    json_emit(obj);
+}
+
+/* Text output for one completed selcall code: "<name>: <digits>\n".
+ * Reproduces the single line the former incremental verbprintf() calls
+ * emitted (name prefix on the first digit, each digit, trailing newline). */
+static void selcall_text_emit(const SelcallFrame *f)
+{
+    verbprintf(0, "%s: %s\n", f->demod_name, f->code);
+}
+
+/* Single dispatch point for all selcall output. */
+static void selcall_emit(const SelcallFrame *f)
+{
+    if (json_format == JSON_FORMAT_UNIFIED)
+        selcall_emit_json_v1(f);
+    else
+        selcall_text_emit(f);
+}
+
 void selcall_demod(struct demod_state *s, const float *buffer, int length,
                    const unsigned int *selcall_freq, const char * const name)
 {
@@ -119,9 +187,13 @@ void selcall_demod(struct demod_state *s, const float *buffer, int length,
             i = process_block(s);
             if (i != s->l1.selcall.lastch && i >= 0)
             {
-                if(s->l1.selcall.timeout == 0)
-                    verbprintf(0, "%s: ", name);
-                verbprintf(0, "%1X", i);
+                /* Digit accumulation: the completed code is emitted as one
+                 * line/object at the flush point below via selcall_emit(). */
+                if (s->l1.selcall.codelen < 63) {
+                    static const char hexd[] = "0123456789ABCDEF";
+                    s->l1.selcall.code[s->l1.selcall.codelen++] = hexd[i & 0xf];
+                    s->l1.selcall.code[s->l1.selcall.codelen] = '\0';
+                }
                 s->l1.selcall.timeout = 1;
             }
 
@@ -129,7 +201,13 @@ void selcall_demod(struct demod_state *s, const float *buffer, int length,
                 s->l1.selcall.timeout++;
             if(s->l1.selcall.timeout > TIMEOUT_LIMIT+1)
             {
-                verbprintf(0, "\n");
+                if (s->l1.selcall.codelen > 0) {
+                    SelcallFrame f;
+                    selcall_fill_frame(s, name, &f);
+                    selcall_emit(&f);
+                }
+                s->l1.selcall.codelen = 0;
+                s->l1.selcall.code[0] = '\0';
                 s->l1.selcall.timeout = 0;
             }
 
