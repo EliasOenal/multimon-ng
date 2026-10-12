@@ -135,7 +135,7 @@ static void eas_emit(const EasFrame *f)
         if (f->type == 'h') {
             cJSON *v1 = json_new(f->demod_name, "eas", "message", "eas_header");
             if (v1) {
-                json_set_capcode(v1, -1, NULL);
+                json_set_capcode(v1, -1);
                 /* encodings: raw (hex of alert string) + alpha */
                 json_add_encoding(v1, "raw", f->raw_hex, -1, -1);
                 json_add_encoding(v1, "alpha", f->message, -1, -1);
@@ -148,7 +148,7 @@ static void eas_emit(const EasFrame *f)
         } else {
             cJSON *v1 = json_new(f->demod_name, "eas", "event", "eas_eom");
             if (v1) {
-                json_set_capcode(v1, -1, NULL);
+                json_set_capcode(v1, -1);
                 json_set_message(v1, NULL);  /* encodings stays [] */
                 cJSON *e = json_proto(v1, "eas");
                 if (e)

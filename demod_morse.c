@@ -291,7 +291,7 @@ static void morse_emit_json_v1(const MorseFrame *f)
 
         cJSON *obj = json_new(f->demod_name, "morse", "message", "morse");
         if (obj) {
-            json_set_capcode(obj, -1, NULL);
+            json_set_capcode(obj, -1);
             json_set_message(obj, trimmed);
             json_emit(obj);
         }

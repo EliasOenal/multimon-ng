@@ -382,17 +382,13 @@ cJSON *json_new(const char *demod, const char *protocol, const char *kind,
     return obj;
 }
 
-void json_set_capcode(cJSON *obj, long long capcode, const char *capcode_type)
+void json_set_capcode(cJSON *obj, long long capcode)
 {
     if (!obj) return;
     if (capcode < 0)
         cJSON_AddNullToObject(obj, "capcode");
     else
         cJSON_AddNumberToObject(obj, "capcode", (double)capcode);
-    if (capcode_type)
-        cJSON_AddStringToObject(obj, "capcode_type", capcode_type);
-    else
-        cJSON_AddNullToObject(obj, "capcode_type");
 }
 
 void json_set_message(cJSON *obj, const char *message)

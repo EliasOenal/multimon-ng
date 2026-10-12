@@ -7,7 +7,7 @@
   "type": "object",
   "required": [
     "$schema", "schema_version", "timestamp", "demod", "protocol",
-    "kind", "msg_type", "capcode", "capcode_type", "message", "encodings"
+    "kind", "msg_type", "capcode", "message", "encodings"
   ],
 
   "properties": {
@@ -51,11 +51,6 @@
     "capcode": {
       "type": ["integer", "null"],
       "description": "Subscriber address (paging capcode). null for events and diagnostics."
-    },
-    "capcode_type": {
-      "type": ["string", "null"],
-      "enum": ["short", "long", null],
-      "description": "Address type when applicable. null for events/diagnostics and protocols without a type distinction."
     },
     "message": {
       "type": ["string", "null"],

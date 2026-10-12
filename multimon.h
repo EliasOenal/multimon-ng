@@ -404,14 +404,13 @@ extern int json_format;
  * Declared here so unixinput.c can reset it if needed; defined in pocsag.c. */
 extern char pocsag_active_charset[32];
 
-/* Build a v1 envelope object: adds $schema, schema_version, timestamp,
+/* Build the envelope object: adds $schema, schema_version, timestamp,
  * timestamp_us, demod, protocol, kind, msg_type.  Returns a new cJSON object
- * (caller owns it, finalize with json_emit_emit).  capcode<0 and capcode_type==NULL
- * emit JSON null for those fields. */
+ * (caller owns it, finalize with json_emit_emit).  capcode<0 emits JSON null. */
 cJSON *json_new(const char *demod, const char *protocol, const char *kind,
                   const char *msg_type);
-/* Add capcode (int64, <0 => null) and capcode_type (NULL => null). */
-void json_set_capcode(cJSON *obj, long long capcode, const char *capcode_type);
+/* Add capcode (int64, <0 => null). */
+void json_set_capcode(cJSON *obj, long long capcode);
 /* Add the top-level message shortcut (NULL => null). */
 void json_set_message(cJSON *obj, const char *message);
 /* Append an encoding entry {encoding, data[, score][, bits]} to obj.encodings

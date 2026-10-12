@@ -143,7 +143,7 @@ static void selcall_emit_json_v1(const SelcallFrame *f)
 {
     cJSON *obj = json_new(f->demod_name, "selcall", "message", "selcall");
     if (!obj) return;
-    json_set_capcode(obj, -1, NULL);
+    json_set_capcode(obj, -1);
     json_set_message(obj, NULL);
     cJSON *p = json_proto(obj, "selcall");
     if (p)

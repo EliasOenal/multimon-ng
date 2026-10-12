@@ -55,7 +55,6 @@ that depend on the pre-v2 output.  The two flags are mutually exclusive.
   "kind":           "message",    // string -- "message" | "event" | "diagnostic"
   "msg_type":       "alphanumeric", // string -- semantic type; see per-demod table
   "capcode":        1234567,      // int64 | null -- subscriber address (null when no address)
-  "capcode_type":   "short",      // string | null -- "short" | "long" | "group"
   "message":        "Hello",      // string | null -- best decode shortcut from encodings[]
   "encodings":      [ ... ],      // array -- all decode representations; always present, may be []
   "<demod_key>":    { ... }       // object -- protocol-specific fields; absent when not applicable
@@ -161,9 +160,9 @@ otherwise — never a null or empty object.
   "phase":       "C",    // string — "A" | "B" | "C" | "D"
 
   // --- FLEX_NEXT addressed messages ---
-  "addr_type":    "L",   // string — "S" (short) | "L" (long) | "T" (temporary group) |
-                        //          "N" (network/NID) | "I" (info service) |
-                        //          "O" (operator) | "R" (reserved)
+  "capcode_type": "long",  // string — "short" | "long" | "temp_group" |
+                           //          "network" | "info" | "operator" | "reserved"
+                           //          (old FLEX: "short" | "long" | "temp_group" only)
   "type_tag":     "ALN", // string — wire type tag (ALN/NUM/HEX/TON/SEC:ALN/BIW_DATE/…)
   "is_group":     false, // bool
   "is_priority":  false, // bool
@@ -262,6 +261,104 @@ otherwise — never a null or empty object.
 }
 ```
 
+> **Note — FLEX group addressing fields** (`capcode_type`, `is_group`,
+> `group_slot`, `group_capcodes`, `maildrop`): these fields reflect FLEX's
+> two distinct group-delivery mechanisms, both unique to the protocol.
+> See [FLEX Group Addressing](#flex-group-addressing) below for the full
+> explanation.
+
+---
+
+### FLEX Group Addressing
+
+#### Temporary group delivery (`capcode_type: "temp_group"`)
+
+FLEX defines 16 *Temporary Group Address* slots — capcodes
+`2,029,568–2,029,583` (address words `0x1F7800–0x1F780F`,
+`addr_type 'T'` per ARIB STD-43A §3.8.1).  These addresses are not
+permanently assigned to any subscriber.  They are short-lived delivery
+channels, borrowed for the duration of one group transmission and
+immediately freed.
+
+The two-phase protocol (§3.8.2.3 / §5.2):
+
+1. **SETUP** — the transmitter sends a Short Instruction message to each
+   *individual* member capcode, telling that pager: "in frame F, wake on
+   temporary slot X".  A group of N members receives N individual SETUP
+   instructions across successive frames.
+2. **DELIVERY** — in the announced frame, the actual message is
+   transmitted exactly once, addressed to the temporary slot capcode.
+   All enrolled pagers decode a single over-the-air transmission.
+
+This is why the name is *temporary*: the slot assignment is per-message,
+negotiated ahead of time via the SETUP phase, and the slot index is
+available for reuse as soon as DELIVERY completes.  It is an
+over-the-air multiplexing mechanism — not a provisioned address — which
+is why the receiver observes both a burst of SETUP instructions on
+individual capcodes and then a final DELIVERY on the slot address.
+
+In the JSON output:
+
+- `capcode_type: "temp_group"` — the decoded capcode is the temporary
+  slot address (a DELIVERY frame).
+- `group_slot` — 0-based slot index (0–15); `capcode − 2,029,568`.
+- `group_capcodes` — array of individual member capcodes accumulated
+  from the SETUP instructions seen before this DELIVERY.  Present only
+  when at least one SETUP was captured in the same decoder session; may
+  be absent or incomplete if the SETUP phase was not received.
+
+#### Regular group addresses (all protocols)
+
+There is no "group" address type in any paging protocol outside of the
+temporary-group mechanism above.  A group in the ordinary sense — one
+capcode shared among multiple pagers — is a pure *operator provisioning*
+decision: the network operator programs the same capcode into every
+pager in the group, then transmits a single message to that capcode.
+From the protocol perspective the transmission is identical to a
+one-to-one message; the decoder cannot distinguish a shared capcode from
+an individual one.  This applies equally to POCSAG, FLEX (old decoder),
+GSC, and every other paging protocol.
+
+This means the absence of `capcode_type: "temp_group"` does **not**
+imply the message is addressed to exactly one person.
+
+#### Maildrop and info services (`maildrop`, `capcode_type: "info"`)
+
+FLEX carries a single-bit **M (mail-drop) flag** in the vector word of
+alpha and hex messages.  When `maildrop: 1`, the pager is expected to
+handle the message separately from ordinary alerts — typically by
+displaying it with a special "info" icon rather than triggering a
+normal alert.  The flag is a pager-side display/handling hint; it does
+not change the address or the over-the-air encoding.
+
+Historically, paging operators used the maildrop flag to deliver
+machine-originated content — news headlines, stock quotes, weather
+bulletins — that the subscriber opted into as a feed rather than a
+person-to-person message.  This is the paging equivalent of a maildrop
+box: the pager checks it periodically without an alert.
+
+FLEX also reserves a dedicated **Info Service address range**:
+capcodes `2,009,088–2,025,471` (address words `0x1F2800–0x1F67FF`,
+`addr_type 'I'`, ARIB STD-43A §3.8.1).  ARIB marks the use of this
+range as "under study" with no standardised protocol behaviour.  In
+practice, operators provision each pager with exactly one info service
+capcode, chosen so that its assigned frame aligns with the pager's
+collapse slot (ensuring the pager wakes for it at zero extra battery
+cost).  Messages to these capcodes are sent with `maildrop=1` so the
+pager renders them with the info icon.
+
+`capcode_type: "info"` in the JSON output means only that the decoded
+capcode falls in this reserved address range.  Info service behaviour
+also requires `maildrop: 1`; without it the range carries no special
+semantics.
+
+For old FLEX and POCSAG, neither the maildrop flag nor any equivalent
+info-service concept is present in the wire format.  A "maildrop"
+subscription on those networks is indistinguishable from any other
+message at the protocol level.
+
+---
+
 ### `pocsag`
 
 ```jsonc
@@ -359,7 +456,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "POCSAG1200", "protocol": "pocsag", "kind": "message", "msg_type": "alphanumeric",
-  "capcode": 1234567, "capcode_type": "short",
+  "capcode": 1234567,
   "message": "Über alles",
   "encodings": [
     { "encoding": "raw",     "data": "dc62657220616c6c657300" },
@@ -379,7 +476,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "POCSAG512", "protocol": "pocsag", "kind": "event", "msg_type": "tone_only",
-  "capcode": 7654321, "capcode_type": "short",
+  "capcode": 7654321,
   "message": null, "encodings": [],
   "pocsag": { "function": 3, "baud_rate": 512, "polarity": "normal" }
 }
@@ -393,7 +490,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "FLEX_NEXT", "protocol": "flex", "kind": "message", "msg_type": "alphanumeric",
-  "capcode": 1119003, "capcode_type": "long",
+  "capcode": 1119003,
   "message": "P2000 TEST",
   "encodings": [
     { "encoding": "raw",   "data": "5032303030205445535400" },
@@ -401,7 +498,7 @@ otherwise — never a null or empty object.
   ],
   "flex": {
     "baud": 1600, "levels": 4, "cycle": 14, "frame": 125, "phase": "C",
-    "is_group": false, "msg_number": 1, "k_ok": true
+    "capcode_type": "long", "is_group": false, "msg_number": 1, "k_ok": true
   }
 }
 ```
@@ -414,9 +511,9 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "FLEX_NEXT", "protocol": "flex", "kind": "event", "msg_type": "tone_only",
-  "capcode": 1119003, "capcode_type": "long",
+  "capcode": 1119003,
   "message": null, "encodings": [],
-  "flex": { "baud": 1600, "levels": 4, "cycle": 14, "frame": 125, "phase": "C" }
+  "flex": { "baud": 1600, "levels": 4, "cycle": 14, "frame": 125, "phase": "C", "capcode_type": "long" }
 }
 ```
 
@@ -428,7 +525,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "FLEX_NEXT", "protocol": "flex", "kind": "diagnostic", "msg_type": "bch_stats",
-  "capcode": null, "capcode_type": null,
+  "capcode": null,
   "message": null, "encodings": [],
   "flex": {
     "baud": 1600, "levels": 4, "phase": "C", "cycle": 14, "frame": 125,
@@ -445,13 +542,13 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "FLEX_NEXT", "protocol": "flex", "kind": "message", "msg_type": "numeric",
-  "capcode": 1119003, "capcode_type": "long",
+  "capcode": 1119003,
   "message": "0612345678",
   "encodings": [
     { "encoding": "raw",     "data": "0612345678" },
     { "encoding": "numeric", "data": "0612345678" }
   ],
-  "flex": { "baud": 1600, "levels": 4, "cycle": 14, "frame": 125, "phase": "C" }
+  "flex": { "baud": 1600, "levels": 4, "cycle": 14, "frame": 125, "phase": "C", "capcode_type": "long" }
 }
 ```
 
@@ -463,7 +560,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "EAS", "protocol": "eas", "kind": "event", "msg_type": "eas_header",
-  "capcode": null, "capcode_type": null,
+  "capcode": null,
   "message": "ZCZC-EAS-RWT-012057+0015-2780415-WKBT/FM-",
   "encodings": [
     { "encoding": "raw",   "data": "5a435a432d454153..." },
@@ -481,7 +578,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "EAS", "protocol": "eas", "kind": "event", "msg_type": "eas_eom",
-  "capcode": null, "capcode_type": null,
+  "capcode": null,
   "message": null, "encodings": [],
   "eas": { "eom": "NNNN" }
 }
@@ -495,7 +592,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "DTMF", "protocol": "dtmf", "kind": "message", "msg_type": "dtmf",
-  "capcode": null, "capcode_type": null,
+  "capcode": null,
   "message": "5", "encodings": []
 }
 ```
@@ -508,7 +605,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "FMS", "protocol": "fms", "kind": "message", "msg_type": "fms",
-  "capcode": null, "capcode_type": null,
+  "capcode": null,
   "message": null, "encodings": [],
   "fms": {
     "raw": "0812345678ab",
@@ -529,7 +626,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "ZVEI1", "protocol": "selcall", "kind": "message", "msg_type": "selcall",
-  "capcode": null, "capcode_type": null,
+  "capcode": null,
   "message": null, "encodings": [],
   "selcall": { "code": "1A2B3C" }
 }
@@ -543,7 +640,7 @@ otherwise — never a null or empty object.
   "schema_version": 2,
   "timestamp": 1760000000, "timestamp_us": 0,
   "demod": "MORSE_CW", "protocol": "morse", "kind": "message", "msg_type": "morse",
-  "capcode": null, "capcode_type": null,
+  "capcode": null,
   "message": "HELLO", "encodings": []
 }
 ```
@@ -615,4 +712,4 @@ for line in sys.stdin:
 | `baud` / `level` / `phase` / `cycle` / `frame` (FLEX_NEXT) | `flex.*` | Nested under same key |
 | `timestamp` (conditional string) | `timestamp` (always int64) | Always Unix epoch |
 | `msg_type` e.g. `"flex_alphanumeric"` | `"alphanumeric"` | Protocol prefix dropped |
-| *(absent)* | `$schema` `schema_version` `kind` `encodings` `capcode_type` `timestamp_us` | New |
+| *(absent)* | `$schema` `schema_version` `kind` `encodings` `timestamp_us` | New |

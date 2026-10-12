@@ -90,7 +90,7 @@ static void dtmf_emit(const DtmfFrame *f)
     if (json_format == JSON_FORMAT_UNIFIED) {
         cJSON *v1 = json_new(f->demod_name, "dtmf", "message", "dtmf");
         if (v1) {
-            json_set_capcode(v1, -1, NULL);
+            json_set_capcode(v1, -1);
             json_set_message(v1, digit);
             /* encodings stays [] (no wire byte buffer) */
             json_emit(v1);

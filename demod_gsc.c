@@ -237,7 +237,7 @@ static void gsc_json_emit_v1(const char *address, const char *msg_type,
      * (Code AB, shared by all pagers in a group) -- but this distinction is a
      * provisioning concept at the terminal; it is not encoded in the transmission.
      * capcode_type is therefore null for all GSC messages. */
-    json_set_capcode(obj, capcode, NULL);
+    json_set_capcode(obj, capcode);
 
     /* encodings: raw first, then both decode candidates with scores (descending).
      * When only one candidate exists (single-type or voice), emit it without score. */

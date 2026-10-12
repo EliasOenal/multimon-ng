@@ -403,7 +403,7 @@ static void fms_emit_json_v1(const FmsFrame *fr)
     cJSON *obj = json_new("FMS", "fms", "message", "fms");
     if (!obj) return;
 
-    json_set_capcode(obj, -1, NULL);
+    json_set_capcode(obj, -1);
     json_set_message(obj, NULL);
     /* encodings[] intentionally left empty for FMS. */
 

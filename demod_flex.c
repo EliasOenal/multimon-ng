@@ -672,20 +672,18 @@ static int flex_pack4_hex(const char *s, char *out, size_t out_sz)
     return total_bits;
 }
 
-/* Build a v1 envelope for a FLEX frame and populate the nested flex{} object
+/* Build an envelope for a FLEX frame and populate the nested flex{} object
  * with the common fields (baud, levels, cycle, frame, phase).  Caller adds
  * encodings / message and calls json_emit(). */
-static cJSON *flex_json_v1_new(struct Flex *flex, char PhaseNo,
+static cJSON *flex_json_new(struct Flex *flex, char PhaseNo,
                                const char *kind, const char *msg_type)
 {
     long long capcode = flex->Decode.capcode;
-    const char *capcode_type = flex->Decode.long_address ? "long" : "short";
 
     cJSON *obj = json_new("FLEX", "flex", kind, msg_type);
     if (!obj) return NULL;
 
-    json_set_capcode(obj, (capcode >= 0) ? capcode : -1,
-                       (capcode >= 0) ? capcode_type : NULL);
+    json_set_capcode(obj, (capcode >= 0) ? capcode : -1);
 
     cJSON *f = json_proto(obj, "flex");
     if (f) {
@@ -695,6 +693,14 @@ static cJSON *flex_json_v1_new(struct Flex *flex, char PhaseNo,
         cJSON_AddNumberToObject(f, "cycle", flex->FIW.cycleno);
         cJSON_AddNumberToObject(f, "frame", flex->FIW.frameno);
         cJSON_AddStringToObject(f, "phase", phase_str);
+        if (capcode >= 0) {
+            const char *ct;
+            if (capcode >= FLEX_GROUP_ADDR_MIN && capcode <= FLEX_GROUP_ADDR_MAX)
+                ct = "temp_group";
+            else
+                ct = flex->Decode.long_address ? "long" : "short";
+            cJSON_AddStringToObject(f, "capcode_type", ct);
+        }
     }
     return obj;
 }
@@ -874,10 +880,10 @@ static void flex_legacy_emit(struct Flex *flex, const FlexFrame *f)
     cJSON_Delete(json_output);
 }
 
-/* JSON v2 output for a decoded FLEX page, built from the IR. */
-static void flex_emit_json_v1(struct Flex *flex, const FlexFrame *f)
+/* JSON output for a decoded FLEX page, built from the IR. */
+static void flex_emit_json(struct Flex *flex, const FlexFrame *f)
 {
-    cJSON *obj = flex_json_v1_new(flex, f->PhaseNo, f->kind, f->msg_type);
+    cJSON *obj = flex_json_new(flex, f->PhaseNo, f->kind, f->msg_type);
     if (!obj) return;
 
     if (strcmp(f->msg_type, "tone_only") == 0) {
@@ -903,7 +909,7 @@ static void flex_emit_json_v1(struct Flex *flex, const FlexFrame *f)
 static void flex_emit(struct Flex *flex, const FlexFrame *f)
 {
     if (json_format == JSON_FORMAT_UNIFIED) {
-        flex_emit_json_v1(flex, f);
+        flex_emit_json(flex, f);
         return;
     }
     if (json_format != JSON_FORMAT_NONE) {

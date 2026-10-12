@@ -674,7 +674,7 @@ static void pocsag_emit_json_v1(const PocsagFrame *f)
                             tone_only ? "tone_only" : msg_type_str);
     if (!obj) return;
 
-    json_set_capcode(obj, capcode, (capcode >= 0) ? "short" : NULL);
+    json_set_capcode(obj, capcode);
 
     const char *best = NULL;
 
