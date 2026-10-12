@@ -78,8 +78,10 @@ Empty (`[]`) for events, diagnostics, and frames with no byte payload
 ```
 
 `data`: lowercase hex of the protocol payload.  Meaning is per-protocol:
-- POCSAG: the actual wire byte buffer received from the pager channel
-  (Latin-1 packed; `dc62...` = wire bytes for "Uber alles")
+- POCSAG: the 20-bit data fields from each POCSAG codeword, packed
+  consecutively into nibbles (5 nibbles = 20 bits per codeword, MSB-first).
+  These are the raw data bits as received; the alpha/numeric decoders
+  interpret them separately.  Not the decoded character bytes.
 - FLEX ALN: 7-bit codepoints re-packed MSB-first from the decoded string
 - FLEX NUM: BCD nibbles re-packed from the decoded digit string
 - FLEX HEX/BIN: the raw payload bytes as-is
@@ -87,7 +89,9 @@ Empty (`[]`) for events, diagnostics, and frames with no byte payload
 - EAS: the full SAME header string as ASCII bytes
 - GSC: BCH data bytes (7 bytes per block, post-error-correction)
 
-`bits`: total bit count; omitted when byte-aligned (bits = len(data) x 4).
+`bits`: total bit count of the payload; always present on `raw` entries.
+Tells the consumer how many bits in the hex blob are valid content — the
+last hex nibble may be zero-padded when the bit count is not a multiple of 4.
 
 The re-pack formats (FLEX ALN/NUM, FMS) allow a consumer to verify the
 decode but are not the original wire codewords.
@@ -448,23 +452,39 @@ message at the protocol level.
 
 ## Worked examples
 
-### POCSAG, auto mode, German charset
+### POCSAG alphanumeric
 
 ```json
 {
   "$schema": "multimon-ng/json/v2",
   "schema_version": 2,
-  "timestamp": 1760000000, "timestamp_us": 0,
+  "timestamp": 1791787531, "timestamp_us": 0,
   "demod": "POCSAG1200", "protocol": "pocsag", "kind": "message", "msg_type": "alphanumeric",
-  "capcode": 1234567,
-  "message": "Über alles",
+  "capcode": 273040,
+  "message": "+++TIME=0008300324+++TIME=0008300324<NUL>",
   "encodings": [
-    { "encoding": "raw",     "data": "dc62657220616c6c657300" },
-    { "encoding": "alpha",   "data": "Über alles", "score": 52 },
-    { "encoding": "numeric", "data": "3 7385-2 5338", "score": 9 },
-    { "encoding": "skyper",  "data": "Tacd zkkdr",   "score": 1 }
+    { "encoding": "raw",   "data": "d5ab51593668de0c1830ecc183664c5b56ad4564d9a3783060c3b3060d99316000", "bits": 260 },
+    { "encoding": "alpha", "data": "+++TIME=0008300324+++TIME=0008300324<NUL>" }
   ],
-  "pocsag": { "function": 1, "charset": "DE", "baud_rate": 1200, "polarity": "normal" }
+  "pocsag": { "function": 3, "baud_rate": 1200, "polarity": "normal" }
+}
+```
+
+### POCSAG numeric (forced mode)
+
+```json
+{
+  "$schema": "multimon-ng/json/v2",
+  "schema_version": 2,
+  "timestamp": 1791787531, "timestamp_us": 0,
+  "demod": "POCSAG512", "protocol": "pocsag", "kind": "message", "msg_type": "numeric",
+  "capcode": 273040,
+  "message": "5U89 04240-4394 2284U.5-.65U.5",
+  "encodings": [
+    { "encoding": "raw",     "data": "ad19302420b2c9234412d5ab56ad5a", "bits": 120 },
+    { "encoding": "numeric", "data": "5U89 04240-4394 2284U.5-.65U.5" }
+  ],
+  "pocsag": { "function": 3, "baud_rate": 512, "polarity": "normal" }
 }
 ```
 
@@ -474,11 +494,11 @@ message at the protocol level.
 {
   "$schema": "multimon-ng/json/v2",
   "schema_version": 2,
-  "timestamp": 1760000000, "timestamp_us": 0,
-  "demod": "POCSAG512", "protocol": "pocsag", "kind": "event", "msg_type": "tone_only",
-  "capcode": 7654321,
+  "timestamp": 1791787454, "timestamp_us": 0,
+  "demod": "POCSAG1200", "protocol": "pocsag", "kind": "event", "msg_type": "tone_only",
+  "capcode": 671968,
   "message": null, "encodings": [],
-  "pocsag": { "function": 3, "baud_rate": 512, "polarity": "normal" }
+  "pocsag": { "function": 1, "baud_rate": 1200, "polarity": "normal" }
 }
 ```
 
