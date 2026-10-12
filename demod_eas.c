@@ -97,7 +97,86 @@ static float eascorr_space_q[CORRLEN_SIZE];
 #define MAX(a,b) (((a)>(b))?(a):(b))
 #define MIN(a,b) (((a)<(b))?(a):(b))
 
-extern int json_mode;
+
+/* ---------------------------------------------------------------------- */
+
+/* All fields produced by one EAS emit event.  Populated at the call site in
+ * eas_frame() and consumed by eas_emit().
+ * A header frame carries the full alert string and its hex; an EOM frame
+ * carries only the type. */
+typedef struct {
+    char type;              /* 'h'=header, 'e'=eom */
+    char message[520];      /* the full alert string (HEADER_BEGIN + last_message), header only */
+    char raw_hex[1050];     /* hex of message bytes, header only */
+    const char *demod_name; /* s->dem_par->name */
+} EasFrame;
+
+/* Text output for one EAS event.  Called by eas_emit() when no JSON mode is active. */
+static void eas_text_emit(const EasFrame *f)
+{
+    if (f->type == 'h')
+        verbprintf(0, "%s: %s\n", f->demod_name, f->message);
+    else
+        verbprintf(0, "%s: %s\n", f->demod_name, EOM);
+}
+
+/* Single dispatch point for all EAS output.  Each call site in eas_frame()
+ * builds an EasFrame and calls this.
+ * JSON v2: header is kind:"message" (it carries the decoded SAME alert
+ * string), EOM is kind:"event". */
+static void eas_emit(const EasFrame *f)
+{
+    if (json_format == JSON_FORMAT_NONE) {
+        eas_text_emit(f);
+        return;
+    }
+
+    if (json_format == JSON_FORMAT_UNIFIED) {
+        if (f->type == 'h') {
+            cJSON *v1 = json_new(f->demod_name, "eas", "message", "eas_header");
+            if (v1) {
+                json_set_capcode(v1, -1);
+                /* encodings: raw (hex of alert string) + alpha */
+                json_add_encoding(v1, "raw", f->raw_hex, -1, -1);
+                json_add_encoding(v1, "alpha", f->message, -1, -1);
+                json_set_message(v1, f->message);
+                cJSON *e = json_proto(v1, "eas");
+                if (e)
+                    cJSON_AddStringToObject(e, "header_begin", HEADER_BEGIN);
+                json_emit(v1);
+            }
+        } else {
+            cJSON *v1 = json_new(f->demod_name, "eas", "event", "eas_eom");
+            if (v1) {
+                json_set_capcode(v1, -1);
+                json_set_message(v1, NULL);  /* encodings stays [] */
+                cJSON *e = json_proto(v1, "eas");
+                if (e)
+                    cJSON_AddStringToObject(e, "eom", EOM);
+                json_emit(v1);
+            }
+        }
+        return;
+    }
+
+    /* Legacy JSON */
+    {
+        cJSON *json_output = cJSON_CreateObject();
+        cJSON_AddStringToObject(json_output, "demod_name", f->demod_name);
+        if (f->type == 'h') {
+            cJSON_AddStringToObject(json_output, "header_begin", HEADER_BEGIN);
+            /* f->message is "HEADER_BEGIN + last_message"; the legacy schema
+             * emitted last_message alone, so strip the HEADER_BEGIN prefix. */
+            cJSON_AddStringToObject(json_output, "last_message",
+                                    f->message + strlen(HEADER_BEGIN));
+        } else {
+            cJSON_AddStringToObject(json_output, "end_of_message", EOM);
+        }
+        addJsonTimestamp(json_output);
+        printJson(json_output);
+        cJSON_Delete(json_output);
+    }
+}
 
 /* ---------------------------------------------------------------------- */
 
@@ -145,7 +224,6 @@ static void eas_frame(struct demod_state *s, char data)
 {
     int i,j = 0;
     char * ptr = 0;
-    cJSON *json_output = cJSON_CreateObject();
 
     if (data)
     {
@@ -239,16 +317,25 @@ static void eas_frame(struct demod_state *s, char data)
                   
                   // raise the alert and discontinue processing
                   verbprintf(7, "\n");
-                  if (!json_mode) {
-                      verbprintf(0, "%s: %s%s\n", s->dem_par->name, HEADER_BEGIN,
-                                  s->l2.eas.last_message);
-                  }
-                  else {
-                      cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
-                       cJSON_AddStringToObject(json_output, "header_begin", HEADER_BEGIN);
-                       cJSON_AddStringToObject(json_output, "last_message", s->l2.eas.last_message);
-                       addJsonTimestamp(json_output);
-                       printJson(json_output);
+                  {
+                      EasFrame f;
+                      int fi, ho;
+                      static const char hexd[] = "0123456789abcdef";
+                      memset(&f, 0, sizeof(f));
+                      f.type = 'h';
+                      f.demod_name = s->dem_par->name;
+                      /* full alert string = HEADER_BEGIN + last_message */
+                      snprintf(f.message, sizeof(f.message), "%s%s",
+                               HEADER_BEGIN, s->l2.eas.last_message);
+                      /* raw_hex = hex of the full alert string */
+                      ho = 0;
+                      for (fi = 0; f.message[fi] &&
+                           (size_t)(ho + 2) < sizeof(f.raw_hex); fi++) {
+                          f.raw_hex[ho++] = hexd[((unsigned char)f.message[fi] >> 4) & 0xf];
+                          f.raw_hex[ho++] = hexd[(unsigned char)f.message[fi] & 0xf];
+                      }
+                      f.raw_hex[ho] = '\0';
+                      eas_emit(&f);
                   }
                   i = MAX_STORE_MSG;
                   break;
@@ -260,14 +347,12 @@ static void eas_frame(struct demod_state *s, char data)
        else if (s->l2.eas.state == EAS_L2_READING_EOM)
        {
          // raise the EOM
-         if (!json_mode) {
-             verbprintf(0, "%s: %s\n", s->dem_par->name, EOM);
-         }
-         else {
-             cJSON_AddStringToObject(json_output, "demod_name", s->dem_par->name);
-              cJSON_AddStringToObject(json_output, "end_of_message", EOM);
-              addJsonTimestamp(json_output);
-              printJson(json_output);
+         {
+             EasFrame f;
+             memset(&f, 0, sizeof(f));
+             f.type = 'e';
+             f.demod_name = s->dem_par->name;
+             eas_emit(&f);
          }
        }
        // go back to idle
@@ -275,7 +360,6 @@ static void eas_frame(struct demod_state *s, char data)
        s->l2.eas.msglen = 0;
        s->l2.eas.headlen = 0;
     }
-    cJSON_Delete(json_output);
 }
 
 static void eas_demod(struct demod_state *s, buffer_t buffer, int length)

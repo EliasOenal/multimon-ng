@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "multimon-ng/json/v2",
+  "title": "multimon-ng JSON output v2",
+  "description": "One object per decoded event from multimon-ng --json. Schema version 2 (--json-old produces the pre-v2 legacy format).",
+
+  "type": "object",
+  "required": [
+    "$schema", "schema_version", "timestamp", "demod", "protocol",
+    "kind", "msg_type", "capcode", "message", "encodings"
+  ],
+
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "const": "multimon-ng/json/v2",
+      "description": "Format identifier. Allows line-1 detection without schema_version parsing."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 2,
+      "description": "Integer version gate. Increment on breaking envelope changes."
+    },
+    "timestamp": {
+      "type": "integer",
+      "description": "Unix epoch seconds (UTC). Always present; not gated on --timestamp."
+    },
+    "timestamp_us": {
+      "type": "integer",
+      "description": "Microseconds offset within the second. Nonzero only when --iso8601 is active.",
+      "minimum": 0,
+      "maximum": 999999
+    },
+    "demod": {
+      "type": "string",
+      "description": "Exact demodulator token as it appears on the CLI (e.g. POCSAG1200, FLEX_NEXT, GSC). Preserves baud-rate granularity."
+    },
+    "protocol": {
+      "type": "string",
+      "description": "Normalized protocol family, lowercase (e.g. pocsag, flex, gsc, eas, fms, selcall, dtmf, morse). Use for routing when baud-rate granularity is not needed."
+    },
+    "kind": {
+      "type": "string",
+      "enum": ["message", "event", "diagnostic"],
+      "description": "message: carries subscriber payload (capcode + encodings). event: protocol-level signal with no subscriber payload (tone-only, BIW, EOM). diagnostic: decoder internal stats (BCH, etc.). Consumers must tolerate unknown future kinds."
+    },
+    "msg_type": {
+      "type": "string",
+      "description": "Protocol-specific message sub-type (e.g. pocsag, alphanumeric, numeric, tone_only, eas_header, bch_stats). Consumers must tolerate unknown values."
+    },
+    "capcode": {
+      "type": ["integer", "null"],
+      "description": "Subscriber address (paging capcode). null for events and diagnostics."
+    },
+    "message": {
+      "type": ["string", "null"],
+      "description": "Best-decoded message text shortcut. null for events/diagnostics. For POCSAG this is the highest-scoring heuristic attempt; other protocols emit the single decoded string."
+    },
+    "encodings": {
+      "type": "array",
+      "description": "All decode representations of the payload, ordered: raw wire bytes first, then decoded attempts. Empty for events/diagnostics.",
+      "items": {
+        "type": "object",
+        "required": ["encoding"],
+        "properties": {
+          "encoding": {
+            "type": "string",
+            "description": "Encoding type: raw (hex), alpha, numeric, skyper."
+          },
+          "data": {
+            "type": "string",
+            "description": "Decoded content. For raw: lowercase hex string."
+          },
+          "score": {
+            "type": "integer",
+            "description": "Heuristic quality score. Present for POCSAG auto-mode competing attempts; absent otherwise."
+          },
+          "bits": {
+            "type": "integer",
+            "description": "Payload bit count. Present for raw entries when the bit count is not a multiple of 8 (e.g. 7-bit packed FLEX alpha)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+
+  "additionalProperties": true,
+  "$comment": "additionalProperties:true allows protocol-specific nested objects (e.g. flex:{}, pocsag:{}, gsc:{}) whose key matches the 'protocol' field. Consumers should tolerate unknown protocol keys. New envelope fields will be added with additive-only semver; the integer schema_version is the machine-readable gate."
+}

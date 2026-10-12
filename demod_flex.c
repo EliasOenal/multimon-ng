@@ -247,7 +247,6 @@ struct Flex {
   struct Flex_GroupHandler    GroupHandler;
 };
 
-extern int json_mode;
 
 static void flex_append_text(char *buffer, size_t buffer_size, int *offset, const char *format, ...) {
   if (buffer==NULL || offset==NULL || format==NULL) return;
@@ -568,22 +567,388 @@ static int decode_fiw(struct Flex * flex) {
   }
 }
 
+/* --- JSON v2 helpers for the (old) FLEX decoder ------------------------- */
+
+/* Lowercase hex of a byte buffer into out (out_sz must hold 2*nbytes+1). */
+static void flex_bytes_to_hex(const unsigned char *buf, int nbytes,
+                              char *out, size_t out_sz)
+{
+    static const char hexd[] = "0123456789abcdef";
+    int i;
+    for (i = 0; i < nbytes && (size_t)(i * 2 + 2) < out_sz; i++) {
+        out[i * 2]     = hexd[(buf[i] >> 4) & 0xf];
+        out[i * 2 + 1] = hexd[buf[i] & 0xf];
+    }
+    out[i * 2] = '\0';
+}
+
+/* Pack the low 7 bits of each character of s, MSB-first, into bytes, then
+ * render as lowercase hex.  Returns the number of payload bits actually packed.
+ *
+ * RCR STD-43A §3.9.4 ALN word structure:
+ *   Each 32-bit FLEX word carries 21 information bits.
+ *   At 7 bits/char that is exactly 3 chars per word.
+ *   §3.9.4 constrains n (words per fragment) to 2..85:
+ *     min payload: 2  words x 3 chars =    6 chars
+ *     max payload: 85 words x 3 chars =  255 chars per fragment
+ *
+ * The spec does not define a maximum fragment count -- F is a 2-bit modulo-3
+ * counter and fragments continue until C=0 (§3.10.1.3).  The decoder caps
+ * reassembled length at FLEX_FRAG_MAX_LEN (2048 chars) to bound memory.
+ *
+ * Buffer sizing for pack (7 bits/char -> 8 bits/byte, round up):
+ *   ceil(2048 * 7 / 8) = ceil(14336 / 8) = 1792 bytes */
+#define FLEX_PACK7_BUF 1792
+static int flex_pack7_hex(const char *s, char *out, size_t out_sz)
+{
+    unsigned char bytes[FLEX_PACK7_BUF];
+    int nbytes = 0;
+    unsigned int acc = 0;
+    int nbits = 0;          /* bits accumulated but not yet flushed to bytes[] */
+    int total_bits = 0;     /* bits successfully packed into bytes[] */
+    for (const char *p = s; *p; p++) {
+        /* Stop before accumulating a char we can't flush: worst case 7 new
+         * bits need ceil(7/8)=1 byte; reserve 1 byte for the final partial. */
+        if (nbytes >= (int)sizeof(bytes) - 1)
+            break;
+        acc = (acc << 7) | ((unsigned char)*p & 0x7f);
+        nbits += 7;
+        while (nbits >= 8) {
+            nbits -= 8;
+            bytes[nbytes++] = (acc >> nbits) & 0xff;
+            total_bits += 8;
+        }
+    }
+    if (nbits > 0 && nbytes < (int)sizeof(bytes)) {
+        bytes[nbytes++] = (acc << (8 - nbits)) & 0xff;
+        total_bits += nbits;  /* partial byte: only count real payload bits */
+    }
+    flex_bytes_to_hex(bytes, nbytes, out, out_sz);
+    return total_bits;
+}
+
+/* Pack each decimal/BCD character of s into a 4-bit nibble, MSB-first, and
+ * render as lowercase hex.  Returns the number of payload bits actually packed.
+ *
+ * RCR STD-43A §3.9.1 Numeric Vector:
+ *   n (words per message) = 1..8; each 32-bit FLEX word carries 21 info bits.
+ *   Packing: 21 bits / 4 bits per BCD nibble = 5 nibbles + 1 spare bit.
+ *   Max payload per single call: 8 words x 5 nibbles = 40 digits.
+ *   40 digits x 4 bits = 160 bits -> ceil(160/8) = 20 bytes actual maximum.
+ *   numbuf[1024] upstream is a legacy over-allocation retained for safety.
+ *   Pack buffer follows: ceil(1024 x 4 / 8) = 512 bytes. */
+#define FLEX_PACK4_BUF 512
+static int flex_pack4_hex(const char *s, char *out, size_t out_sz)
+{
+    /* BCD nibble 0xA (index 10) is a "space/spare" slot with no numeric value.
+     * Old-FLEX renders it as ' ' (space); FLEX_NEXT renders it as '.' per ARIB STD-43A.
+     * Both are representations of the same wire value -- the tables are intentionally
+     * different and must not be unified. */
+    static const char bcd[] = "0123456789 U -][";
+    unsigned char bytes[FLEX_PACK4_BUF];
+    int nbytes = 0;
+    unsigned int acc = 0;
+    int nbits = 0;          /* bits accumulated but not yet flushed */
+    int total_bits = 0;     /* bits successfully packed into bytes[] */
+    for (const char *p = s; *p; p++) {
+        /* 4 new bits need at most 1 byte; reserve 1 for the final partial. */
+        if (nbytes >= (int)sizeof(bytes) - 1)
+            break;
+        int nib = 0;
+        for (int k = 0; k < 16; k++) { if (bcd[k] == *p) { nib = k; break; } }
+        acc = (acc << 4) | (nib & 0x0f);
+        nbits += 4;
+        while (nbits >= 8) {
+            nbits -= 8;
+            bytes[nbytes++] = (acc >> nbits) & 0xff;
+            total_bits += 8;
+        }
+    }
+    if (nbits > 0 && nbytes < (int)sizeof(bytes)) {
+        bytes[nbytes++] = (acc << (8 - nbits)) & 0xff;
+        total_bits += nbits;
+    }
+    flex_bytes_to_hex(bytes, nbytes, out, out_sz);
+    return total_bits;
+}
+
+/* Build an envelope for a FLEX frame and populate the nested flex{} object
+ * with the common fields (baud, levels, cycle, frame, phase).  Caller adds
+ * encodings / message and calls json_emit(). */
+static cJSON *flex_json_new(struct Flex *flex, char PhaseNo,
+                               const char *kind, const char *msg_type)
+{
+    long long capcode = flex->Decode.capcode;
+
+    cJSON *obj = json_new("FLEX", "flex", kind, msg_type);
+    if (!obj) return NULL;
+
+    json_set_capcode(obj, (capcode >= 0) ? capcode : -1);
+
+    cJSON *f = json_proto(obj, "flex");
+    if (f) {
+        char phase_str[2] = { PhaseNo, '\0' };
+        cJSON_AddNumberToObject(f, "baud", flex->Sync.baud);
+        cJSON_AddNumberToObject(f, "levels", flex->Sync.levels);
+        cJSON_AddNumberToObject(f, "cycle", flex->FIW.cycleno);
+        cJSON_AddNumberToObject(f, "frame", flex->FIW.frameno);
+        cJSON_AddStringToObject(f, "phase", phase_str);
+        if (capcode >= 0) {
+            const char *ct;
+            if (capcode >= FLEX_GROUP_ADDR_MIN && capcode <= FLEX_GROUP_ADDR_MAX)
+                ct = "temp_group";
+            else
+                ct = flex->Decode.long_address ? "long" : "short";
+            cJSON_AddStringToObject(f, "capcode_type", ct);
+        }
+    }
+    return obj;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Intermediate representation (IR) for one decoded FLEX page.            */
+/*                                                                        */
+/* Each parse_* function decodes exactly once into a FlexFrame, then calls*/
+/* flex_emit(), which dispatches to the text, JSON v2, or legacy JSON     */
+/* path from a single place -- mirroring the fms.c / demod_gsc.c pattern. */
+/* The struct Flex* is still passed to the emitters for timestamp and     */
+/* group-message state, which is read-only decode data (not a re-decode). */
+/* ---------------------------------------------------------------------- */
+
+typedef struct {
+    char    PhaseNo;          /* phase character 'A'-'D' */
+    const char *kind;         /* "message" or "event" */
+    const char *msg_type;     /* "alphanumeric", "numeric", "tone_only", "unknown" */
+    char    message[1024];    /* decoded text (alphanumeric/numeric) or empty */
+    char    raw_hex[2200];    /* hex encoding of payload bits */
+    int     raw_bits;         /* bit count for raw encoding */
+    const char *enc_type;     /* "alpha", "numeric", or NULL for unknown/tone */
+    /* copy of key flex fields for text output */
+    int     baud;             /* flex->Sync.baud */
+    int     levels;           /* flex->Sync.levels */
+    int     cycleno;          /* flex->FIW.cycleno */
+    int     frameno;          /* flex->FIW.frameno */
+    long long capcode;        /* flex->Decode.capcode */
+    int     long_address;     /* flex->Decode.long_address */
+    char    frag_flag;        /* fragmentation flag char */
+    int     flex_groupmessage;/* 1 if this capcode is a group-message trigger */
+    /* tone-only: short-numeric body (empty for a pure tone) */
+    char    tone[8];          /* short tone body (BCD) or empty */
+    char    tone_long[8];     /* long-address tone body or empty */
+    /* raw word array for unknown type.  Sized to PHASE_WORDS (not 8) so the
+     * plain-text UNK line can emit every word of the page without truncation
+     * -- an unknown page can span up to PHASE_WORDS words. */
+    unsigned int raw_words[PHASE_WORDS];
+    int     raw_word_count;
+} FlexFrame;
+
+static void flex_text_emit(const struct Flex *flex, const FlexFrame *f);
+static void flex_emit(struct Flex *flex, const FlexFrame *f);
+
+/* Append the group-message capcodes for an alphanumeric page and reset the
+ * group-handler slot.  Shared by the text and legacy-JSON paths so the
+ * state mutation (clearing the slot) happens identically regardless of
+ * output format.  When want_text is non-zero the capcodes are also appended
+ * to the text line in pt_out.  The JSON v2 path deliberately does NOT call
+ * this (it returns before any group output and leaves the slot intact),
+ * preserving the pre-refactor behaviour exactly. */
+static void flex_group_emit_and_reset(struct Flex *flex, const FlexFrame *f,
+                                      char *pt_out, size_t pt_sz, int *pt_offset,
+                                      int want_text)
+{
+    if (!f->flex_groupmessage) return;
+
+    int groupbit = (int)(f->capcode - FLEX_GROUP_ADDR_MIN);
+    if (groupbit < 0 || groupbit >= FLEX_GROUP_COUNT) return;
+
+    int endpoint = flex_group_endpoint(&flex->GroupHandler, groupbit);
+    for (int g = 1; g <= endpoint; g++) {
+        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09" PRId64 "]\n",
+                   groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
+        if (want_text)
+            flex_append_text(pt_out, pt_sz, pt_offset, " %09" PRId64,
+                             flex->GroupHandler.GroupCodes[groupbit][g]);
+    }
+
+    /* reset the value */
+    flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
+    flex->GroupHandler.GroupFrame[groupbit] = -1;
+    flex->GroupHandler.GroupCycle[groupbit] = -1;
+}
+
+/* Reproduce the exact plain-text output for the numeric, tone_only and
+ * unknown page types.  The alphanumeric text case is handled directly in
+ * flex_emit() because it must fold group-message capcodes into the same
+ * line via the mutable group handler. */
+static void flex_text_emit(const struct Flex *flex, const FlexFrame *f)
+{
+    (void)flex;
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+
+    if (strcmp(f->msg_type, "numeric") == 0) {
+        if (flex_disable_timestamp) {
+            verbprintf(0, "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|NUM %s\n",
+                       f->baud, f->levels, f->PhaseNo, f->cycleno, f->frameno,
+                       (long long)f->capcode, f->message);
+        } else {
+            verbprintf(0, "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM %s\n",
+                       gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                       f->baud, f->levels, f->PhaseNo, f->cycleno, f->frameno,
+                       (long long)f->capcode, f->message);
+        }
+        return;
+    }
+
+    if (strcmp(f->msg_type, "tone_only") == 0) {
+        if (flex_disable_timestamp) {
+            verbprintf(0, "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|TON %s%s\n",
+                       f->baud, f->levels, f->PhaseNo, f->cycleno, f->frameno,
+                       (long long)f->capcode, f->tone, f->tone_long);
+        } else {
+            verbprintf(0, "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON %s%s\n",
+                       gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                       f->baud, f->levels, f->PhaseNo, f->cycleno, f->frameno,
+                       (long long)f->capcode, f->tone, f->tone_long);
+        }
+        return;
+    }
+
+    /* unknown */
+    {
+        static char uk_out[4096] = { 0 };
+        int uk_offset = 0;
+        uk_out[0] = '\0';
+        if (flex_disable_timestamp) {
+            flex_append_text(uk_out, sizeof(uk_out), &uk_offset, "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|UNK",
+                             f->baud, f->levels, f->PhaseNo, f->cycleno, f->frameno, (long long)f->capcode);
+        } else {
+            flex_append_text(uk_out, sizeof(uk_out), &uk_offset, "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK",
+                             gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                             f->baud, f->levels, f->PhaseNo, f->cycleno, f->frameno, (long long)f->capcode);
+        }
+        for (int wi = 0; wi < f->raw_word_count; wi++)
+            flex_append_text(uk_out, sizeof(uk_out), &uk_offset, " %08x", f->raw_words[wi]);
+        verbprintf(0, "%s\n", uk_out);
+    }
+}
+
+/* Legacy (--json-old) JSON output per page type.  Mirrors the pre-refactor
+ * cJSON construction exactly, including the per-type demod_name values and
+ * the tone-only tone/tone_long fields. */
+static void flex_legacy_emit(struct Flex *flex, const FlexFrame *f)
+{
+    time_t now = time(NULL);
+    struct tm *gmt = gmtime(&now);
+    cJSON *json_output = cJSON_CreateObject();
+    if (!json_output) return;
+
+    char json_temp[100];
+    sprintf(json_temp, "%04i-%02i-%02i %02i:%02i:%02i",
+            gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
+    cJSON_AddStringToObject(json_output, "timestamp", json_temp);
+    cJSON_AddNumberToObject(json_output, "sync_baud", f->baud);
+    cJSON_AddNumberToObject(json_output, "sync_level", f->levels);
+    char buffer[2] = "";
+    snprintf(buffer, sizeof(buffer), "%c", f->PhaseNo);
+    cJSON_AddStringToObject(json_output, "phase_number", buffer);
+    cJSON_AddNumberToObject(json_output, "cycle_number", f->cycleno);
+    cJSON_AddNumberToObject(json_output, "frame_number", f->frameno);
+    cJSON_AddNumberToObject(json_output, "capcode", (double)f->capcode);
+
+    if (strcmp(f->msg_type, "alphanumeric") == 0) {
+        /* Group capcodes: legacy path logs + resets, emits no per-group JSON. */
+        flex_group_emit_and_reset(flex, f, NULL, 0, NULL, 0);
+        cJSON_AddStringToObject(json_output, "demod_name", "flex_alphanumeric");
+        cJSON_AddStringToObject(json_output, "message", f->message);
+    } else if (strcmp(f->msg_type, "numeric") == 0) {
+        cJSON_AddStringToObject(json_output, "demod_name", "flex_numeric");
+        cJSON_AddStringToObject(json_output, "message", f->message);
+    } else if (strcmp(f->msg_type, "tone_only") == 0) {
+        if (f->tone[0] != '\0')
+            cJSON_AddStringToObject(json_output, "tone", f->tone);
+        if (f->tone_long[0] != '\0')
+            cJSON_AddStringToObject(json_output, "tone_long", f->tone_long);
+        cJSON_AddStringToObject(json_output, "demod_name", "flex_tone_only");
+    } else { /* unknown */
+        cJSON_AddStringToObject(json_output, "demod_name", "flex_unknown");
+        cJSON_AddStringToObject(json_output, "message", f->message);
+    }
+
+    addJsonTimestamp(json_output);
+    printJson(json_output);
+    cJSON_Delete(json_output);
+}
+
+/* JSON output for a decoded FLEX page, built from the IR. */
+static void flex_emit_json(struct Flex *flex, const FlexFrame *f)
+{
+    cJSON *obj = flex_json_new(flex, f->PhaseNo, f->kind, f->msg_type);
+    if (!obj) return;
+
+    if (strcmp(f->msg_type, "tone_only") == 0) {
+        json_set_message(obj, NULL);
+    } else if (strcmp(f->msg_type, "unknown") == 0) {
+        json_add_encoding(obj, "raw", f->raw_hex, -1, -1);
+        json_set_message(obj, NULL);
+    } else {
+        json_add_encoding(obj, "raw", f->raw_hex, -1, f->raw_bits);
+        if (f->enc_type)
+            json_add_encoding(obj, f->enc_type, f->message, -1, -1);
+        json_set_message(obj, f->message);
+    }
+
+    json_emit(obj);
+}
+
+/* Single dispatch point: JSON v2, legacy JSON, or plain text.
+ * For the text path, the alphanumeric group-message capcodes must be folded
+ * into the same line, so the text assembly for that one case lives here (it
+ * needs the mutable flex handler); every other case delegates to
+ * flex_text_emit.  The group-state mutation happens exactly once per emit. */
+static void flex_emit(struct Flex *flex, const FlexFrame *f)
+{
+    if (json_format == JSON_FORMAT_UNIFIED) {
+        flex_emit_json(flex, f);
+        return;
+    }
+    if (json_format != JSON_FORMAT_NONE) {
+        flex_legacy_emit(flex, f);
+        return;
+    }
+
+    /* Plain text. */
+    if (strcmp(f->msg_type, "alphanumeric") == 0) {
+        time_t now = time(NULL);
+        struct tm *gmt = gmtime(&now);
+        static char pt_out[4096] = { 0 };
+        int pt_offset = 0;
+        pt_out[0] = '\0';
+        if (flex_disable_timestamp) {
+            flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "FLEX|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
+                             f->baud, f->levels, f->frag_flag, f->PhaseNo, f->cycleno, f->frameno, f->capcode);
+        } else {
+            flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
+                             gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
+                             f->baud, f->levels, f->frag_flag, f->PhaseNo, f->cycleno, f->frameno, f->capcode);
+        }
+        flex_group_emit_and_reset(flex, f, pt_out, sizeof(pt_out), &pt_offset, 1);
+        flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "|ALN|%s", f->message);
+        verbprintf(0, "%s\n", pt_out);
+        return;
+    }
+
+    flex_text_emit(flex, f);
+}
+
 static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2, int flex_groupmessage) {
         if (flex==NULL) return;
         verbprintf(3, "FLEX: Parse Alpha Numeric\n");
 
         int i;
-        time_t now=time(NULL);
-        struct tm * gmt=gmtime(&now);
-        // char buf[1024], *message;
         char message[1024];
-        int  currentChar = 0; 
+        int  currentChar = 0;
         char frag_flag = '?';
-        cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
-        static char json_temp[100];
-
-        if (json_mode && !json_output)
-                return;
 
         int frag = (phaseptr[mw1] >> 11) & 0x03;
         int cont = (phaseptr[mw1] >> 0x0A) & 0x01;
@@ -591,9 +956,9 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
         if (cont == 0 && frag == 3) frag_flag = 'K'; // complete, ready to send
         if (cont == 0 && frag != 3) frag_flag = 'C'; // incomplete until appended to 1 or more 'F's
         if (cont == 1             ) frag_flag = 'F'; // incomplete until a 'C' fragment is appended
-    
+
   mw1++;
-        
+
         for (i = mw1; i <= mw2; i++) {
             unsigned int dw =  phaseptr[i];
             unsigned char ch;
@@ -621,97 +986,27 @@ static void parse_alphanumeric(struct Flex * flex, unsigned int * phaseptr, char
 
         message[currentChar] = '\0';
 
-/*
-        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", 
-            gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
+        /* Decode once into the IR, then dispatch to the right output path. */
+        FlexFrame f;
+        memset(&f, 0, sizeof(f));
+        f.PhaseNo      = PhaseNo;
+        f.kind         = "message";
+        f.msg_type     = "alphanumeric";
+        f.enc_type     = "alpha";
+        f.baud         = flex->Sync.baud;
+        f.levels       = flex->Sync.levels;
+        f.cycleno      = flex->FIW.cycleno;
+        f.frameno      = flex->FIW.frameno;
+        f.capcode      = flex->Decode.capcode;
+        f.long_address = flex->Decode.long_address;
+        f.frag_flag    = frag_flag;
+        f.flex_groupmessage = flex_groupmessage;
+        snprintf(f.message, sizeof(f.message), "%s", message);
+        f.raw_bits = flex_pack7_hex(message, f.raw_hex, sizeof(f.raw_hex));
 
-        verbprintf(0, "%s\n", message);
-
-        if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-FLEX_GROUP_ADDR_MIN;
-                if(groupbit < 0) return;
-
-                int endpoint = flex_group_endpoint(&flex->GroupHandler, groupbit);
-                for(int g = 1; g <= endpoint;g++)
-                {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09lld]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                        verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c/%c %02i.%03i [%09lld] ALN ", gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                                        flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->GroupHandler.GroupCodes[groupbit][g]);
-
-                        verbprintf(0, "%s\n", message);
-                }
-                // reset the value
-                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
-    flex->GroupHandler.GroupFrame[groupbit] = -1;
-    flex->GroupHandler.GroupCycle[groupbit] = -1;
-        }
-*/
-
-        static char pt_out[4096] = { 0 };
-
-        int pt_offset = 0;
-
-        if (!json_mode) {
-          if(flex_disable_timestamp)
-          {
-            flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "FLEX|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
-                          flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-          }
-          else
-          {
-            flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "FLEX|%04i-%02i-%02i %02i:%02i:%02i|%i/%i/%c/%c|%02i.%03i|%09" PRId64,
-                          gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                          flex->Sync.baud, flex->Sync.levels, frag_flag, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-          }
-        }
-        else {
-            // Lets just always send timestamp, the user can discard
-            sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
-                    gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
-            cJSON_AddStringToObject(json_output, "timestamp", json_temp);
-            cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
-            cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-            char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
-            snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
-            cJSON_AddStringToObject(json_output, "phase_number", buffer);
-            cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
-            cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
-            cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
-        }
-
-        // Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
-        if(flex_groupmessage == 1) {
-                int groupbit = flex->Decode.capcode-FLEX_GROUP_ADDR_MIN;
-                if(groupbit < 0 || groupbit >= FLEX_GROUP_COUNT) return;
-
-                int endpoint = flex_group_endpoint(&flex->GroupHandler, groupbit);
-                for(int g = 1; g <= endpoint;g++)
-                {
-                        verbprintf(1, "FLEX Group message output: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%09" PRId64 "]\n", groupbit, endpoint, g, flex->GroupHandler.GroupCodes[groupbit][g]);
-                        if (!json_mode)
-                          flex_append_text(pt_out, sizeof(pt_out), &pt_offset, " %09" PRId64, flex->GroupHandler.GroupCodes[groupbit][g]);
-                }
-
-                // reset the value
-                flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX] = 0;
-                flex->GroupHandler.GroupFrame[groupbit] = -1;
-                flex->GroupHandler.GroupCycle[groupbit] = -1;
-        } 
-        if (!json_mode) {
-          flex_append_text(pt_out, sizeof(pt_out), &pt_offset, "|ALN|%s", message);
-          verbprintf(0, "%s\n", pt_out);
-        }
-        else {
-            cJSON_AddStringToObject(json_output, "demod_name", "flex_alphanumeric");
-            cJSON_AddStringToObject(json_output, "message", message);
-            addJsonTimestamp(json_output);
-            printJson(json_output);
-        }
-  verbprintf(1, "Delete json_output\n");
-  cJSON_Delete(json_output);
+        flex_emit(flex, &f);
 }
+
 
 static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int j) {
   if (flex==NULL) return;
@@ -733,38 +1028,6 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
     return;
   }
 
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
-  static char json_temp[100];
-
-  if (!json_mode) {
-    if(flex_disable_timestamp)
-    {
-      verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|NUM ",
-                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-    }
-    else {
-      verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] NUM ",
-                 gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-    }
-  }
-  else {
-      // Lets just always send timestamp, the user can discard
-      sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
-              gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
-      cJSON_AddStringToObject(json_output, "timestamp", json_temp);
-      cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
-      cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-      char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
-      snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
-      cJSON_AddStringToObject(json_output, "phase_number", buffer);
-      cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
-      cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
-      cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
-  }
-
   // Get first dataword from message field or from second
   // vector word if long address
   int dw;
@@ -784,7 +1047,9 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
     count += 2;        // Otherwise skip 2
   }
   int i;
-  json_temp[0] = '\0';
+  char numbuf[1024];
+  int  numlen = 0;
+  numbuf[0] = '\0';
   for(i = w1; i <= w2; i++) {
     int k;
     for(k = 0; k < 21; k++) {
@@ -797,11 +1062,9 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
       if(--count == 0) {
         // The following if statement removes spaces between the numbers
         if(digit != 0x0C) {// Fill
-          if (!json_mode) {
-            verbprintf(0, "%c", flex_bcd[digit]);
-          }
-          else if (strlen(json_temp) < sizeof(json_temp) - 1) {
-            strncat(json_temp, (char*)&flex_bcd[digit], 1);
+          if (numlen < (int)sizeof(numbuf) - 1) {
+            numbuf[numlen++] = flex_bcd[digit];
+            numbuf[numlen] = '\0';
           }
         }
         count = 4;
@@ -810,16 +1073,24 @@ static void parse_numeric(struct Flex * flex, unsigned int * phaseptr, char Phas
     if (i < w2)
       dw = phaseptr[i];
   }
-  if (!json_mode) {
-    verbprintf(0, "\n");
-  }
-  else {
-    cJSON_AddStringToObject(json_output, "demod_name", "flex_numeric");
-    cJSON_AddStringToObject(json_output, "message", json_temp);
-    addJsonTimestamp(json_output);
-    printJson(json_output);
-    cJSON_Delete(json_output);
-  }
+
+  /* Decode done; build the IR and dispatch to the right output path. */
+  FlexFrame f;
+  memset(&f, 0, sizeof(f));
+  f.PhaseNo      = PhaseNo;
+  f.kind         = "message";
+  f.msg_type     = "numeric";
+  f.enc_type     = "numeric";
+  f.baud         = flex->Sync.baud;
+  f.levels       = flex->Sync.levels;
+  f.cycleno      = flex->FIW.cycleno;
+  f.frameno      = flex->FIW.frameno;
+  f.capcode      = flex->Decode.capcode;
+  f.long_address = flex->Decode.long_address;
+  snprintf(f.message, sizeof(f.message), "%s", numbuf);
+  f.raw_bits = flex_pack4_hex(numbuf, f.raw_hex, sizeof(f.raw_hex));
+
+  flex_emit(flex, &f);
 }
 
 
@@ -840,148 +1111,93 @@ static void parse_tone_only(struct Flex * flex, unsigned int * phaseptr, char Ph
     verbprintf(3, "FLEX: Tone vector offset %d out of frame bounds, skipping\n", j);
     return;
   }
-  
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
-  static char json_temp[100];
 
-  if (!json_mode) {
-    if(flex_disable_timestamp)
-    {
-      verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|TON ",
-                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-    }
-    else
-    {
-      verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] TON ",
-                 gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-                 flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-    }
-  }
-  else {
-      // Lets just always send timestamp, the user can discard
-      sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
-              gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
-      cJSON_AddStringToObject(json_output, "timestamp", json_temp);
-      cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
-      cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-      char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
-      snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
-      cJSON_AddStringToObject(json_output, "phase_number", buffer);
-      cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
-      cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
-      cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
-  }
+  FlexFrame f;
+  memset(&f, 0, sizeof(f));
+  f.PhaseNo      = PhaseNo;
+  f.kind         = "event";
+  f.msg_type     = "tone_only";
+  f.enc_type     = NULL;
+  f.baud         = flex->Sync.baud;
+  f.levels       = flex->Sync.levels;
+  f.cycleno      = flex->FIW.cycleno;
+  f.frameno      = flex->FIW.frameno;
+  f.capcode      = flex->Decode.capcode;
+  f.long_address = flex->Decode.long_address;
 
-  // message type
-  // 1=tone-only, 0=short numeric
-  int w1 = phaseptr[j] >> 7 & 0x03; 
+  // message type: 1=tone-only, 0=short numeric body present
+  int w1 = phaseptr[j] >> 7 & 0x03;
   if(!w1)
   {
     unsigned char digit = 0;
     int i;
-    json_temp[0] = '\0';
+    int tl = 0;
     for (i=9; i<=17; i+=4)
     {
       digit = (phaseptr[j] >> i) & 0x0f;
-      if (!json_mode) {
-        verbprintf(0, "%c", flex_bcd[digit]);
-      }
-      else {
-        strncat(json_temp, (char*)&flex_bcd[digit], 1);
-      }
+      if (tl < (int)sizeof(f.tone) - 1) f.tone[tl++] = flex_bcd[digit];
     }
-    if(json_mode) {
-      cJSON_AddStringToObject(json_output, "tone", json_temp);
-      json_temp[0] = '\0';
-    }
+    f.tone[tl] = '\0';
 
     if (flex->Decode.long_address)
     {
+      int tll = 0;
       for (i=0; i<=16; i+=4)
       {
         digit = (phaseptr[j+1] >> i) & 0x0f;
-        if (!json_mode) {
-          verbprintf(0, "%c", flex_bcd[digit]);
-        }
-        else {
-          strncat(json_temp, (char*)&flex_bcd[digit], 1);
-        }
+        if (tll < (int)sizeof(f.tone_long) - 1) f.tone_long[tll++] = flex_bcd[digit];
       }
-      if(json_mode) {
-        cJSON_AddStringToObject(json_output, "tone_long", json_temp);
-      }
+      f.tone_long[tll] = '\0';
     }
   }
-  if (!json_mode) {
-    verbprintf(0, "\n");
-  }
-  else {
-    cJSON_AddStringToObject(json_output, "demod_name", "flex_tone_only");
-    addJsonTimestamp(json_output);
-    printJson(json_output);
-    cJSON_Delete(json_output);
-  }
+
+  flex_emit(flex, &f);
 }
 
 static void parse_unknown(struct Flex * flex, unsigned int * phaseptr, char PhaseNo, int mw1, int mw2) {
   if (flex==NULL) return;
-  time_t now=time(NULL);
-  struct tm * gmt=gmtime(&now);
-  cJSON *json_output = json_mode ? cJSON_CreateObject() : NULL;
-  static char json_temp[100];
 
-  if (!json_mode) {
-    if(flex_disable_timestamp)
-    {
-      verbprintf(0,  "FLEX|%i/%i/%c|%02i.%03i|[%09lld]|UNK",
-          flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-    }
-    else
-    {
-      verbprintf(0,  "FLEX: %04i-%02i-%02i %02i:%02i:%02i %i/%i/%c %02i.%03i [%09lld] UNK",
-          gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec,
-          flex->Sync.baud, flex->Sync.levels, PhaseNo, flex->FIW.cycleno, flex->FIW.frameno, flex->Decode.capcode);
-    }
-  }
-  else {
-      // Lets just always send timestamp, the user can discard
-      sprintf(json_temp,  "%04i-%02i-%02i %02i:%02i:%02i",
-              gmt->tm_year+1900, gmt->tm_mon+1, gmt->tm_mday, gmt->tm_hour, gmt->tm_min, gmt->tm_sec);
-      cJSON_AddStringToObject(json_output, "timestamp", json_temp);
-      cJSON_AddNumberToObject(json_output, "sync_baud", flex->Sync.baud);
-      cJSON_AddNumberToObject(json_output, "sync_level", flex->Sync.levels);
-      char buffer[2] = "";  // Buffer to hold the string representation of PhaseNo.
-      snprintf(buffer, sizeof(buffer), "%c", PhaseNo);  // Convert PhaseNo into a C-string in buffer.
-      cJSON_AddStringToObject(json_output, "phase_number", buffer);
-      cJSON_AddNumberToObject(json_output, "cycle_number", flex->FIW.cycleno);
-      cJSON_AddNumberToObject(json_output, "frame_number", flex->FIW.frameno);
-      cJSON_AddNumberToObject(json_output, "capcode", flex->Decode.capcode);
-  }
+  FlexFrame f;
+  memset(&f, 0, sizeof(f));
+  f.PhaseNo      = PhaseNo;
+  f.kind         = "message";
+  f.msg_type     = "unknown";
+  f.enc_type     = NULL;
+  f.baud         = flex->Sync.baud;
+  f.levels       = flex->Sync.levels;
+  f.cycleno      = flex->FIW.cycleno;
+  f.frameno      = flex->FIW.frameno;
+  f.capcode      = flex->Decode.capcode;
+  f.long_address = flex->Decode.long_address;
 
+  /* Collect the raw words once; the text path emits all of them, the v1 raw
+   * encoding concatenates them, and the legacy message holds the capped hex. */
   int i;
-  json_temp[0] = '\0';
+  int rhoff = 0;                 /* v1 raw_hex write offset */
+  f.raw_hex[0] = '\0';
+  f.message[0] = '\0';
+  int mlen = 0;                  /* legacy message length (capped like before) */
   for (i = mw1; i <= mw2; i++) {
-    if (!json_mode) {
-      verbprintf(0, " %08x", phaseptr[i]);
+    if (f.raw_word_count < (int)(sizeof(f.raw_words)/sizeof(f.raw_words[0])))
+      f.raw_words[f.raw_word_count++] = phaseptr[i];
+
+    /* v1 raw hex: concatenate %08x, bounded by the raw_hex buffer. */
+    if (rhoff + 8 < (int)sizeof(f.raw_hex)) {
+      snprintf(f.raw_hex + rhoff, sizeof(f.raw_hex) - (size_t)rhoff, "%08x", phaseptr[i]);
+      rhoff += 8;
     }
-    else if (strlen(json_temp) + 8 < sizeof(json_temp)) {
+
+    /* legacy message: same <100-char cap as the pre-refactor code. */
+    if (mlen + 8 < 100 && mlen + 8 < (int)sizeof(f.message)) {
       char hex[9];
       snprintf(hex, sizeof(hex), "%08x", phaseptr[i]);
-      strncat(json_temp, hex, sizeof(json_temp) - strlen(json_temp) - 1);
+      memcpy(f.message + mlen, hex, 8);
+      mlen += 8;
+      f.message[mlen] = '\0';
     }
   }
-  if (!json_mode) {
-    verbprintf(0, "\n");
-  }
-  else {
-    cJSON_AddStringToObject(json_output, "demod_name", "flex_unknown");
-    cJSON_AddStringToObject(json_output, "message", json_temp);
-    addJsonTimestamp(json_output);
-    printJson(json_output);
-    cJSON_Delete(json_output);
-  }
+
+  flex_emit(flex, &f);
 }
 
 

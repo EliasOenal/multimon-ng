@@ -239,7 +239,6 @@ static bool is_startline = true;
 static int timestamp = 0;
 static int iso8601 = 0;
 static char *label = NULL;
-int json_mode = 0;
 
 extern bool fms_justhex;
 
@@ -344,6 +343,110 @@ void printJson(cJSON *json_output)
         cJSON_free(json);
     }
 }
+
+/* ---------------------------------------------------------------------- */
+/* JSON output schema v2 — see docs/json-output-schema-v2.md               */
+/* ---------------------------------------------------------------------- */
+
+int json_format = JSON_FORMAT_NONE;
+
+/* Bare format identifier emitted as the $schema field in every v2 JSON object.
+ * Not a URL -- a stable string that lets consumers detect the format on line 1.
+ * Backed by schema/json/v2.json in the repository. */
+#define JSON_V2_SCHEMA_ID "multimon-ng/json/v2"
+
+/* Add the always-present timestamp envelope fields (Unix epoch int64 +
+ * microseconds).  Unix time is unconditional in v1 (not gated on --timestamp);
+ * timestamp_us is nonzero only when --iso8601 requested sub-second precision. */
+static void json_emit_add_time(cJSON *obj)
+{
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    cJSON_AddNumberToObject(obj, "timestamp", (double)ts.tv_sec);
+    cJSON_AddNumberToObject(obj, "timestamp_us", iso8601 ? (double)(ts.tv_nsec / 1000) : 0);
+}
+
+cJSON *json_new(const char *demod, const char *protocol, const char *kind,
+                  const char *msg_type)
+{
+    cJSON *obj = cJSON_CreateObject();
+    if (!obj)
+        return NULL;
+    cJSON_AddStringToObject(obj, "$schema", JSON_V2_SCHEMA_ID);
+    cJSON_AddNumberToObject(obj, "schema_version", 2);
+    json_emit_add_time(obj);
+    if (demod)    cJSON_AddStringToObject(obj, "demod", demod);
+    if (protocol) cJSON_AddStringToObject(obj, "protocol", protocol);
+    if (kind)     cJSON_AddStringToObject(obj, "kind", kind);
+    if (msg_type) cJSON_AddStringToObject(obj, "msg_type", msg_type);
+    return obj;
+}
+
+void json_set_capcode(cJSON *obj, long long capcode)
+{
+    if (!obj) return;
+    if (capcode < 0)
+        cJSON_AddNullToObject(obj, "capcode");
+    else
+        cJSON_AddNumberToObject(obj, "capcode", (double)capcode);
+}
+
+void json_set_message(cJSON *obj, const char *message)
+{
+    if (!obj) return;
+    if (message)
+        cJSON_AddStringToObject(obj, "message", message);
+    else
+        cJSON_AddNullToObject(obj, "message");
+}
+
+void json_add_encoding(cJSON *obj, const char *encoding, const char *data,
+                         int score, int bits)
+{
+    if (!obj || !encoding) return;
+    cJSON *arr = cJSON_GetObjectItem(obj, "encodings");
+    if (!arr) {
+        arr = cJSON_CreateArray();
+        cJSON_AddItemToObject(obj, "encodings", arr);
+    }
+    cJSON *e = cJSON_CreateObject();
+    cJSON_AddStringToObject(e, "encoding", encoding);
+    if (data)
+        cJSON_AddStringToObject(e, "data", data);
+    if (score >= 0)
+        cJSON_AddNumberToObject(e, "score", score);
+    if (bits >= 0)
+        cJSON_AddNumberToObject(e, "bits", bits);
+    cJSON_AddItemToArray(arr, e);
+}
+
+cJSON *json_proto(cJSON *obj, const char *proto_key)
+{
+    if (!obj || !proto_key) return NULL;
+    cJSON *p = cJSON_GetObjectItem(obj, proto_key);
+    if (!p) {
+        p = cJSON_CreateObject();
+        cJSON_AddItemToObject(obj, proto_key, p);
+    }
+    return p;
+}
+
+void json_emit(cJSON *obj)
+{
+    if (!obj) return;
+    /* encodings is always present (possibly empty) for a stable consumer shape */
+    if (!cJSON_GetObjectItem(obj, "encodings"))
+        cJSON_AddItemToObject(obj, "encodings", cJSON_CreateArray());
+    char *json = cJSON_PrintUnformatted(obj);
+    if (json) {
+        fprintf(stdout, "%s\n", json);
+        if (!dont_flush)
+            fflush(stdout);
+        cJSON_free(json);
+    }
+    cJSON_Delete(obj);
+}
+
 
 /* ---------------------------------------------------------------------- */
 
@@ -991,8 +1094,9 @@ static const char usage_str[] = "\n"
         "  --iso8601    : Use UTC timestamp in ISO 8601 format that includes microseconds\n"
         "  --label      : Add a label to the front of every printed line\n"
         "  --flex-no-ts : FLEX: Do not add a timestamp to the FLEX demodulator output\n"
-        "  --json       : Format output as JSON. Supported by the following demodulators:\n"
-        "                 DTMF, EAS, FLEX, GSC, POCSAG. (Other demodulators will silently ignore this flag.)\n"
+        "  --json       : Unified JSON output (schema v2, schema/json/v2.json).\n"
+        "                 All demodulators produce one self-describing object per message.\n"
+        "  --json-old   : Legacy per-demodulator JSON (for backward compatibility).\n"
         "\n"
         "   Raw input requires one channel, 16 bit, signed integer (platform-native)\n"
         "   samples at the demodulator's input sampling rate, which is\n"
@@ -1021,7 +1125,8 @@ int main(int argc, char *argv[])
         {"iso8601", no_argument, &iso8601, 1},
         {"label", required_argument, NULL, 'l'},
         {"charset", required_argument, NULL, 'C'},
-        {"json", no_argument, &json_mode, 1},
+        {"json", no_argument, NULL, 1001},
+        {"json-old", no_argument, NULL, 1002},
         {"pocsag-polarity", required_argument, NULL, 'P'},
         {0, 0, 0, 0}
       };
@@ -1092,6 +1197,22 @@ int main(int argc, char *argv[])
 
         case 'j':
             fms_justhex = true;
+            break;
+
+        case 1001:  /* --json : unified schema v2 */
+            if (json_format == JSON_FORMAT_LEGACY) {
+                fprintf(stderr, "Error: --json and --json-old are mutually exclusive\n");
+                errflg++;
+            }
+            json_format = JSON_FORMAT_UNIFIED;
+            break;
+
+        case 1002:  /* --json-old : legacy per-demodulator JSON */
+            if (json_format == JSON_FORMAT_UNIFIED) {
+                fprintf(stderr, "Error: --json and --json-old are mutually exclusive\n");
+                errflg++;
+            }
+            json_format = JSON_FORMAT_LEGACY;
             break;
             
         case 'r':
@@ -1234,7 +1355,7 @@ intypefound:
     }
 
 
-    if ( !quietflg && !json_mode)
+    if ( !quietflg && json_format == JSON_FORMAT_NONE)
     { // pay heed to the quietflg or JSON mode
         fprintf(stderr, "multimon-ng 1.6.2\n"
             "  (C) 1996/1997 by Tom Sailer HB9JNX/AE4WA\n"
@@ -1253,11 +1374,11 @@ intypefound:
     if (mask_first)
         memset(dem_mask, 0xff, sizeof(dem_mask));
     
-    if (!quietflg && !json_mode)
+    if (!quietflg && json_format == JSON_FORMAT_NONE)
         fprintf(stdout, "Enabled demodulators:");
     for (i = 0; (unsigned int) i < NUMDEMOD; i++)
         if (MASK_ISSET(i)) {
-            if (!quietflg && !json_mode)
+            if (!quietflg && json_format == JSON_FORMAT_NONE)
                 fprintf(stdout, " %s", dem[i]->name);       //Print demod name
             if(dem[i]->float_samples) integer_only = false; //Enable float samples on demand
             memset(dem_st+i, 0, sizeof(dem_st[i]));
@@ -1267,7 +1388,7 @@ intypefound:
             if (sample_rate == -1)
                 sample_rate = dem[i]->samplerate;
             else if ( (unsigned int) sample_rate != dem[i]->samplerate) {
-                if (!quietflg && !json_mode)
+                if (!quietflg && json_format == JSON_FORMAT_NONE)
                     fprintf(stdout, "\n");
                 fprintf(stderr, "Error: Current sampling rate %d, "
                         " demodulator \"%s\" requires %d\n",
@@ -1277,7 +1398,7 @@ intypefound:
             if (dem[i]->overlap > overlap)
                 overlap = dem[i]->overlap;
         }
-    if (!quietflg && !json_mode)
+    if (!quietflg && json_format == JSON_FORMAT_NONE)
         fprintf(stdout, "\n");
     
     if (optind < argc && !strcmp(argv[optind], "-"))

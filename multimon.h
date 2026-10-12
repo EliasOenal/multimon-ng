@@ -224,6 +224,8 @@ struct demod_state {
             int blkcount;
             int lastch;
             int timeout;
+            char code[64];
+            int codelen;
         } selcall;
 
         struct l1_state_dualtone {
@@ -253,6 +255,8 @@ struct demod_state {
             int_fast16_t lowpass_strength;
             int_fast16_t holdoff_samples;
             int_fast8_t current_state;  // High = 1, Low = 0
+            char msg[256];              // accumulated decoded text for JSON v2
+            int msglen;                 // current length in msg[]
         } morse;
         
         struct l1_state_dumpcsv {
@@ -402,6 +406,36 @@ int xdisp_update(int cnum, float *f);
 void print_json(int argc, char **argv);
 void addJsonTimestamp(cJSON *json_output);
 void printJson(cJSON *json_output);
+
+/* --- JSON output schema v2 (schema/json/v2.json) --- */
+/* json_format selects the output schema: 0 = none, 1 = v2 (--json), 2 = legacy (--json-old) */
+extern int json_format;
+#define JSON_FORMAT_NONE   0
+#define JSON_FORMAT_UNIFIED     1
+#define JSON_FORMAT_LEGACY 2
+
+/* Active POCSAG charset name (set by -C flag); empty string means default US ASCII.
+ * Declared here so unixinput.c can reset it if needed; defined in pocsag.c. */
+extern char pocsag_active_charset[32];
+
+/* Build the envelope object: adds $schema, schema_version, timestamp,
+ * timestamp_us, demod, protocol, kind, msg_type.  Returns a new cJSON object
+ * (caller owns it, finalize with json_emit_emit).  capcode<0 emits JSON null. */
+cJSON *json_new(const char *demod, const char *protocol, const char *kind,
+                  const char *msg_type);
+/* Add capcode (int64, <0 => null). */
+void json_set_capcode(cJSON *obj, long long capcode);
+/* Add the top-level message shortcut (NULL => null). */
+void json_set_message(cJSON *obj, const char *message);
+/* Append an encoding entry {encoding, data[, score][, bits]} to obj.encodings
+ * (creating the array if absent).  score<0 omits score; bits<0 omits bits. */
+void json_add_encoding(cJSON *obj, const char *encoding, const char *data,
+                         int score, int bits);
+/* Get-or-create the nested protocol object (e.g. "flex", "pocsag"). */
+cJSON *json_proto(cJSON *obj, const char *proto_key);
+/* Serialize and print one v1 line, then free obj. */
+void json_emit(cJSON *obj);
+
 
 /* ---------------------------------------------------------------------- */
 #endif /* _MULTIMON_H */
