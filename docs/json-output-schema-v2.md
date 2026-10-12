@@ -83,7 +83,10 @@ Empty (`[]`) for events, diagnostics, and frames with no byte payload
   These are the raw data bits as received; the alpha/numeric decoders
   interpret them separately.  Not the decoded character bytes.
 - FLEX ALN: 7-bit codepoints re-packed MSB-first from the decoded string
-- FLEX NUM: BCD nibbles re-packed from the decoded digit string
+- FLEX NUM: BCD nibbles re-packed from the decoded digit string.
+  BCD nibble 0xA (spare slot, no numeric value) renders as `' '` (space)
+  in the old FLEX decoder and `'.'` in FLEX_NEXT (per ARIB STD-43A);
+  both are correct and intentional — do not unify the tables.
 - FLEX HEX/BIN: the raw payload bytes as-is
 - FMS: `%08x%04x` of the decoded word fields (not wire bytes)
 - EAS: the full SAME header string as ASCII bytes
@@ -115,6 +118,10 @@ are hex-escaped (`\x03`).
 ```
 
 `score` present when heuristic selection was used (POCSAG auto mode).
+
+For FLEX NUM, BCD nibble 0xA (spare slot) renders as `' '` in the old
+FLEX decoder and `'.'` in FLEX_NEXT; the difference is intentional and
+preserved in both `numeric` and `raw`.
 
 ### `skyper` — POCSAG Skyper decode
 
