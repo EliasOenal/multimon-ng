@@ -1,5 +1,5 @@
 .\" -*- nroff -*-
-.TH GEN-NG 1 "January 16, 2026"
+.TH GEN-NG 1 "October 16, 2026"
 .\" Please adjust this date whenever revising the manpage.
 .\"
 .SH NAME
@@ -78,6 +78,18 @@ Inject bit errors into FLEX or POCSAG codewords for BCH error correction testing
 0 = no errors, 1 = one-bit errors, 2 = two-bit errors (correctable),
 3 = three-bit errors (uncorrectable, for negative testing).
 This option must follow \-f (FLEX) or \-P (POCSAG).
+.IP
+For FLEX without group calling, the selected number of bits is flipped in each
+of the first ten data codewords, including the block information, address and
+vector words. With \-e 1 or \-e 2, the same number of bits is also flipped in
+the Frame Information Word (FIW), exercising correction of both frame
+information and data.
+.IP
+With \-e 3, the FIW is deliberately left clean so the decoder can process the
+frame and exercise uncorrectable data-error handling instead of rejecting the
+frame at the FIW. This is targeted decoder testing, not a simulation of uniform
+channel noise. Error positions are deterministic for reproducible tests.
+FLEX group-call frames generated with \-G are not modified by \-e.
 .TP
 .B  \-P <message>
 Generate a POCSAG pager message. By default, the message is encoded as

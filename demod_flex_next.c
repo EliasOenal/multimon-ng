@@ -200,17 +200,8 @@ extern int json_mode;
 /* Member capcodes live at indices 1..count; index 0 (CAPCODES_INDEX) holds the count. */
 #define GROUP_CODE_COUNT     (GROUP_MAX_CODES + 1)
 
-/* Max capcode = 4,297,068,542 (10 digits, hard-checked in decode).  The piped
- * capcode field is "<group-addr> member1 member2 ..." -- the leading group
- * address (10 digits) followed by up to GROUP_MAX_CODES members, each " " + 10
- * digits, plus a terminating NUL.  Total tokens = 1 + GROUP_MAX_CODES.  Sized
- * for the full protocol ceiling so every accepted member is always emitted;
- * never truncated.  (~242 KB; heap-allocated, never on the stack.) */
+/* Max capcode = 4,297,068,542, checked in decode. */
 #define FLEX_CAPCODE_DIGITS  10
-#define GROUP_FIELD_MAX      (FLEX_CAPCODE_DIGITS + GROUP_MAX_CODES * (FLEX_CAPCODE_DIGITS + 1) + 1)
-/* line_prefix holds the capcode field plus the fixed "FLEX_NEXT|ts|baud|..|addr"
- * header; 256 bytes of headroom covers the fixed fields with margin. */
-#define LINE_PREFIX_MAX      (GROUP_FIELD_MAX + 256)
 
 // S2 C-pattern per ARIB STD-43A Table 3.2-6
 // S2 = BS2 + C(16 bits) + inv.BS2 + inv.C(16 bits)
@@ -221,7 +212,7 @@ extern int json_mode;
 // there are at most 88 words per frame's phase buffer of a page
 //   but at least 1 BIW 1 AW 1 VW, so max 85 data words (dw) for text
 // each dw is 3 chars of 7b ASCII (21 bits of text, 11 bits of checksum)
-// this is 256, BUT each char could need to be escaped (%, \n, \r, \t), so double it
+// this is 256, BUT control characters can need escaping (\n, \r, \t), so double it
 #define MAX_ALN              512           // max possible ALN characters
 
 
@@ -277,6 +268,8 @@ struct Flex_GroupHandler {
   int                         GroupDelivering[GROUP_BITS]; // 1 = delivery in progress (fragments)
   unsigned int                GroupLastFragFrame[GROUP_BITS]; // abs frame of last fragment received
   int                         GroupTimeoutCount[GROUP_BITS]; // consecutive FIWs past deadline
+  uint64_t                    generation[GROUP_BITS];
+  int                         failed[GROUP_BITS];
 };
 
 struct Flex_Modulation {
@@ -386,6 +379,13 @@ struct Flex_Decode {
 #define FLEX_DEDUP_MAX_WORDS 88   // max words per message (hdr + body)
 
 struct Flex_Fragment {
+  int64_t                    *members;
+  int                         member_count;
+  uint64_t                    generation;
+  const char                 *type_tag;
+  int                         is_priority;
+  const char                 *sec_subtype;
+  const char                 *opr_category;
   int                         active;
   int64_t                     capcode;
   int                         type;          // page type
@@ -416,6 +416,7 @@ struct Flex_FragStore {
 };
 
 struct Flex_DedupEntry {
+  uint64_t                    generation;
   int                         active;
   int64_t                     capcode;
   int                         type;          // page type (V field)
@@ -936,10 +937,11 @@ struct Flex_Next {
   /* Piped output line prefix, built by main loop before calling parse functions.
    * Format: "FLEX_NEXT|timestamp|baud/levels|cycle.frame.phase|capcodes|addr"
    * Parse functions append "|TYPE|flags|message\n" to form a complete line.
-   * Heap-allocated (LINE_PREFIX_MAX) so a full-size group capcode list fits
-   * without truncation; allocated in Flex_New, freed in Flex_Delete. */
+   * Grown on demand and retained for reuse; freed in Flex_Delete. */
   char                       *line_prefix;
-  char                       *cap_field;           // Heap scratch for the capcode field (GROUP_FIELD_MAX)
+  char                       *cap_field;
+  size_t                      prefix_cap, field_cap;
+  uint64_t                    grp_generation;
   /* Snapshot of the current group call's member capcodes, captured when the
    * group message is identified (before parse dispatch and teardown).  Both
    * the text and JSON output paths read members from here, so they always
@@ -990,6 +992,11 @@ static void flex_group_reset(struct Flex_GroupHandler *handler, int groupbit) {
   if (handler==NULL || groupbit < 0 || groupbit >= GROUP_BITS) return;
   if (handler->GroupCodes[groupbit] != NULL)
     handler->GroupCodes[groupbit][CAPCODES_INDEX] = 0;
+  handler->GroupFrame[groupbit] = -1;
+  handler->GroupCycle[groupbit] = -1;
+  handler->GroupDelivering[groupbit] = 0;
+  handler->GroupTimeoutCount[groupbit] = 0;
+  handler->failed[groupbit] = 0;
 }
 
 /* Free all per-slot group buffers (called from Flex_Delete). */
@@ -1007,23 +1014,61 @@ static void flex_group_free_all(struct Flex_GroupHandler *handler) {
  * live GroupHandler store is reset during delivery.  Call when a group message
  * is identified, before parse dispatch.  A non-group message clears the count. */
 static int flex_group_endpoint(struct Flex_GroupHandler *handler, int groupbit);
-static void flex_group_snapshot(struct Flex_Next *flex, int is_group, int groupbit) {
-  if (flex == NULL) return;
+static int flex_group_snapshot(struct Flex_Next *flex, int is_group, int groupbit) {
+  if (flex == NULL) return 0;
   flex->grp_snapshot_count = 0;
-  if (!is_group || groupbit < 0 || groupbit >= GROUP_BITS) return;
+  flex->grp_generation = 0;
+  if (!is_group || groupbit < 0 || groupbit >= GROUP_BITS) return 1;
+  if (flex->GroupHandler.failed[groupbit]) return 0;
+  flex->grp_generation = flex->GroupHandler.generation[groupbit];
   int n = flex_group_endpoint(&flex->GroupHandler, groupbit);
-  if (n <= 0) return;
+  if (n <= 0) return 1;
   if (flex->grp_snapshot_cap < n) {
     int64_t *grown = (int64_t *)realloc(flex->grp_snapshot, (size_t)n * sizeof(int64_t));
-    if (grown == NULL) return;              /* leave count 0 on OOM */
+    if (grown == NULL) {
+      fprintf(stderr, "FLEX_NEXT: group snapshot allocation failed; dropping page\n");
+      return 0;
+    }
     flex->grp_snapshot = grown;
     flex->grp_snapshot_cap = n;
   }
   int64_t *codes = flex->GroupHandler.GroupCodes[groupbit];
-  if (codes == NULL) return;
+  if (codes == NULL) return 0;
   for (int i = 0; i < n; i++)
     flex->grp_snapshot[i] = codes[i + 1];   /* members live at indices 1..n */
   flex->grp_snapshot_count = n;
+  return 1;
+}
+
+static int flex_buffer(char **buf, size_t *cap, size_t need) {
+  if (*cap >= need) return 1;
+  size_t size = *cap ? *cap : 128;
+  while (size < need) size *= 2;
+  char *grown = (char *)realloc(*buf, size);
+  if (!grown) {
+    fprintf(stderr, "FLEX_NEXT: formatting allocation failed; dropping page\n");
+    return 0;
+  }
+  *buf = grown;
+  *cap = size;
+  return 1;
+}
+
+static int flex_prefix(struct Flex_Next *flex, int64_t capcode, char phase,
+                       char addr, const int64_t *members, int count) {
+  size_t need = FLEX_CAPCODE_DIGITS + (size_t)count * (FLEX_CAPCODE_DIGITS + 1) + 1;
+  if (!flex_buffer(&flex->cap_field, &flex->field_cap, need) ||
+      !flex_buffer(&flex->line_prefix, &flex->prefix_cap, need + 256)) return 0;
+  size_t pos = snprintf(flex->cap_field, flex->field_cap, "%010" PRId64, capcode);
+  for (int i = 0; i < count; i++)
+    pos += snprintf(flex->cap_field + pos, flex->field_cap - pos, " %010" PRId64, members[i]);
+  char ts[32];
+  flex_local_timestamp(ts, sizeof(ts));
+  snprintf(flex->line_prefix, flex->prefix_cap,
+           "FLEX_NEXT|%s|%u/%u|%02u.%03u.%c|%s|%c", ts,
+           flex->Sync.baud, flex->Sync.levels, flex->FIW.cycleno,
+           flex->FIW.frameno, phase, flex->cap_field, addr);
+  return 1;
 }
 
 static int flex_group_endpoint(struct Flex_GroupHandler *handler, int groupbit) {
@@ -1034,6 +1079,28 @@ static int flex_group_endpoint(struct Flex_GroupHandler *handler, int groupbit) 
   if (endpoint < 0) return 0;
   if (endpoint > GROUP_MAX_CODES) return GROUP_MAX_CODES;
   return endpoint;
+}
+
+static void flex_group_enroll(struct Flex_Next *flex, int g, unsigned int frame, int64_t capcode) {
+  struct Flex_GroupHandler *h = &flex->GroupHandler;
+  int cycle = (flex->FIW.cycleno + (frame <= flex->FIW.frameno)) % 15;
+  if (h->GroupFrame[g] != (int)frame || h->GroupCycle[g] != cycle || h->GroupDelivering[g]) {
+    flex_group_reset(h, g);
+    h->generation[g]++;
+    h->GroupFrame[g] = frame;
+    h->GroupCycle[g] = cycle;
+  }
+  if (h->failed[g]) return;
+  int n = flex_group_endpoint(h, g);
+  for (int i = 1; i <= n; i++)
+    if (h->GroupCodes[g][i] == capcode) return;
+  if (!flex_group_ensure(h, g, n + 2)) {
+    h->failed[g] = 1;
+    fprintf(stderr, "FLEX_NEXT: group %d membership allocation/limit failure; suppressing assignment\n", g);
+    return;
+  }
+  h->GroupCodes[g][n + 1] = capcode;
+  h->GroupCodes[g][0] = n + 1;
 }
 
 /* Emit a FLEXTIME line at level 0 with the current confirmed OTA state.
@@ -1137,6 +1204,42 @@ static char addr_type_char(uint32_t aiw, int is_long) {
 // JSON output helper: emit a complete JSON message object.
 // Called from decode_phase after message parsing is complete.
 // All fields are optional (pass NULL/negative to omit).
+static int flex_json_group(cJSON *json, int64_t capcode, const int64_t *members, int count) {
+  int group = capcode >= FLEX_GROUP_ADDR_MIN && capcode <= FLEX_GROUP_ADDR_MAX;
+  cJSON *arr;
+  if (!cJSON_AddBoolToObject(json, "is_group", group)) goto fail;
+  if (!group) return 1;
+  if (!cJSON_AddNumberToObject(json, "group_slot", capcode - FLEX_GROUP_ADDR_MIN)) goto fail;
+  arr = cJSON_AddArrayToObject(json, "group_capcodes");
+  if (!arr) goto fail;
+  for (int i = 0; i < count; i++) {
+    cJSON *member = cJSON_CreateNumber((double)members[i]);
+    if (!member) goto fail;
+    if (!cJSON_AddItemToArray(arr, member)) { cJSON_Delete(member); goto fail; }
+  }
+  return 1;
+fail:
+  fprintf(stderr, "FLEX_NEXT: JSON group metadata allocation failed; dropping page\n");
+  return 0;
+}
+
+static void flex_json_print(cJSON *json) {
+  static const char *required[] = { "timestamp", "baud", "level", "phase", "cycle", "frame", "capcode" };
+  for (size_t i = 0; i < sizeof(required) / sizeof(required[0]); i++) {
+    if (!cJSON_GetObjectItemCaseSensitive(json, required[i])) {
+      fprintf(stderr, "FLEX_NEXT: JSON metadata allocation failed; dropping page\n");
+      return;
+    }
+  }
+  char *out = cJSON_PrintUnformatted(json);
+  if (!out) {
+    fprintf(stderr, "FLEX_NEXT: JSON formatting allocation failed; dropping page\n");
+    return;
+  }
+  fprintf(stdout, "%s\n", out);
+  free(out);
+}
+
 static void flex_next_json_emit(struct Flex_Next *flex, char phase,
                                 int64_t capcode, char addr_type,
                                 int is_group, int msg_type,
@@ -1148,8 +1251,19 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
                                 int64_t *group_capcodes, int group_count,
                                 cJSON *extra)
 {
+  if (capcode >= FLEX_GROUP_ADDR_MIN && capcode <= FLEX_GROUP_ADDR_MAX) {
+    if (!group_capcodes) {
+      group_capcodes = flex->grp_snapshot;
+      group_count = flex->grp_snapshot_count;
+    }
+  }
+  (void)is_group;
   cJSON *json = cJSON_CreateObject();
-  if (!json) { cJSON_Delete(extra); return; }
+  if (!json) {
+    fprintf(stderr, "FLEX_NEXT: JSON allocation failed; dropping page\n");
+    cJSON_Delete(extra);
+    return;
+  }
 
   time_t now = time(NULL);
   struct tm *gmt = gmtime(&now);
@@ -1171,7 +1285,11 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
     char at[2] = { addr_type, '\0' };
     cJSON_AddStringToObject(json, "addr_type", at);
   }
-  cJSON_AddBoolToObject(json, "is_group", is_group ? 1 : 0);
+  if (!flex_json_group(json, capcode, group_capcodes, group_count)) {
+    cJSON_Delete(extra);
+    cJSON_Delete(json);
+    return;
+  }
   if (flex->Decode.is_priority)
     cJSON_AddBoolToObject(json, "is_priority", 1);
   if (msg_type >= 0) {
@@ -1190,11 +1308,12 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
     }
     cJSON_AddStringToObject(json, "msg_type", mt_name);
   }
-  if (type_tag)
-    cJSON_AddStringToObject(json, "type_tag", type_tag);
-  // Add group_slot for temporary group address messages
-  if (is_group && capcode >= 2029568 && capcode <= 2029583)
-    cJSON_AddNumberToObject(json, "group_slot", (int)(capcode - 2029568));
+  if (type_tag && !cJSON_AddStringToObject(json, "type_tag", type_tag)) {
+    fprintf(stderr, "FLEX_NEXT: JSON allocation failed; dropping page\n");
+    cJSON_Delete(extra);
+    cJSON_Delete(json);
+    return;
+  }
   if (fragment)
     cJSON_AddStringToObject(json, "fragment", fragment);
   if (msg_n >= 0)
@@ -1207,13 +1326,11 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
     cJSON_AddBoolToObject(json, "k_ok", k_ok ? 1 : 0);
   if (sig_ok >= 0)
     cJSON_AddBoolToObject(json, "sig_ok", sig_ok ? 1 : 0);
-  if (message)
-    cJSON_AddStringToObject(json, "message", message);
-  if (group_capcodes && group_count > 0) {
-    cJSON *arr = cJSON_CreateArray();
-    for (int gi = 0; gi < group_count; gi++)
-      cJSON_AddItemToArray(arr, cJSON_CreateNumber((double)group_capcodes[gi]));
-    cJSON_AddItemToObject(json, "group_capcodes", arr);
+  if (message && !cJSON_AddStringToObject(json, "message", message)) {
+    fprintf(stderr, "FLEX_NEXT: JSON allocation failed; dropping page\n");
+    cJSON_Delete(extra);
+    cJSON_Delete(json);
+    return;
   }
   // Merge caller-provided extra fields
   if (extra) {
@@ -1330,11 +1447,7 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
     cJSON_AddItemToObject(json, "flextime", ft);
     } // end re-check after expiry
   }
-  char *out = cJSON_PrintUnformatted(json);
-  if (out) {
-    fprintf(stdout, "%s\n", out);
-    free(out);
-  }
+  flex_json_print(json);
   cJSON_Delete(json);
 }
 
@@ -1553,50 +1666,23 @@ static int decode_fiw(struct Flex_Next * flex) {
         if (flex->GroupHandler.GroupDelivering[g]) {
           unsigned int cur_abs = flex->FIW.cycleno * 128 + flex->FIW.frameno;
           unsigned int last_frag = flex->GroupHandler.GroupLastFragFrame[g];
-          unsigned int age = (cur_abs - last_frag) & 0x7FF; /* wrap-safe */
+          unsigned int age = flextime_age_frames(cur_abs, last_frag);
           if (age > FLEX_FRAG_TIMEOUT) {
             flex->GroupHandler.GroupTimeoutCount[g]++;
             if (flex->GroupHandler.GroupTimeoutCount[g] >= 2) {
               verbprintf(3, "FLEX_NEXT: Group %d fragment delivery timeout (age=%u frames)\n", g, age);
               flex_group_reset(&flex->GroupHandler, g);
-              flex->GroupHandler.GroupFrame[g] = -1;
-              flex->GroupHandler.GroupCycle[g] = -1;
-              flex->GroupHandler.GroupDelivering[g] = 0;
-              flex->GroupHandler.GroupTimeoutCount[g] = 0;
             }
           } else {
             flex->GroupHandler.GroupTimeoutCount[g] = 0;
           }
           continue;
         }
-        int Reset = 0;
+        unsigned int now = flex->FIW.cycleno * 128 + flex->FIW.frameno;
+        unsigned int target = flex->GroupHandler.GroupCycle[g] * 128 + flex->GroupHandler.GroupFrame[g];
+        unsigned int past = flextime_age_frames(now, target);
+        int Reset = past > 0 && past < FLEX_FRAME_SPACE / 2;
         verbprintf(4, "FLEX_NEXT: GroupBit %i, FrameNo: %i, Cycle No: %i target Cycle No: %i\n", g, flex->GroupHandler.GroupFrame[g], flex->GroupHandler.GroupCycle[g], (int)flex->FIW.cycleno); 
-        // Now lets check if its expected in this frame..
-        if((int)flex->FIW.cycleno == flex->GroupHandler.GroupCycle[g])
-        {
-          if(flex->GroupHandler.GroupFrame[g] < (int)flex->FIW.frameno)
-          {
-            Reset = 1;
-          }
-        }
-                                // Check if we should have sent a group message in the previous cycle 
-        else if(flex->FIW.cycleno == 0) 
-        {
-          if(flex->GroupHandler.GroupCycle[g] == 15)
-          {
-            Reset = 1;
-          }
-        }
-                                // If we are waiting for the cycle to roll over then move onto the next for loop item 
-        else if(flex->FIW.cycleno == 15 && flex->GroupHandler.GroupCycle[g] == 0)
-        {
-          continue;
-        } 
-        // Otherwise if the target cycle is less than the current cycle, reset the data
-        else if(flex->GroupHandler.GroupCycle[g] < (int)flex->FIW.cycleno)
-        {
-          Reset = 1;
-        }
       
 
         if(Reset == 1)
@@ -1631,9 +1717,6 @@ static int decode_fiw(struct Flex_Next * flex) {
 
                       // reset the value
                       flex_group_reset(&flex->GroupHandler, g);
-                      flex->GroupHandler.GroupFrame[g] = -1;
-                      flex->GroupHandler.GroupCycle[g] = -1;
-                      flex->GroupHandler.GroupDelivering[g] = 0;
         }
       }
                 }
@@ -1653,7 +1736,6 @@ static unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int id
         verbprintf(3, "FLEX_NEXT: idx %u >= MAX_ALN - 1 (%u)\n", idx, MAX_ALN - 1);
         return 0;
     }
-    // TODO sanitize % or you will have uncontrolled format string vuln
     // Originally, this only avoided storing ETX (end of text, 0x03).
     // At minimum you'll also want to avoid storing NULL (str term, 0x00),
     // otherwise verbprintf will truncate the message.
@@ -1677,17 +1759,6 @@ static unsigned int add_ch(unsigned char ch, unsigned char* buf, unsigned int id
         buf[idx] = '\\';
         buf[idx + 1] = 'r';
         return 2;
-    }
-    // unixinput.c::_verbprintf uses this output as a format string
-    // which introduces an uncontrolled format string vulnerability
-    // and also, generally, risks stack corruption
-    if (ch == '%') {
-        if (idx < (MAX_ALN - 2)) {
-            buf[idx] = '%';
-            buf[idx + 1] = '%';
-            return 2;
-        }
-        return 0;
     }
     // only store ASCII printable
     if (ch >= 32 && ch <= 126) {
@@ -1714,6 +1785,9 @@ static int frag_find(struct Flex_Next * flex, int64_t capcode, int type, int msg
   for (i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) {
     if (flex->FragStore.slots[i].active &&
         flex->FragStore.slots[i].capcode == capcode &&
+        (capcode < FLEX_GROUP_ADDR_MIN || capcode > FLEX_GROUP_ADDR_MAX ||
+         (flex->GroupHandler.GroupFrame[capcode - FLEX_GROUP_ADDR_MIN] >= 0 &&
+          flex->FragStore.slots[i].generation == flex->grp_generation)) &&
         flex->FragStore.slots[i].type == type &&
         flex->FragStore.slots[i].msg_n == msg_n)
       return i;
@@ -1722,61 +1796,58 @@ static int frag_find(struct Flex_Next * flex, int64_t capcode, int type, int msg
 }
 
 // Allocate a new fragment slot, evicting the oldest if full
-static int frag_alloc(struct Flex_Next * flex, int64_t capcode, int type, int msg_n, unsigned int frame) {
-  int i;
-  // Find a free slot
-  for (i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) {
-    if (!flex->FragStore.slots[i].active) {
-      flex->FragStore.slots[i].active = 1;
-      flex->FragStore.slots[i].capcode = capcode;
-      flex->FragStore.slots[i].type = type;
-      flex->FragStore.slots[i].msg_n = msg_n;
-      flex->FragStore.slots[i].msg_r = -1;
-      flex->FragStore.slots[i].msg_m = -1;
-      flex->FragStore.slots[i].data_len = 0;
-      flex->FragStore.slots[i].frame_received = frame;
-      flex->FragStore.slots[i].sig_sum = 0;
-      flex->FragStore.slots[i].rx_sig = 0;
-      flex->FragStore.slots[i].sig_valid = 0;
-      flex->FragStore.slots[i].k_fail = 0;
-      flex->FragStore.slots[i].expected_f = 0;  // after F=11 (initial), next expected is F=00
-      flex->FragStore.slots[i].frag_index = 0;
-      flex->FragStore.slots[i].f_mismatch = 0;
-      flex->FragStore.slots[i].phase = '?';
-      flex->FragStore.slots[i].addr_type = '?';
-      return i;
-    }
+static void frag_partial(struct Flex_Next *flex, int slot);
+static void frag_release(struct Flex_Next *flex, int slot);
+static void frag_retire(struct Flex_Next *flex, int slot) {
+  struct Flex_Fragment *f = &flex->FragStore.slots[slot];
+  if (f->capcode >= FLEX_GROUP_ADDR_MIN && f->capcode <= FLEX_GROUP_ADDR_MAX) {
+    int g = (int)(f->capcode - FLEX_GROUP_ADDR_MIN);
+    if (flex->GroupHandler.generation[g] == f->generation)
+      flex_group_reset(&flex->GroupHandler, g);
   }
-  // Evict oldest
-  {
-    int oldest = 0;
-    unsigned int oldest_frame = flex->FragStore.slots[0].frame_received;
-    for (i = 1; i < FLEX_FRAG_MAX_SLOTS; i++) {
-      if (flex->FragStore.slots[i].frame_received < oldest_frame) {
-        oldest = i;
-        oldest_frame = flex->FragStore.slots[i].frame_received;
-      }
-    }
-    verbprintf(3, "FLEX_NEXT: Fragment store full, evicting slot %d (cap=%" PRId64 ")\n", oldest, flex->FragStore.slots[oldest].capcode);
-    flex->FragStore.slots[oldest].active = 1;
-    flex->FragStore.slots[oldest].capcode = capcode;
-    flex->FragStore.slots[oldest].type = type;
-    flex->FragStore.slots[oldest].msg_n = msg_n;
-    flex->FragStore.slots[oldest].msg_r = -1;
-    flex->FragStore.slots[oldest].msg_m = -1;
-    flex->FragStore.slots[oldest].data_len = 0;
-    flex->FragStore.slots[oldest].frame_received = frame;
-    flex->FragStore.slots[oldest].sig_sum = 0;
-    flex->FragStore.slots[oldest].rx_sig = 0;
-    flex->FragStore.slots[oldest].sig_valid = 0;
-    flex->FragStore.slots[oldest].k_fail = 0;
-    flex->FragStore.slots[oldest].expected_f = 0;
-    flex->FragStore.slots[oldest].frag_index = 0;
-    flex->FragStore.slots[oldest].f_mismatch = 0;
-    flex->FragStore.slots[oldest].phase = '?';
-    flex->FragStore.slots[oldest].addr_type = '?';
-    return oldest;
+}
+static int frag_alloc(struct Flex_Next *flex, int64_t capcode, int type, int msg_n, unsigned int frame) {
+  int slot = -1, oldest = 0;
+  for (int i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) {
+    if (!flex->FragStore.slots[i].active) { slot = i; break; }
+    if (flextime_age_frames(frame, flex->FragStore.slots[i].frame_received) >
+        flextime_age_frames(frame, flex->FragStore.slots[oldest].frame_received)) oldest = i;
   }
+  int64_t *members = NULL;
+  if (flex->grp_snapshot_count) {
+    members = (int64_t *)malloc((size_t)flex->grp_snapshot_count * sizeof(*members));
+    if (!members) {
+      fprintf(stderr, "FLEX_NEXT: fragment membership allocation failed; dropping page\n");
+      return -1;
+    }
+    memcpy(members, flex->grp_snapshot, (size_t)flex->grp_snapshot_count * sizeof(*members));
+  }
+  if (slot < 0) {
+    slot = oldest;
+    frag_partial(flex, slot);
+    if (flex->FragStore.slots[slot].capcode != capcode ||
+        flex->FragStore.slots[slot].generation != flex->grp_generation)
+      frag_retire(flex, slot);
+    frag_release(flex, slot);
+  }
+  struct Flex_Fragment *f = &flex->FragStore.slots[slot];
+  memset(f, 0, sizeof(*f));
+  f->members = members;
+  f->member_count = flex->grp_snapshot_count;
+  f->generation = flex->grp_generation;
+  f->type_tag = flex->line_type_tag;
+  f->is_priority = flex->Decode.is_priority;
+  f->sec_subtype = flex->Decode.sec_subtype;
+  f->opr_category = flex->Decode.opr_category;
+  f->active = 1;
+  f->capcode = capcode;
+  f->type = type;
+  f->msg_n = msg_n;
+  f->msg_r = f->msg_m = -1;
+  f->frame_received = frame;
+  f->phase = flex->Decode.phase;
+  f->addr_type = flex->Decode.addr_type;
+  return slot;
 }
 
 // Append data to a fragment slot
@@ -1792,6 +1863,10 @@ static void frag_append(struct Flex_Next * flex, int slot, const unsigned char *
 
 // Release a fragment slot
 static void frag_release(struct Flex_Next * flex, int slot) {
+  struct Flex_Fragment *f = &flex->FragStore.slots[slot];
+  free(f->members);
+  f->members = NULL;
+  f->member_count = 0;
   flex->FragStore.slots[slot].active = 0;
   flex->FragStore.slots[slot].data_len = 0;
   flex->FragStore.slots[slot].msg_n = -1;
@@ -1806,44 +1881,41 @@ static void frag_release(struct Flex_Next * flex, int slot) {
   flex->FragStore.slots[slot].f_mismatch = 0;
 }
 
+static void frag_partial(struct Flex_Next *flex, int slot) {
+  struct Flex_Fragment *f = &flex->FragStore.slots[slot];
+  if (!f->data_len) return;
+  const char *tag = f->type_tag ? f->type_tag : (f->type == FLEX_PAGETYPE_BINARY ? "HEX" : "ALN");
+  if (json_mode) {
+    /* An explicit empty list must not fall back to the current assignment. */
+    int64_t empty = 0;
+    /* Expiry or eviction may run while another page owns Decode. */
+    struct Flex_Decode saved = flex->Decode;
+    flex->Decode.is_priority = f->is_priority;
+    flex->Decode.sec_subtype = f->sec_subtype;
+    flex->Decode.opr_category = f->opr_category;
+    flex_next_json_emit(flex, f->phase, f->capcode, f->addr_type,
+                       f->capcode >= FLEX_GROUP_ADDR_MIN && f->capcode <= FLEX_GROUP_ADDR_MAX,
+                       f->type, tag, "reassembled_partial", f->msg_n, f->msg_r, f->msg_m,
+                       f->k_fail ? 0 : -1, -1, (char *)f->data,
+                        f->members ? f->members : &empty, f->member_count, NULL);
+    flex->Decode = saved;
+  } else if (flex_prefix(flex, f->capcode, f->phase, f->addr_type, f->members, f->member_count)) {
+    verbprintf(0, "%s|%s|PARTIAL.N%d%s|%s\n", flex->line_prefix, tag,
+               f->msg_n, f->k_fail ? ".K-" : ".K+", f->data);
+  }
+}
+
 // Expire old fragment slots
 static void frag_expire(struct Flex_Next * flex, unsigned int current_frame) {
   int i;
   for (i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) {
     if (flex->FragStore.slots[i].active) {
-      /* abs_frame is cycleno*128+frameno and wraps at 2048 (4-bit cycle, 7-bit frame).
-         Mask the subtraction so a wrap-around gives the correct forward distance. */
-      unsigned int age = (current_frame - flex->FragStore.slots[i].frame_received) & 0x7FF;
+      /* The cycle runs from 0 through 14, not through 15. */
+      unsigned int age = flextime_age_frames(current_frame, flex->FragStore.slots[i].frame_received);
       if (age > FLEX_FRAG_TIMEOUT) {
         verbprintf(3, "FLEX_NEXT: Fragment expired slot %d cap=%" PRId64 " age=%u\n", i, flex->FragStore.slots[i].capcode, age);
-        /* Emit partial message if slot has data */
-        if (flex->FragStore.slots[i].data_len > 0) {
-          if (json_mode) {
-            flex_next_json_emit(flex, flex->FragStore.slots[i].phase,
-                                flex->FragStore.slots[i].capcode,
-                                flex->FragStore.slots[i].addr_type, 0,
-                                flex->FragStore.slots[i].type,
-                                "ALN", "reassembled_partial",
-                                flex->FragStore.slots[i].msg_n, -1, -1,
-                                flex->FragStore.slots[i].k_fail ? 0 : -1, -1,
-                                (const char *)flex->FragStore.slots[i].data,
-                                NULL, 0, NULL);
-          } else {
-            char flex_ts[32];
-            flex_local_timestamp(flex_ts, sizeof(flex_ts));
-            verbprintf(0, "FLEX_NEXT|%s|%u/%u|%02u.%03u.%c|%010" PRId64 "|%c|ALN|PARTIAL.N%d%s|%.*s\n",
-                       flex_ts,
-                       flex->Sync.baud, flex->Sync.levels,
-                       current_frame / 128, current_frame % 128,
-                       flex->FragStore.slots[i].phase,
-                       flex->FragStore.slots[i].capcode,
-                       flex->FragStore.slots[i].addr_type,
-                       flex->FragStore.slots[i].msg_n,
-                       flex->FragStore.slots[i].k_fail ? ".K-" : ".K+",
-                       (int)flex->FragStore.slots[i].data_len,
-                       flex->FragStore.slots[i].data);
-          }
-        }
+        frag_partial(flex, i);
+        frag_retire(flex, i);
         frag_release(flex, i);
       }
     }
@@ -1874,6 +1946,8 @@ static int dedup_check_words(struct Flex_Next * flex, int64_t capcode, int type,
                              unsigned int hdr_off_in_msg, unsigned int mw1_off_in_msg,
                              unsigned int body_len, int *out_slot) {
   unsigned int frame = (flex->FIW.cycleno * 128 + flex->FIW.frameno);
+  uint64_t generation = capcode >= FLEX_GROUP_ADDR_MIN && capcode <= FLEX_GROUP_ADDR_MAX
+      ? flex->GroupHandler.generation[capcode - FLEX_GROUP_ADDR_MIN] : 0;
   int i;
 
   if (n_words > FLEX_DEDUP_MAX_WORDS)
@@ -1883,12 +1957,13 @@ static int dedup_check_words(struct Flex_Next * flex, int64_t capcode, int type,
   for (i = 0; i < FLEX_DEDUP_SLOTS; i++) {
     if (!flex->DedupStore.entries[i].active)
       continue;
-    unsigned int age = (frame - flex->DedupStore.entries[i].frame_seen) & 0x7FF;
+    unsigned int age = flextime_age_frames(frame, flex->DedupStore.entries[i].frame_seen);
     if (age > FLEX_DEDUP_TIMEOUT) {
       flex->DedupStore.entries[i].active = 0;
       continue;
     }
     if (flex->DedupStore.entries[i].capcode != capcode ||
+        flex->DedupStore.entries[i].generation != generation ||
         flex->DedupStore.entries[i].type != type ||
         flex->DedupStore.entries[i].msg_n != msg_n ||
         flex->DedupStore.entries[i].word_count != n_words)
@@ -1947,6 +2022,7 @@ static int dedup_check_words(struct Flex_Next * flex, int64_t capcode, int type,
   // Not found - cache it
   int slot = (int)flex->DedupStore.next_slot;
   flex->DedupStore.entries[slot].active = 1;
+  flex->DedupStore.entries[slot].generation = generation;
   flex->DedupStore.entries[slot].capcode = capcode;
   flex->DedupStore.entries[slot].type = type;
   flex->DedupStore.entries[slot].msg_n = msg_n;
@@ -2096,6 +2172,20 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
         }
         message[currentChar] = '\0';
 
+        /* Unknown group provenance: emit this piece only, never cache it. */
+        if (flex_groupmessage && !is_initial &&
+            frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n) < 0) {
+          if (!json_mode)
+            verbprintf(0, "%s|%s|%c.0/%d.N%d%s.ORPHAN|%s\n", flex->line_prefix,
+                       flex->line_type_tag, frag_flag, frag, msg_n, k_fail ? ".K-" : ".K+", message);
+          else
+            flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode,
+                                flex->Decode.addr_type, 1, flex->Decode.type,
+                                flex->line_type_tag, "fragment_orphan", msg_n, -1, -1,
+                                k_fail ? 0 : 1, -1, (const char *)message, NULL, 0, NULL);
+          return;
+        }
+
         // Verify signature on complete (non-fragmented) messages
         int sig_fail = 0;
         if (is_initial && cont == 0 && len > 0) {
@@ -2117,39 +2207,16 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
           unsigned int abs_frame = flex->FIW.cycleno * 128 + flex->FIW.frameno;
           int slot = frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n);
           if (slot >= 0 && is_initial) {
-            /* New initial fragment for same capcode: emit old partial, then release */
-            if (flex->FragStore.slots[slot].data_len > 0) {
-              if (json_mode) {
-                flex_next_json_emit(flex, flex->FragStore.slots[slot].phase,
-                                    flex->FragStore.slots[slot].capcode,
-                                    flex->FragStore.slots[slot].addr_type, 0,
-                                    flex->FragStore.slots[slot].type,
-                                    "ALN", "reassembled_partial",
-                                    flex->FragStore.slots[slot].msg_n, -1, -1,
-                                    flex->FragStore.slots[slot].k_fail ? 0 : -1, -1,
-                                    (const char *)flex->FragStore.slots[slot].data,
-                                    NULL, 0, NULL);
-              } else {
-                char flex_ts[32];
-                flex_local_timestamp(flex_ts, sizeof(flex_ts));
-                verbprintf(0, "FLEX_NEXT|%s|%u/%u|%02u.%03u.%c|%010" PRId64 "|%c|ALN|PARTIAL.N%d%s|%.*s\n",
-                           flex_ts,
-                           flex->Sync.baud, flex->Sync.levels,
-                           flex->FIW.cycleno, flex->FIW.frameno,
-                           flex->FragStore.slots[slot].phase,
-                           flex->FragStore.slots[slot].capcode,
-                           flex->FragStore.slots[slot].addr_type,
-                           flex->FragStore.slots[slot].msg_n,
-                           flex->FragStore.slots[slot].k_fail ? ".K-" : ".K+",
-                           (int)flex->FragStore.slots[slot].data_len,
-                           flex->FragStore.slots[slot].data);
-              }
-            }
+            frag_partial(flex, slot);
             frag_release(flex, slot);
             slot = -1;
           }
           if (slot < 0)
             slot = frag_alloc(flex, flex->Decode.capcode, flex->Decode.type, msg_n, abs_frame);
+          if (slot < 0) return;
+          if (!json_mode && !flex_prefix(flex, flex->Decode.capcode, flex->Decode.phase,
+                                        flex->Decode.addr_type, flex->grp_snapshot,
+                                        flex->grp_snapshot_count)) return;
           if (slot >= 0) {
             /* Store phase/addr_type from first fragment seen in this slot */
             if (flex->FragStore.slots[slot].phase == '?') {
@@ -2207,7 +2274,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
             cJSON_AddNumberToObject(extra, "frag_chars", currentChar);
             flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode,
                                 flex->Decode.addr_type, flex_groupmessage, flex->Decode.type,
-                                "ALN", is_initial ? "fragment_start" : "fragment_mid",
+                                flex->line_type_tag, is_initial ? "fragment_start" : "fragment_mid",
                                 msg_n, out_r, out_m, k_fail ? 0 : -1, -1,
                                 (const char *)message,
                                 (flex_groupmessage && flex->grp_snapshot_count > 0) ? flex->grp_snapshot : NULL,
@@ -2223,14 +2290,6 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
           if (slot >= 0)
             verbprintf(3, "FLEX_NEXT: Buffered fragment for cap %" PRId64 " (%d bytes in slot %d)\n",
                        flex->Decode.capcode, flex->FragStore.slots[slot].data_len, slot);
-          /* Mark group as delivering so the FIW timeout check skips it.
-           * Cleared on teardown when the message completes (C=0). */
-          if (flex_groupmessage && flex_groupbit >= 0 && flex_groupbit < GROUP_BITS &&
-              flex->GroupHandler.GroupFrame[flex_groupbit] >= 0) {
-            flex->GroupHandler.GroupDelivering[flex_groupbit] = 1;
-            flex->GroupHandler.GroupLastFragFrame[flex_groupbit] = flex->FIW.cycleno * 128 + flex->FIW.frameno;
-            flex->GroupHandler.GroupTimeoutCount[flex_groupbit] = 0;
-          }
           return;
         }
 
@@ -2273,7 +2332,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                 verbprintf(0, "%s|%s|%c.%d/%d.N%d%s%s%s|%.*s%s\n", flex->line_prefix, flex->line_type_tag, frag_flag, flex->FragStore.slots[slot].frag_index + 1, frag, msg_n, k_str, sig_str, grp_tag,
                            (int)flex->FragStore.slots[slot].data_len, flex->FragStore.slots[slot].data, message);
             } else {
-              char reassembled[MAX_ALN * 2];
+              char reassembled[FLEX_FRAG_MAX_LEN + MAX_ALN];
               snprintf(reassembled, sizeof(reassembled), "%.*s%s",
                        (int)flex->FragStore.slots[slot].data_len,
                        flex->FragStore.slots[slot].data, message);
@@ -2286,7 +2345,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
               int combined_k_fail = k_fail || flex->FragStore.slots[slot].k_fail;
               flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode,
                                   flex->Decode.addr_type, flex_groupmessage, flex->Decode.type,
-                                  "ALN", "reassembled",
+                                   flex->line_type_tag, "reassembled",
                                   msg_n, out_r, out_m,
                                   combined_k_fail ? 0 : 1, reassembled_sig_fail ? 0 : 1,
                                   reassembled,
@@ -2297,13 +2356,6 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
             verbprintf(3, "FLEX_NEXT: Reassembled %u + %d bytes for cap %" PRId64 "\n",
                        flex->FragStore.slots[slot].data_len, currentChar, flex->Decode.capcode);
             frag_release(flex, slot);
-            if (!json_mode) goto group_output;
-            if (flex_groupmessage) {
-              flex_group_reset(&flex->GroupHandler, flex_groupbit);
-              flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
-              flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
-              flex->GroupHandler.GroupDelivering[flex_groupbit] = 0;
-            }
             return;
           }
           // No buffered fragment found, output what we have
@@ -2312,18 +2364,11 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
           } else {
             flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode,
                                 flex->Decode.addr_type, flex_groupmessage, flex->Decode.type,
-                                "ALN", "fragment_end",
+                                flex->line_type_tag, "fragment_end",
                                 msg_n, -1, -1, k_fail ? 0 : -1, -1,
                                 (const char *)message,
                                 (flex_groupmessage && flex->grp_snapshot_count > 0) ? flex->grp_snapshot : NULL,
                                 flex_groupmessage ? flex->grp_snapshot_count : 0, NULL);
-          }
-          if (!json_mode) goto group_output;
-          if (flex_groupmessage) {
-            flex_group_reset(&flex->GroupHandler, flex_groupbit);
-            flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
-            flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
-            flex->GroupHandler.GroupDelivering[flex_groupbit] = 0;
           }
           return;
         }
@@ -2338,7 +2383,7 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
         } else {
           flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode,
                               flex->Decode.addr_type, flex_groupmessage, flex->Decode.type,
-                              "ALN", "complete",
+                              flex->line_type_tag, "complete",
                               msg_n, msg_r, msg_m,
                               k_fail ? 0 : 1, sig_fail ? 0 : 1,
                               (const char *)message,
@@ -2346,24 +2391,6 @@ static void parse_alphanumeric(struct Flex_Next * flex, unsigned int * phaseptr,
                               flex_groupmessage ? flex->grp_snapshot_count : 0, NULL);
         }
 
-group_output:
-// Implemented bierviltje code from ticket: https://github.com/EliasOenal/multimon-ng/issues/123# 
-        if(flex_groupmessage == 1) {
-                if(flex_groupbit < 0 || flex_groupbit >= GROUP_BITS) return;
-
-                int endpoint = flex_group_endpoint(&flex->GroupHandler, flex_groupbit);
-                for(int g = 1; g <= endpoint;g++)
-                {
-                        verbprintf(3, "FLEX_NEXT: Group message: Groupbit: %i Total Capcodes; %i; index %i; Capcode: [%010" PRId64 "]\n", flex_groupbit, endpoint, g, flex->GroupHandler.GroupCodes[flex_groupbit][g]);
-                }
-
-                // reset the value
-                flex_group_reset(&flex->GroupHandler, flex_groupbit);
-                flex->GroupHandler.GroupFrame[flex_groupbit] = -1;
-                flex->GroupHandler.GroupCycle[flex_groupbit] = -1;
-                flex->GroupHandler.GroupDelivering[flex_groupbit] = 0;
-                verbprintf(3, "FLEX_NEXT: Group teardown after delivery: groupbit=%d\n", flex_groupbit);
-        } 
 }
 
 static void parse_numeric(struct Flex_Next * flex, unsigned int * phaseptr, int * bch_err, int j, int frag, int cont, int msg_n, int msg_r, int msg_m, int dedup_flag) {
@@ -2793,7 +2820,6 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
   int hi = 0;
   int bit_count = 0;
   unsigned char nibble_acc = 0;
-  int total_bits = 0;
 
   // Extract data bits from data words (all 21 bits each)
   // Extract data bits from data words (all 21 bits each)
@@ -2806,7 +2832,6 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
         if (nibble_pos == 3 && hi < (int)sizeof(hex) - 1)
           hex[hi++] = '?';
         bit_count++;
-        total_bits++;
       }
       continue;
     }
@@ -2819,7 +2844,6 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
       if (nibble_pos == 3 && hi < (int)sizeof(hex) - 1)
         hex[hi++] = "0123456789ABCDEF"[nibble_acc & 0xF];
       bit_count++;
-      total_bits++;
     }
   }
 
@@ -2924,19 +2948,36 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
 
   int is_initial_hex = (frag == 0x03);
 
+  if (flex->Decode.capcode >= FLEX_GROUP_ADDR_MIN && flex->Decode.capcode <= FLEX_GROUP_ADDR_MAX &&
+      !is_initial_hex && frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n) < 0) {
+    if (!json_mode)
+      verbprintf(0, "%s|%s|%c.0/%d.N%d.ORPHAN|%s\n", flex->line_prefix,
+                 flex->line_type_tag, frag_flag, frag, msg_n, hex);
+    else
+      flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
+                          1, flex->Decode.type, flex->line_type_tag, "fragment_orphan",
+                          msg_n, -1, -1, -1, -1, hex, NULL, 0, NULL);
+    return;
+  }
+
   if (frag_flag == 'F') {
     // First/middle fragment: buffer it
     unsigned int abs_frame = flex->FIW.cycleno * 128 + flex->FIW.frameno;
     int fslot = frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n);
-    // R=1 on initial fragment means new message; discard stale slot
-    if (fslot >= 0 && is_initial_hex && msg_r == 1) {
-      verbprintf(3, "FLEX_NEXT: HEX R=1 new message, releasing stale slot %d for cap %" PRId64 " N=%d\n",
+    // A new initial fragment replaces the old stream, as for ALN.
+    if (fslot >= 0 && is_initial_hex) {
+      verbprintf(3, "FLEX_NEXT: HEX new initial fragment, releasing stale slot %d for cap %" PRId64 " N=%d\n",
                  fslot, flex->Decode.capcode, msg_n);
+      frag_partial(flex, fslot);
       frag_release(flex, fslot);
       fslot = -1;
     }
     if (fslot < 0)
       fslot = frag_alloc(flex, flex->Decode.capcode, flex->Decode.type, msg_n, abs_frame);
+    if (fslot < 0) return;
+    if (!json_mode && !flex_prefix(flex, flex->Decode.capcode, flex->Decode.phase,
+                                  flex->Decode.addr_type, flex->grp_snapshot,
+                                  flex->grp_snapshot_count)) return;
     if (fslot >= 0) {
       frag_append(flex, fslot, (const unsigned char *)hex, (unsigned int)hi);
       if (is_initial_hex) {
@@ -2946,6 +2987,11 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
         flex->FragStore.slots[fslot].hex_display_rtl = hex_display_rtl;
         flex->FragStore.slots[fslot].hex_header_msg = hex_header_msg;
         flex->FragStore.slots[fslot].hex_status_info = hex_status_info;
+      } else {
+        if (frag != flex->FragStore.slots[fslot].expected_f)
+          flex->FragStore.slots[fslot].f_mismatch = 1;
+        flex->FragStore.slots[fslot].expected_f = (frag + 1) % 3;
+        flex->FragStore.slots[fslot].frag_index++;
       }
       verbprintf(3, "FLEX_NEXT: HEX buffered fragment for cap %" PRId64 " (%d nibbles in slot %d)\n",
                  flex->Decode.capcode, flex->FragStore.slots[fslot].data_len, fslot);
@@ -2964,7 +3010,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
         verbprintf(0, "%s|%s|%c.%d/%d.N%d.B=%d.%s%s%s|%s\n", flex->line_prefix, flex->line_type_tag, frag_flag, fslot >= 0 ? flex->FragStore.slots[fslot].frag_index : 0, frag, msg_n, blk, dir, hdr, sti, hex);
     } else {
       flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
-                          0, flex->Decode.type, "HEX", is_initial_hex ? "fragment_start" : "fragment_orphan",
+                          0, flex->Decode.type, flex->line_type_tag, is_initial_hex ? "fragment_start" : "fragment_orphan",
                           msg_n, msg_r, msg_m, -1,
                           hex_sig_fail ? 0 : (hex_has_sig ? 1 : -1),
                           hex, NULL, 0, NULL);
@@ -2992,14 +3038,12 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
                      (int)flex->FragStore.slots[fslot].data_len, flex->FragStore.slots[fslot].data, hex);
       } else {
         // Build reassembled hex string for JSON
-        char reassembled[1024];
+        char reassembled[FLEX_FRAG_MAX_LEN + sizeof(hex)];
         int rlen = (int)flex->FragStore.slots[fslot].data_len;
-        if (rlen > (int)sizeof(reassembled) - (int)sizeof(hex) - 1)
-          rlen = (int)sizeof(reassembled) - (int)sizeof(hex) - 1;
         memcpy(reassembled, flex->FragStore.slots[fslot].data, (unsigned)rlen);
         memcpy(reassembled + rlen, hex, (unsigned)(hi + 1));
         flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
-                            0, flex->Decode.type, "HEX", "reassembled",
+                            0, flex->Decode.type, flex->line_type_tag, "reassembled",
                             msg_n, flex->FragStore.slots[fslot].msg_r,
                             flex->FragStore.slots[fslot].msg_m, -1,
                             hex_sig_fail ? 0 : (hex_has_sig ? 1 : -1),
@@ -3015,7 +3059,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
       verbprintf(0, "%s|%s|%c.0/%d.N%d|%s\n", flex->line_prefix, flex->line_type_tag, frag_flag, frag, msg_n, hex);
     } else {
       flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
-                          0, flex->Decode.type, "HEX", "fragment_end",
+                          0, flex->Decode.type, flex->line_type_tag, "fragment_end",
                           msg_n, msg_r, msg_m, -1,
                           hex_sig_fail ? 0 : (hex_has_sig ? 1 : -1),
                           hex, NULL, 0, NULL);
@@ -3046,7 +3090,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
       cJSON_AddBoolToObject(extra, "status_info", hex_status_info);
     }
     flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
-                        0, flex->Decode.type, "HEX", "complete",
+                        0, flex->Decode.type, flex->line_type_tag, "complete",
                         msg_n, msg_r, msg_m, -1,
                         hex_sig_fail ? 0 : (hex_has_sig ? 1 : -1),
                         hex, NULL, 0, extra);
@@ -3459,16 +3503,23 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
 
   // Iterate through pages and dispatch to appropriate handler.
   for (unsigned int i = aoffset; i < voffset; i++) {
+    /* Keep page locals out of scope at the shared failure/advance label. */
+    {
+    flex->Decode.long_address = 0;
+    uint32_t aiw = phaseptr[i] & 0x1FFFFFu;
+    // On BCH failure, received data bits only give a best-effort page width.
+    flex->Decode.long_address = (aiw >= 0x000001L && aiw <= 0x008000L) ||  // LA1
+                                (aiw >= 0x1F7FFFL && aiw <= 0x1FFFFEL);    // LA2
     // Skip address words with BCH errors
     if (bch_err[i]) {
       verbprintf(3, "FLEX_NEXT: Address word %u uncorrectable, skipping page\n", i);
-      continue;
+      goto page_done;
     }
     verbprintf(3, "FLEX_NEXT: Processing page offset #%u AW:%08X (vec_used=%u)\n", i - aoffset + 1, phaseptr[i], vec_used);
     if (phaseptr[i] == 0 ||
         (phaseptr[i] & 0x1FFFFFL) == 0x1FFFFFL) {
       verbprintf(3, "FLEX_NEXT: Idle codewords, invalid address\n");
-      continue;
+      goto page_done;
     }
     /*********************
      * Parse AW
@@ -3493,8 +3544,6 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
      * The first word determines the type (LA1 or LA2).
      * The second word determines the set (LA2, LA3, or LA4).
      */
-    uint32_t aiw = phaseptr[i];
-
     // Classify address word type (all values are raw 21-bit address words):
     // LA1: 0x000001 - 0x008000 (first word of long address sets 1-2, 1-3, 1-4)
     // SA:  0x008001 - 0x1E0000 (short address, capcode = aw - 0x8000, range 1-1,933,312)
@@ -3508,9 +3557,6 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
     //   Operator:     0x1F7810 - 0x1F781F (capcode 2,029,584-2,029,599)
     //   Rsvd Short 2: 0x1F7820 - 0x1F7FFE (capcode 2,029,600-2,031,614)
     // LA2: 0x1F7FFF - 0x1FFFFE (first word of long address sets 2-3, 2-4)
-    flex->Decode.long_address = (aiw >= 0x000001L && aiw <= 0x008000L) ||  // LA1
-                                (aiw >= 0x1F7FFFL && aiw <= 0x1FFFFEL);    // LA2
-
     flex->Decode.addr_type = addr_type_char(aiw, flex->Decode.long_address);
     flex->Decode.capcode = aiw - 0x8000L;  // short address default
     if (flex->Decode.long_address) {
@@ -3522,13 +3568,12 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       // Bounds check: second address word must be within the frame
       if (i + 1 >= voffset) {
         verbprintf(3, "FLEX_NEXT: Long address at end of AF, no room for word 2\n");
-        continue;
+        goto page_done;
       }
       // Check for BCH error on second address word
       if (bch_err[i + 1]) {
         verbprintf(3, "FLEX_NEXT: Long address word 2 uncorrectable, skipping\n");
-        i++;
-        continue;
+        goto page_done;
       }
       w2 = phaseptr[i + 1];
 
@@ -3557,14 +3602,13 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       }
       else {
         verbprintf(3, "FLEX_NEXT: Unknown long address set w1=0x%05X w2=0x%05X\n", w1, w2);
-        i++;
-        continue;
+        goto page_done;
       }
     }
     if (flex->Decode.capcode > 4297068542LL || flex->Decode.capcode < 0) {
       // Invalid address (by spec, maximum address)
       verbprintf(3, "FLEX_NEXT: Invalid address, capcode out of range %" PRId64 "\n", flex->Decode.capcode);
-      continue;
+      goto page_done;
     }
     verbprintf(3, "FLEX_NEXT: CAPCODE:%016" PRIx64 " %" PRId64 "\n", flex->Decode.capcode, flex->Decode.capcode);
 
@@ -3580,7 +3624,7 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
           if ((flex->Decode.capcode >= FLEX_GROUP_ADDR_MIN) && (flex->Decode.capcode <= FLEX_GROUP_ADDR_MAX)) {
              flex_groupmessage = 1;
              flex_groupbit = flex->Decode.capcode - FLEX_GROUP_ADDR_MIN;
-             if(flex_groupbit < 0) continue;
+              if(flex_groupbit < 0) goto page_done;
            }
     if (flex_groupmessage && flex->Decode.long_address) {
       // Invalid (by spec)
@@ -3633,31 +3677,27 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       if (flex->Decode.long_address) {
         // Long addresses cannot be tone-only - skip as invalid
         verbprintf(3, "FLEX_NEXT: Long address past valid vectors, skipping cap %" PRId64 "\n", flex->Decode.capcode);
-        i++;
-        continue;
+        goto page_done;
       }
       // Tone-only: address with no vector, output at debug level
+      if (!flex_group_snapshot(flex, flex_groupmessage, flex_groupbit)) continue;
       if (flex->Decode.capcode != 1) {  // skip idle artifact capcode 1
-        if (!json_mode)
-          verbprintf(3, "FLEX_NEXT|%i/%i|%02i.%03i.%c|%010" PRId64 "|%c|TON|\n",
-                   flex->Sync.baud, flex->Sync.levels,
-                   flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
-                   flex->Decode.capcode,
-                   addr_type_char(phaseptr[i], flex->Decode.long_address));
+        if (!json_mode && flex_prefix(flex, flex->Decode.capcode, PhaseNo, flex->Decode.addr_type,
+                                      flex->grp_snapshot, flex->grp_snapshot_count))
+          verbprintf(3, "%s|TON|K|\n", flex->line_prefix);
         if (json_mode)
           flex_next_json_emit(flex, PhaseNo, flex->Decode.capcode, flex->Decode.addr_type,
                               0, FLEX_PAGETYPE_TONE_ONLY, "TON", "complete",
                               -1, -1, -1, -1, -1, NULL, NULL, 0, NULL);
       }
+      if (flex_groupmessage) flex_group_reset(&flex->GroupHandler, flex_groupbit);
       continue;
     }
 
     // Skip if vector word has BCH error
     if (bch_err[j]) {
       verbprintf(3, "FLEX_NEXT: Vector word %u uncorrectable, skipping page\n", j);
-      vec_used += flex->Decode.long_address ? 2 : 1;
-      if (flex->Decode.long_address) i++;
-      continue;
+      goto page_done;
     }
     uint32_t viw = phaseptr[j];
     flex->Decode.type = ((viw >> 4) & 0x7L);
@@ -3682,18 +3722,18 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                     unsigned int iAssignedFrame = (viw >> 10) & 0x7f;  // 7-bit frame number
                     int groupbit = (viw >> 17) & 0x0f;                 // 4-bit slot index
 
+                    if (!flex_group_snapshot(flex, flex_groupmessage, flex_groupbit)) goto instruction_done;
+                    if (!json_mode && !flex_prefix(flex, flex->Decode.capcode, PhaseNo, flex->Decode.addr_type,
+                                                  flex->grp_snapshot, flex->grp_snapshot_count)) goto instruction_done;
+
                     // Output the instruction for visibility
                     if (!json_mode) {
                       char flex_ts[32];
                       flex_local_timestamp(flex_ts, sizeof(flex_ts));
                       if (instr_type == 0) {
                         // Temporary Address activation (group setup)
-                        verbprintf(0, "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|%010" PRId64 "|%c|INS|K.GRP|slot=%d deliver_frame=%u\n",
-                                 flex_ts,
-                                 flex->Sync.baud, flex->Sync.levels,
-                                 flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
-                                 flex->Decode.capcode,
-                                 addr_type_char(phaseptr[i], flex->Decode.long_address),
+                        verbprintf(0, "%s|INS|K.GRP|slot=%d deliver_frame=%u\n",
+                                 flex->line_prefix,
                                  groupbit, iAssignedFrame);
                       } else if (instr_type == 1) {
                         // System Event Notification - decode 11-bit event flags
@@ -3712,22 +3752,14 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                           }
                         }
                         if (epos == 0) epos += snprintf(evt_msg, sizeof(evt_msg), "none");
-                        verbprintf(0, "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|%010" PRId64 "|%c|INS|K.EVT|%s\n",
-                                 flex_ts,
-                                 flex->Sync.baud, flex->Sync.levels,
-                                 flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
-                                 flex->Decode.capcode,
-                                 addr_type_char(phaseptr[i], flex->Decode.long_address),
+                        verbprintf(0, "%s|INS|K.EVT|%s\n",
+                                 flex->line_prefix,
                                  evt_msg);
                       } else {
                         // Reserved instruction type - raw data
                         unsigned int raw_data = (viw >> 9) & 0x7FF;
-                        verbprintf(0, "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|%010" PRId64 "|%c|INS|K.RSV|type=%u data=0x%03X\n",
-                                 flex_ts,
-                                 flex->Sync.baud, flex->Sync.levels,
-                                 flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
-                                 flex->Decode.capcode,
-                                 addr_type_char(phaseptr[i], flex->Decode.long_address),
+                        verbprintf(0, "%s|INS|K.RSV|type=%u data=0x%03X\n",
+                                 flex->line_prefix,
                                  instr_type, raw_data);
                       }
                     } else {
@@ -3756,93 +3788,46 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
                           cJSON_AddStringToObject(json, "instruction_type", itype_name);
                         }
                         cJSON_AddNumberToObject(json, "target_frame", iAssignedFrame);
-                        cJSON_AddNumberToObject(json, "group_slot", groupbit);
-                        char *out = cJSON_PrintUnformatted(json);
-                        if (out) { fprintf(stdout, "%s\n", out); free(out); }
+                        if (!flex_json_group(json, flex->Decode.capcode, flex->grp_snapshot, flex->grp_snapshot_count)) {
+                          cJSON_Delete(json);
+                          goto instruction_done;
+                        }
+                        /* group_slot names the recipient for groups, otherwise the legacy target. */
+                        if (!cJSON_AddNumberToObject(json, "target_group_slot", groupbit)) {
+                          fprintf(stderr, "FLEX_NEXT: JSON instruction target allocation failed; dropping page\n");
+                          cJSON_Delete(json);
+                          goto instruction_done;
+                        }
+                        if (!flex_groupmessage) cJSON_AddNumberToObject(json, "group_slot", groupbit);
+                        flex_json_print(json);
                         cJSON_Delete(json);
-                      }
+                      } else fprintf(stderr, "FLEX_NEXT: JSON allocation failed; dropping page\n");
                     }
 
+instruction_done:
+                    /* Enrollment must not depend on output allocations succeeding. */
+                    if (flex_groupmessage) flex_group_reset(&flex->GroupHandler, flex_groupbit);
                     // Only process temp address activation (i=000)
                     if (instr_type != 0) {
-                      vec_used += flex->Decode.long_address ? 2 : 1;
-                      if (flex->Decode.long_address) i++;
-                      continue;
+                      goto page_done;
                     }
 
-                    /* If this group slot is already active with a different
-                     * delivery frame, or is mid-delivery, tear it down first. */
-                    if (flex->GroupHandler.GroupFrame[groupbit] >= 0 &&
-                        (flex->GroupHandler.GroupFrame[groupbit] != (int)iAssignedFrame ||
-                         flex->GroupHandler.GroupDelivering[groupbit])) {
-                      verbprintf(3, "FLEX_NEXT: Group slot %d reused (old frame=%d new frame=%u delivering=%d), tearing down\n",
-                                 groupbit, flex->GroupHandler.GroupFrame[groupbit], iAssignedFrame,
-                                 flex->GroupHandler.GroupDelivering[groupbit]);
-                      flex_group_reset(&flex->GroupHandler, groupbit);
-                      flex->GroupHandler.GroupFrame[groupbit] = -1;
-                      flex->GroupHandler.GroupCycle[groupbit] = -1;
-                      flex->GroupHandler.GroupDelivering[groupbit] = 0;
-                      flex->GroupHandler.GroupTimeoutCount[groupbit] = 0;
-                    }
-
-                    if(groupbit < 0 || groupbit >= GROUP_BITS) {
-                      verbprintf(3, "FLEX_NEXT: Invalid group bit: %i\n", groupbit);
-                      vec_used += flex->Decode.long_address ? 2 : 1;
-                      if (flex->Decode.long_address) i++;
-                      continue;
-                    }
-
-                    /* Current member count (0 if slot never allocated). */
-                    int cur_count = (flex->GroupHandler.GroupCodes[groupbit] != NULL)
-                                    ? (int)flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]
-                                    : 0;
-                    if(cur_count >= GROUP_MAX_CODES) {
-                      verbprintf(3, "FLEX_NEXT: Too many capcodes for group bit: %i (at protocol max %i)\n", groupbit, GROUP_MAX_CODES);
-                      vec_used += flex->Decode.long_address ? 2 : 1;
-                      if (flex->Decode.long_address) i++;
-                      continue;
-                    }
-
-                    /* Grow storage to hold the new member (index cur_count+1). */
-                    if(!flex_group_ensure(&flex->GroupHandler, groupbit, cur_count + 2)) {
-                      verbprintf(3, "FLEX_NEXT: Group capcode storage allocation failed for group bit: %i\n", groupbit);
-                      vec_used += flex->Decode.long_address ? 2 : 1;
-                      if (flex->Decode.long_address) i++;
-                      continue;
-                    }
-
-                    flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX]++;
-                    int CapcodePlacement = flex->GroupHandler.GroupCodes[groupbit][CAPCODES_INDEX];
-                    verbprintf(1, "FLEX_NEXT: Temp group setup: bit=%i capcodes=%i adding=[%010" PRId64 "] deliver_frame=%u\n", groupbit, CapcodePlacement, flex->Decode.capcode, iAssignedFrame);
-
-                    flex->GroupHandler.GroupCodes[groupbit][CapcodePlacement] = flex->Decode.capcode;
-                    flex->GroupHandler.GroupFrame[groupbit] = iAssignedFrame;
-
-        if(iAssignedFrame > flex->FIW.frameno)
-        {
-      flex->GroupHandler.GroupCycle[groupbit] = (int)flex->FIW.cycleno;
-      verbprintf(4, "FLEX_NEXT: Message frame is in this cycle: %i\n", flex->GroupHandler.GroupCycle[groupbit]);
-
-        }
-        else
-        {
-      if(flex->FIW.cycleno == 15)
-                        {
-        flex->GroupHandler.GroupCycle[groupbit] = 0;
-      }
-      else
-      {
-        flex->GroupHandler.GroupCycle[groupbit] = (int)flex->FIW.cycleno + 1;
-          }
-      verbprintf(4, "FLEX_NEXT: Message frame is in the next cycle: %i\n", flex->GroupHandler.GroupCycle[groupbit]);
-        }
+                    flex_group_enroll(flex, groupbit, iAssignedFrame, flex->Decode.capcode);
 
 
                     // Nothing else to do with this word.. move on!!
-                    vec_used += flex->Decode.long_address ? 2 : 1;
-                    if (flex->Decode.long_address) i++;
-                    continue;
+                    goto page_done;
                 }
+
+    if (flex->Decode.type == FLEX_PAGETYPE_SHORT_MESSAGE) {
+      if (!flex_group_snapshot(flex, flex_groupmessage, flex_groupbit)) goto page_done;
+      if (!json_mode && !flex_prefix(flex, flex->Decode.capcode, PhaseNo, flex->Decode.addr_type,
+                                    flex->grp_snapshot, flex->grp_snapshot_count)) goto page_done;
+      flex->line_type_tag = "SMSG";
+      parse_short_message(flex, phaseptr, bch_err, j);
+      if (flex_groupmessage) flex_group_reset(&flex->GroupHandler, flex_groupbit);
+      goto page_done;
+    }
 
     unsigned int mw1 = (viw >> 7) & 0x7FL;
     unsigned int len;
@@ -3883,13 +3868,12 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
     }
     if (hdr >= (unsigned)PHASE_WORDS) {
       verbprintf(3, "FLEX_NEXT: Invalid VIW\n");
-      continue;
+      goto page_done;
     }
     // Check BCH status of header word
     if (bch_err[hdr]) {
       verbprintf(3, "FLEX_NEXT: Header word %u uncorrectable, skipping page\n", hdr);
-      if (flex->Decode.long_address) i++;
-      continue;
+      goto page_done;
     }
     // Fragment flags from the message header word.
     // Bit layout is TYPE-DEPENDENT:
@@ -3957,11 +3941,11 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
         flex->Decode.type != FLEX_PAGETYPE_SPECIAL_NUMERIC &&
         flex->Decode.type != FLEX_PAGETYPE_NUMBERED_NUMERIC) {
       verbprintf(3, "FLEX_NEXT: Invalid VIW\n");
-      continue;
+      goto page_done;
     }
     if (mw1 >= (unsigned)PHASE_WORDS) {
       verbprintf(3, "FLEX_NEXT: Invalid VIW\n");
-      continue;
+      goto page_done;
     }
     // mw1 + len == 89 was observed, but still contained valid page, so truncate
     if ((mw1 + len) > (unsigned)PHASE_WORDS){
@@ -4047,44 +4031,25 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
     /* Snapshot the group members ONCE, before parse dispatch and teardown, so
      * text and JSON render the identical list even if the store is reset mid-
      * delivery.  Runs in both modes. */
-    flex_group_snapshot(flex, flex_groupmessage == 1, flex_groupbit);
-
-    if (!json_mode) {
-      char flex_ts[32];
-      flex_local_timestamp(flex_ts, sizeof(flex_ts));
-      /* Build the capcode field "capcode member1 member2 ..." directly into a
-       * heap scratch buffer sized for the full FLEX protocol ceiling.  Every
-       * accepted group member is emitted -- no truncation.  The separator is a
-       * prefix on members 2..N, so the field never ends in a trailing space. */
-      if (flex->cap_field == NULL)
-        flex->cap_field = (char *)malloc(GROUP_FIELD_MAX);
-      if (flex->line_prefix == NULL)
-        flex->line_prefix = (char *)malloc(LINE_PREFIX_MAX);
-      if (flex->cap_field != NULL && flex->line_prefix != NULL) {
-        char *cap_field = flex->cap_field;
-        int cap_pos = snprintf(cap_field, GROUP_FIELD_MAX, "%010" PRId64, flex->Decode.capcode);
-        if (cap_pos < 0) cap_pos = 0;
-        if (flex_groupmessage == 1) {
-          for (int g = 0; g < flex->grp_snapshot_count; g++) {
-            size_t cap_rem = (size_t)GROUP_FIELD_MAX - (size_t)cap_pos;
-            int wrote = snprintf(cap_field + cap_pos, cap_rem, " %010" PRId64, flex->grp_snapshot[g]);
-            /* Buffer is sized to the protocol max, so this can never overflow;
-             * the guard is defensive only. */
-            if (wrote < 0 || (size_t)wrote >= cap_rem)
-              break;
-            cap_pos += wrote;
-          }
-        }
-        // Build line prefix for atomic output by parse functions
-        snprintf(flex->line_prefix, LINE_PREFIX_MAX,
-                 "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|%s|%c",
-                 flex_ts,
-                 flex->Sync.baud, flex->Sync.levels,
-                 flex->FIW.cycleno, flex->FIW.frameno, PhaseNo,
-                 cap_field,
-                 flex->Decode.addr_type);
+    if (!flex_group_snapshot(flex, flex_groupmessage == 1, flex_groupbit)) goto page_done;
+    int stream_type = flex->Decode.type == FLEX_PAGETYPE_ALPHANUMERIC ||
+                      flex->Decode.type == FLEX_PAGETYPE_BINARY || flex->Decode.type == FLEX_PAGETYPE_SECURE;
+    int orphan_group = 0;
+    if (flex_groupmessage && stream_type && frag != 3) {
+      int slot = frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n);
+      if (slot < 0) {
+        orphan_group = 1;
+        flex->grp_snapshot_count = 0;
+      } else {
+        struct Flex_Fragment *f = &flex->FragStore.slots[slot];
+        if (flex->grp_snapshot_cap < f->member_count) goto page_done;
+        if (f->member_count) memcpy(flex->grp_snapshot, f->members, (size_t)f->member_count * sizeof(*f->members));
+        flex->grp_snapshot_count = f->member_count;
       }
     }
+    if (!json_mode && !flex_prefix(flex, flex->Decode.capcode, PhaseNo,
+                                  flex->Decode.addr_type, flex->grp_snapshot,
+                                  flex->grp_snapshot_count)) goto page_done;
 
     // Special address handling per ARIB STD-43A Section 3.8.2.
     // Network, Operator, Info Service, and Reserved addresses carry
@@ -4198,6 +4163,20 @@ static void decode_phase(struct Flex_Next * flex, char PhaseNo) {
       break;
     }
 
+    if (flex_groupmessage && !orphan_group) {
+      if (stream_type && cont) {
+        if (frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n) < 0) {
+          flex->GroupHandler.failed[flex_groupbit] = 1;
+          goto page_done;
+        }
+        flex->GroupHandler.GroupDelivering[flex_groupbit] = 1;
+        flex->GroupHandler.GroupLastFragFrame[flex_groupbit] = flex->FIW.cycleno * 128 + flex->FIW.frameno;
+        flex->GroupHandler.GroupTimeoutCount[flex_groupbit] = 0;
+      } else {
+        flex_group_reset(&flex->GroupHandler, flex_groupbit);
+      }
+    }
+    }
 page_done:
     // long addresses eat 2 aw and 2 vw, so skip the next aw-vw pair
     if (flex->Decode.long_address) {
@@ -4222,13 +4201,20 @@ page_done:
       int sv_mw1 = (sv >> 7) & 0x7F;
       int sv_len = (sv >> 14) & 0x7F;
       if (sv_len > 0 && sv_mw1 < PHASE_WORDS) {
+        flex_group_snapshot(flex, 0, 0);
+        flex->Decode.capcode = 0;
+        flex->Decode.type = (enum Flex_PageTypeEnum)sv_type;
+        flex->Decode.addr_type = 'O';
+        flex->Decode.phase = PhaseNo;
+        flex->Decode.long_address = 0;
+        flex->Decode.is_priority = 0;
+        flex->Decode.sec_subtype = NULL;
+        flex->Decode.opr_category = NULL;
         if (!json_mode) {
           char flex_ts[32];
           flex_local_timestamp(flex_ts, sizeof(flex_ts));
-          if (flex->line_prefix == NULL)
-            flex->line_prefix = (char *)malloc(LINE_PREFIX_MAX);
-          if (flex->line_prefix != NULL)
-          snprintf(flex->line_prefix, LINE_PREFIX_MAX,
+          if (!flex_buffer(&flex->line_prefix, &flex->prefix_cap, 256)) return;
+          snprintf(flex->line_prefix, flex->prefix_cap,
                    "FLEX_NEXT|%s|%i/%i|%02i.%03i.%c|SysMsg_A%d|",
                    flex_ts,
                    flex->Sync.baud, flex->Sync.levels,
@@ -5047,6 +5033,7 @@ static void Flex_Delete(struct Flex_Next * flex) {
   free(flex->line_prefix);
   free(flex->cap_field);
   free(flex->grp_snapshot);
+  for (int i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) free(flex->FragStore.slots[i].members);
   free(flex);
 }
 
@@ -5063,20 +5050,6 @@ static struct Flex_Next * Flex_New(unsigned int SampleFrequency) {
 
     /* Initialize BCH tables (does nothing if already initialized) */
     bch_init();
-
-    /* Heap scratch for piped-output formatting, sized to the FLEX protocol
-     * ceiling so a maximal group capcode list is emitted without truncation.
-     * These buffers are used unsafely in many verbprintf paths, so treat
-     * allocation failure as fatal: free the struct and return NULL so the
-     * caller propagates the error instead of operating with a NULL pointer. */
-    flex->line_prefix = (char *)malloc(LINE_PREFIX_MAX);
-    flex->cap_field   = (char *)malloc(GROUP_FIELD_MAX);
-    if (!flex->line_prefix || !flex->cap_field) {
-      free(flex->line_prefix);
-      free(flex->cap_field);
-      free(flex);
-      return NULL;
-    }
 
     for(int g = 0; g < GROUP_BITS; g++)
     {
@@ -5103,6 +5076,7 @@ static void flex_next_demod(struct demod_state *s, buffer_t buffer, int length) 
 static void flex_next_init(struct demod_state *s) {
   if (s==NULL) return;
   s->l1.flex_next=Flex_New(FREQ_SAMP);
+  if (!s->l1.flex_next) fprintf(stderr, "FLEX_NEXT: decoder allocation failed; decoder disabled\n");
 }
 
 

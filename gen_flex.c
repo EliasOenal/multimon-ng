@@ -284,7 +284,7 @@ static uint32_t build_instruction_vector(unsigned int assign_frame, int groupbit
 
 /* Write one FLEX 1600/2FSK frame to data[bit_idx..].
  * codewords[0..87] must be pre-built.  Returns the new bit_idx. */
-static int build_flex_frame(const uint32_t *codewords, int cycle, int frame,
+static int build_flex_frame(const uint32_t *codewords, uint32_t fiw,
                              unsigned char *data, int bit_idx)
 {
     int i;
@@ -302,7 +302,7 @@ static int build_flex_frame(const uint32_t *codewords, int cycle, int frame,
         data[bit_idx++] = (i & 1) ? 1 : 0;
 
     /* FIW: 32 bits LSB-first */
-    add_bits_lsb(data, &bit_idx, build_fiw(cycle, frame), 32);
+    add_bits_lsb(data, &bit_idx, fiw, 32);
 
     /* SYNC2: BS2(4) + C(16) + inv.BS2(4) + inv.C(16) */
     for (i = 0; i < 4; i++)
@@ -362,10 +362,9 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
      * Enrollment frames (group call only)
      *   Each frame enrolls up to FLEX_ENROLL_PER_FRAME member capcodes
      *   into group slot 0 using Short Instruction Vectors (V=001, type=0).
-     *   The delivery frame is always (enroll_frames % 128) in the same
-     *   cycle, ensuring it is always after the last enrollment frame.
+     *   Delivery follows the enrollment frames, including cycle rollover.
      * ------------------------------------------------------------------ */
-    unsigned int deliver_frame = (unsigned int)(enroll_frames % 128);
+    unsigned int deliver_frame = (p->p.flex.frame + enroll_frames) % 128;
 
     for (int ef = 0; ef < enroll_frames; ef++) {
         /* Idle fill */
@@ -389,8 +388,10 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
             codewords[voff + m] = build_instruction_vector(deliver_frame, /*groupbit=*/0);
         }
 
-        bit_idx = build_flex_frame(codewords, p->p.flex.cycle,
-                                   (ef % 128), s->s.flex.data, bit_idx);
+        int frame_no = p->p.flex.frame + ef;
+        bit_idx = build_flex_frame(codewords,
+                                   build_fiw((p->p.flex.cycle + frame_no / 128) % 15,
+                                             frame_no % 128), s->s.flex.data, bit_idx);
     }
 
     /* ------------------------------------------------------------------
@@ -457,8 +458,16 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
     }
 
     int delivery_frame_no = (group_count > 0) ? (int)deliver_frame : p->p.flex.frame;
-    bit_idx = build_flex_frame(codewords, p->p.flex.cycle,
-                               delivery_frame_no, s->s.flex.data, bit_idx);
+    int delivery_cycle = (p->p.flex.cycle +
+                          (p->p.flex.frame + enroll_frames) / 128) % 15;
+    uint32_t fiw = build_fiw(delivery_cycle, delivery_frame_no);
+    /* One/two errors exercise FIW correction as well as data correction.
+     * Leave the FIW clean with three errors so decoding reaches the damaged
+     * data words instead of rejecting the frame first. Reuse the seed after
+     * the ten data words to keep the injected error positions reproducible. */
+    if (group_count == 0 && p->p.flex.errors > 0 && p->p.flex.errors <= 2)
+        fiw = inject_errors(fiw, p->p.flex.errors, &error_seed);
+    bit_idx = build_flex_frame(codewords, fiw, s->s.flex.data, bit_idx);
 
     s->s.flex.datalen = (unsigned int)bit_idx;
 }

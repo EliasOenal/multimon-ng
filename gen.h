@@ -26,10 +26,9 @@
 #define SAMPLE_RATE 22050
 #define MS(x) ((float)(x)*SAMPLE_RATE/1000)
 
-/* FLEX protocol ceiling for group member capcodes (ARIB RCR STD-43A):
- * 128 frames/cycle * 4 phases/frame * 43 enrollments/phase = 22016.
- * gen-ng uses a heap-allocated buffer, so this just bounds the parser. */
-#define FLEX_GEN_GROUP_MAX 22016
+/* Phase A only: reserve one of the 128 frame positions for delivery. */
+#define FLEX_GEN_GROUP_MAX (127 * 43)
+#define FLEX_GEN_SHORT_MAX 1933312u
 
 extern const int costabi[0x400];
 
@@ -79,8 +78,7 @@ struct gen_params {
 			int frame;
 			int errors;
 			char message[256];
-			/* Group call: heap-allocated member capcodes (malloc'd to
-			 * FLEX_GEN_GROUP_MAX slots on first -G use; freed on exit). */
+			/* Group call: heap-allocated group_count member capcodes. */
 			uint32_t *group_capcodes;
 			int group_count;
 		} flex;
@@ -174,4 +172,3 @@ extern int gen_pocsag(signed short *buf, int buflen, struct gen_params *p, struc
 typedef void (*gen_write_t)(void *ctx, const short *samples, int count);
 extern void gen_init_scope(void);
 extern int gen_scope(const char *text, int txtlen, gen_write_t write_cb, void *ctx);
-

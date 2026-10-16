@@ -258,15 +258,14 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
     run_gen_decode_test "FLEX_NEXT decoder (gen-ng)" \
         '-f "FLEX_NEXT test" -F 777777' "FLEX_NEXT" "0000777777" "FLEX_NEXT test" || FAILED=1
 
-    # Group call regression: 93 members exceeds the old cap_field[1024] boundary
-    # (10 + 92*11 = 1022 bytes; member 93 overflowed the old fixed buffer).
-    run_gen_decode_test "FLEX_NEXT group call 93 members (overflow boundary)" \
-        '-f "group boundary" -G "1000000:93"' "FLEX_NEXT" \
-        "0001000000" "0001000092" "group boundary" || FAILED=1
-
-    run_gen_decode_test "FLEX_NEXT group call 200 members" \
-        '-f "large group" -G "2000000:200"' "FLEX_NEXT" \
-        "0002000000" "0002000199" "large group" || FAILED=1
+    # Check the delivery's complete member field and JSON array. Enrollment
+    # output alone must not satisfy these group regressions.
+    TESTS_RUN=$((TESTS_RUN + 1))
+    if python3 "$SCRIPT_DIR/test_flex_groups.py"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        FAILED=1
+    fi
     
     echo
     echo "POCSAG end-to-end tests:"
