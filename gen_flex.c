@@ -353,7 +353,7 @@ void gen_init_flex(struct gen_params *p, struct gen_state *s)
     s->s.flex.data = (unsigned char *)malloc(total_bits);
     if (!s->s.flex.data) {
         fprintf(stderr, "gen_flex: out of memory\n");
-        return;
+        exit(EXIT_FAILURE);
     }
 
     int bit_idx = 0;

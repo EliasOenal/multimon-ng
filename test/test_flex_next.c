@@ -341,6 +341,90 @@ static void test_group_eviction(void) {
         Flex_Delete(f);
     }
 }
+static void test_group_retirement(int mode) {
+    json_mode = mode;
+    const int types[] = {FLEX_PAGETYPE_ALPHANUMERIC, FLEX_PAGETYPE_BINARY};
+    for (size_t t = 0; t < sizeof(types) / sizeof(types[0]); t++) {
+        int type = types[t];
+        for (int evict = 0; evict < 2; evict++) {
+            struct Flex_Next *f = decoder();
+            flex_group_enroll(f, 0, 1, 11111);
+            f->FIW.frameno = 1;
+            page(f, FLEX_GROUP_ADDR_MIN, type, 3, 1, 7);
+            clear_output(); decode_phase(f, 'A');
+            int old = frag_find(f, FLEX_GROUP_ADDR_MIN, type, 7);
+            assert(old >= 0);
+            f->FIW.frameno = 100;
+            page(f, FLEX_GROUP_ADDR_MIN, type, 3, 1, 8);
+            clear_output(); decode_phase(f, 'A');
+            int newer = frag_find(f, FLEX_GROUP_ADDR_MIN, type, 8);
+            assert(newer >= 0 && newer != old);
+            uint64_t generation = f->GroupHandler.generation[0];
+            clear_output();
+            if (evict) {
+                flex_group_snapshot(f, 0, 0);
+                for (int i = 2; i < FLEX_FRAG_MAX_SLOTS; i++)
+                    assert(frag_alloc(f, 1000 + i, type, i, 100) == i);
+                assert(frag_alloc(f, 999, type, 0, 130) == old);
+            } else frag_expire(f, 130);
+            assert(f->GroupHandler.GroupFrame[0] == 1);
+            assert(f->GroupHandler.generation[0] == generation);
+            assert(f->GroupHandler.GroupDelivering[0] && !f->GroupHandler.failed[0]);
+            assert(f->FragStore.slots[newer].active);
+            assert(f->FragStore.slots[newer].member_count == 1);
+            assert(f->FragStore.slots[newer].members[0] == 11111);
+            assert(flex_group_snapshot(f, 1, 0));
+            assert(frag_find(f, FLEX_GROUP_ADDR_MIN, type, 8) == newer);
+            f->FIW.cycleno = 1; f->FIW.frameno = 2;
+            page(f, FLEX_GROUP_ADDR_MIN, type, 0, 0, 8);
+            clear_output(); decode_phase(f, 'A');
+            const char *body = type == FLEX_PAGETYPE_BINARY ? "5432108000A8642" : "A%BA%B";
+            if (mode) {
+                cJSON *j = message(); check_members(j, 11111);
+                assert(!strcmp(cJSON_GetObjectItem(j, "fragment")->valuestring, "reassembled"));
+                assert(!strcmp(cJSON_GetObjectItem(j, "message")->valuestring, body));
+                cJSON_Delete(j);
+            } else {
+                char expected[128];
+                snprintf(expected, sizeof(expected), "|%s\n", body);
+                assert(strstr(output, "|0002029568 0000011111|T|"));
+                assert(strstr(output, expected));
+                assert(!strstr(output, "ORPHAN") && strchr(output, '\n') == output + output_len - 1);
+            }
+            assert(!f->FragStore.slots[newer].active);
+            assert(f->GroupHandler.GroupFrame[0] == -1);
+            assert(flex_group_endpoint(&f->GroupHandler, 0) == 0);
+            Flex_Delete(f);
+        }
+        for (int cleanup = 0; cleanup < 3; cleanup++) {
+            int replacement = cleanup == 2;
+            struct Flex_Next *f = decoder();
+            flex_group_enroll(f, 0, 1, 11111);
+            for (int n = 7; n <= 8; n++) {
+                f->FIW.frameno = n - 6;
+                page(f, FLEX_GROUP_ADDR_MIN, type, 3, 1, n);
+                clear_output(); decode_phase(f, 'A');
+            }
+            if (replacement) flex_group_enroll(f, 0, 3, 22222);
+            else f->GroupHandler.failed[0] = 1;
+            uint64_t generation = f->GroupHandler.generation[0];
+            if (cleanup == 1) {
+                clear_output(); frag_expire(f, 130);
+                assert(f->GroupHandler.GroupFrame[0] == 1 && f->GroupHandler.failed[0]);
+                assert(!flex_group_snapshot(f, 1, 0));
+            }
+            clear_output(); frag_expire(f, 131);
+            for (int i = 0; i < FLEX_FRAG_MAX_SLOTS; i++)
+                assert(!f->FragStore.slots[i].active);
+            assert(f->GroupHandler.generation[0] == generation);
+            assert(f->GroupHandler.GroupFrame[0] == (replacement ? 3 : -1));
+            assert(flex_group_endpoint(&f->GroupHandler, 0) == replacement);
+            if (replacement) assert(f->GroupHandler.GroupCodes[0][1] == 22222);
+            assert(!f->GroupHandler.GroupDelivering[0] && !f->GroupHandler.failed[0]);
+            Flex_Delete(f);
+        }
+    }
+}
 static void test_failed_dispatch(void) {
     struct Flex_Next *f = decoder();
     json_mode = 0;
@@ -539,7 +623,130 @@ static void test_unassigned_initial_groups(void) {
         Flex_Delete(f);
     }
 }
+static void test_pending_window(int mode) {
+    json_mode = mode;
+    /* Target 0/20, then reception resumes at 8/0: age 1004, not future. */
+    struct Flex_Next *f = decoder();
+    flex_group_enroll(f, 0, 20, 11111);
+    clear_output(); fiw(f, 8, 0);
+    page(f, FLEX_GROUP_ADDR_MIN, 5, 3, 0, 7);
+    clear_output(); decode_phase(f, 'A');
+    if (mode) {
+        cJSON *j = message();
+        cJSON *members = cJSON_GetObjectItem(j, "group_capcodes");
+        assert(cJSON_IsArray(members) && cJSON_GetArraySize(members) == 0);
+        assert(!strcmp(cJSON_GetObjectItem(j, "message")->valuestring, "A%B"));
+        cJSON_Delete(j);
+    } else assert(strstr(output, "|0002029568|T|ALN|") && strstr(output, "A%B"));
+    Flex_Delete(f);
+
+    const unsigned int ahead[] = {0, 1, 128, 129, 960, 916, 1919};
+    for (int rollover = 0; rollover < 2; rollover++)
+    for (size_t i = 0; i < sizeof(ahead) / sizeof(ahead[0]); i++) {
+        f = decoder();
+        /* Seed a real assignment, then vary the received FIW around its target. */
+        f->FIW.cycleno = rollover ? 14 : 0;
+        f->FIW.frameno = rollover ? 127 : 0;
+        flex_group_enroll(f, 0, 20, 11111);
+        assert(f->GroupHandler.GroupCycle[0] == 0);
+        unsigned int now = (20 + FLEX_FRAME_SPACE - ahead[i]) % FLEX_FRAME_SPACE;
+        clear_output(); fiw(f, now / 128, now % 128);
+        int valid = ahead[i] <= 128;
+        assert(f->GroupHandler.GroupFrame[0] == (valid ? 20 : -1));
+        assert(flex_group_endpoint(&f->GroupHandler, 0) == valid);
+        if (valid) assert(f->GroupHandler.GroupCodes[0][1] == 11111);
+        Flex_Delete(f);
+    }
+    assert(flextime_age_frames(980, 20) == 960);
+    assert(flextime_age_frames(1024, 20) == 1004);
+
+    /* Delivery uses the last fragment and two FIWs, not the pending target. */
+    f = decoder();
+    flex_group_enroll(f, 0, 20, 11111);
+    fiw(f, 0, 20);
+    page(f, FLEX_GROUP_ADDR_MIN, 5, 3, 1, 7);
+    clear_output(); decode_phase(f, 'A');
+    assert(f->GroupHandler.GroupDelivering[0]);
+    clear_output(); fiw(f, 0, 21);
+    assert(f->GroupHandler.GroupFrame[0] == 20);
+    fiw(f, 1, 20); /* Last fragment age 128 remains valid. */
+    assert(f->GroupHandler.GroupTimeoutCount[0] == 0);
+    fiw(f, 1, 21);
+    assert(f->GroupHandler.GroupFrame[0] == 20);
+    assert(f->GroupHandler.GroupTimeoutCount[0] == 1);
+    fiw(f, 1, 22);
+    assert(f->GroupHandler.GroupFrame[0] == -1);
+    /* The captured fragment recipients survive live group teardown. */
+    clear_output(); frag_expire(f, 150);
+    if (mode) {
+        cJSON *j = message(); check_members(j, 11111); cJSON_Delete(j);
+    } else assert(strstr(output, "0002029568 0000011111|T|"));
+    Flex_Delete(f);
+}
+static void test_reserved_short_messages(int mode) {
+    const uint32_t addresses[] = {0x1F0001, 0x1F7820, 0x008001, 0x1F2800,
+                                  0x1F6800, 0x1F7800, 0x1F7810};
+    const uint32_t data[] = {0x321, 0xCCC, 5, 5 | (17 << 3) | (1 << 9), 0x123};
+    const int subtype[] = {0, 0, 1, 2, 3};
+    const char *text[] = {"|K.NUM|123", "|K.TON|", "|K.SRC|SRC=5",
+                          "|K.SRC.N17.R1|SRC=5", "|K.RSV|subtype=3 data=0x123"};
+    const char *json_subtype[] = {"numeric", NULL, "source", "numbered", "reserved"};
+    json_mode = mode;
+    for (size_t a = 0; a < sizeof(addresses) / sizeof(addresses[0]); a++)
+    for (int variant = 0; variant < 5; variant++) {
+        struct Flex_Next *f = decoder();
+        uint32_t words[PHASE_WORDS] = {0};
+        words[0] = 3 << 10;
+        words[1] = addresses[a];
+        words[2] = 0x8000 + 22222;
+        words[3] = (2 << 4) | (subtype[variant] << 7) | (data[variant] << 9);
+        words[4] = (2 << 4) | (0x987 << 9); /* Distinct next vector: "789". */
+        for (int i = 0; i < PHASE_WORDS; i++) f->Data.PhaseA.buf[i] = encoded(words[i]);
+        clear_output(); decode_phase(f, 'A');
+        int reserved = a < 2;
+        if (mode) {
+            const char *end = output;
+            if (!reserved) {
+                cJSON *j = cJSON_ParseWithOpts(end, &end, 0); assert(j);
+                assert(cJSON_GetObjectItem(j, "capcode")->valuedouble == addresses[a] - 0x8000);
+                int network = a == 4 && subtype[variant] == 0;
+                const char *tag = variant == 1 && !network ? "TON" : "SMSG";
+                assert(!strcmp(cJSON_GetObjectItem(j, "type_tag")->valuestring, tag));
+                if (network || json_subtype[variant])
+                    assert(!strcmp(cJSON_GetObjectItem(j, "smsg_sub_type")->valuestring,
+                                   network ? "network_id" : json_subtype[variant]));
+                cJSON_Delete(j);
+            }
+            cJSON *j = cJSON_ParseWithOpts(end, &end, 0); assert(j);
+            assert(cJSON_GetObjectItem(j, "capcode")->valueint == 22222);
+            assert(!strcmp(cJSON_GetObjectItem(j, "message")->valuestring, "789"));
+            cJSON_Delete(j);
+            j = cJSON_ParseWithOpts(end, &end, 0); assert(j);
+            assert(!strcmp(cJSON_GetObjectItem(j, "msg_type")->valuestring, "bch_stats"));
+            cJSON_Delete(j);
+            while (*end == '\n' || *end == '\r' || *end == ' ') end++;
+            assert(!*end);
+        } else {
+            const char *next = output;
+            if (!reserved) {
+                char prefix[32];
+                snprintf(prefix, sizeof(prefix), "|%010u|", addresses[a] - 0x8000);
+                assert(strstr(output, prefix));
+                assert(strstr(output, a == 4 && subtype[variant] == 0 ? "|K.NID|" : text[variant]));
+                next = strchr(output, '\n'); assert(next); next++;
+            }
+            assert(strstr(next, "|0000022222|S|SMSG|K.NUM|789\n"));
+            const char *end = strchr(next, '\n'); assert(end && !end[1]);
+        }
+        Flex_Delete(f);
+    }
+}
 int main(void) {
+    for (int mode = 0; mode < 2; mode++) {
+        test_pending_window(mode);
+        test_reserved_short_messages(mode);
+        test_group_retirement(mode);
+    }
     test_dispatch();
     test_fragments();
     test_rollover_and_failures();

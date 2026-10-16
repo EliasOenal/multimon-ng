@@ -1680,8 +1680,9 @@ static int decode_fiw(struct Flex_Next * flex) {
         }
         unsigned int now = flex->FIW.cycleno * 128 + flex->FIW.frameno;
         unsigned int target = flex->GroupHandler.GroupCycle[g] * 128 + flex->GroupHandler.GroupFrame[g];
-        unsigned int past = flextime_age_frames(now, target);
-        int Reset = past > 0 && past < FLEX_FRAME_SPACE / 2;
+        /* A pending target must be at most one cycle ahead, even after a reception gap. */
+        unsigned int ahead = flextime_age_frames(target, now);
+        int Reset = ahead > 128;
         verbprintf(4, "FLEX_NEXT: GroupBit %i, FrameNo: %i, Cycle No: %i target Cycle No: %i\n", g, flex->GroupHandler.GroupFrame[g], flex->GroupHandler.GroupCycle[g], (int)flex->FIW.cycleno); 
       
 
@@ -1802,8 +1803,15 @@ static void frag_retire(struct Flex_Next *flex, int slot) {
   struct Flex_Fragment *f = &flex->FragStore.slots[slot];
   if (f->capcode >= FLEX_GROUP_ADDR_MIN && f->capcode <= FLEX_GROUP_ADDR_MAX) {
     int g = (int)(f->capcode - FLEX_GROUP_ADDR_MIN);
-    if (flex->GroupHandler.generation[g] == f->generation)
+    if (flex->GroupHandler.generation[g] == f->generation) {
+      /* Retiring one stream must not orphan another in the same assignment. */
+      for (int i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) {
+        struct Flex_Fragment *other = &flex->FragStore.slots[i];
+        if (i != slot && other->active && other->capcode == f->capcode &&
+            other->generation == f->generation) return;
+      }
       flex_group_reset(&flex->GroupHandler, g);
+    }
   }
 }
 static int frag_alloc(struct Flex_Next *flex, int64_t capcode, int type, int msg_n, unsigned int frame) {
@@ -3820,6 +3828,7 @@ instruction_done:
                 }
 
     if (flex->Decode.type == FLEX_PAGETYPE_SHORT_MESSAGE) {
+      if (flex->Decode.addr_type == 'R') goto page_done;
       if (!flex_group_snapshot(flex, flex_groupmessage, flex_groupbit)) goto page_done;
       if (!json_mode && !flex_prefix(flex, flex->Decode.capcode, PhaseNo, flex->Decode.addr_type,
                                     flex->grp_snapshot, flex->grp_snapshot_count)) goto page_done;
