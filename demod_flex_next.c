@@ -4163,7 +4163,9 @@ instruction_done:
       break;
     }
 
-    if (flex_groupmessage && !orphan_group) {
+    /* Unknown groups have no assignment to fail or retire. */
+    if (flex_groupmessage && !orphan_group &&
+        flex->GroupHandler.GroupFrame[flex_groupbit] >= 0) {
       if (stream_type && cont) {
         if (frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n) < 0) {
           flex->GroupHandler.failed[flex_groupbit] = 1;

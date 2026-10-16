@@ -507,6 +507,38 @@ static void test_orphan_groups(void) {
         Flex_Delete(f);
     }
 }
+static void test_unassigned_initial_groups(void) {
+    const int types[] = {5, 6, 0, 0, 0, 0};
+    const int subtypes[] = {0, 0, 0, 1, 2, 3};
+    const char *tags[] = {"ALN", "HEX", "SEC:ALN", "SEC:VEN", "SEC:BIN", "SEC:RSV"};
+    for (int mode = 0; mode < 2; mode++) for (int t = 0; t < 6; t++) {
+        struct Flex_Next *f = decoder();
+        json_mode = mode;
+        const char *payload = types[t] == 6 ? "08000" :
+                              types[t] == 0 && subtypes[t] != 0 ? "08069" : "A%B";
+        /* Reception can start after enrollment, before the initial fragment. */
+        for (int piece = 0; piece < 4; piece++) {
+            int frag = piece == 0 || piece == 3 ? 3 : piece - 1;
+            page(f, FLEX_GROUP_ADDR_MIN, types[t], frag, piece < 2, piece == 3 ? 8 : 7);
+            if (types[t] == 0)
+                f->Data.PhaseA.buf[3] = encoded((f->Data.PhaseA.buf[3] & 0x1FFFFF) | (subtypes[t] << 19));
+            clear_output(); decode_phase(f, 'A');
+            assert(f->GroupHandler.GroupFrame[0] == -1);
+            assert(!f->GroupHandler.failed[0] && !f->GroupHandler.GroupDelivering[0]);
+            if (piece == 1 || piece == 2) check_orphan(payload);
+            if (mode) {
+                cJSON *j = message();
+                cJSON *members = cJSON_GetObjectItem(j, "group_capcodes");
+                cJSON *body = cJSON_GetObjectItem(j, "message");
+                assert(cJSON_IsArray(members) && cJSON_GetArraySize(members) == 0);
+                assert(cJSON_IsString(body) && body->valuestring[0]);
+                assert(!strcmp(cJSON_GetObjectItem(j, "type_tag")->valuestring, tags[t]));
+                cJSON_Delete(j);
+            } else assert(strstr(output, "0002029568|T|"));
+        }
+        Flex_Delete(f);
+    }
+}
 int main(void) {
     test_dispatch();
     test_fragments();
@@ -519,6 +551,7 @@ int main(void) {
     test_instruction_failures();
     test_instruction_target();
     test_orphan_groups();
+    test_unassigned_initial_groups();
     puts("FLEX_NEXT decoder unit tests passed");
     return 0;
 }

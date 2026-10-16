@@ -22,6 +22,9 @@ jobs:
     
     - name: Run tests
       run: ./test/run_tests.sh
+
+    - name: Run CTest regressions
+      run: ctest --test-dir build --output-on-failure --no-tests=error
     
     - name: Upload artifact
       uses: actions/upload-artifact@v7
