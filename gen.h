@@ -26,6 +26,10 @@
 #define SAMPLE_RATE 22050
 #define MS(x) ((float)(x)*SAMPLE_RATE/1000)
 
+/* Phase A only: reserve one of the 128 frame positions for delivery. */
+#define FLEX_GEN_GROUP_MAX (127 * 43)
+#define FLEX_GEN_SHORT_MAX 1933312u
+
 extern const int costabi[0x400];
 
 #define COS(x) costabi[(((x)>>6)&0x3ffu)]
@@ -74,6 +78,9 @@ struct gen_params {
 			int frame;
 			int errors;
 			char message[256];
+			/* Group call: heap-allocated group_count member capcodes. */
+			uint32_t *group_capcodes;
+			int group_count;
 		} flex;
 		struct {
 			uint32_t address;
@@ -125,7 +132,7 @@ struct gen_state {
 			int bit_idx;
 			unsigned int bitph;
 			unsigned int datalen;
-			unsigned char data[4096];  /* One bit per byte for clarity */
+			unsigned char *data;   /* heap-allocated; size = datalen bytes */
 		} flex;
 		struct {
 			int bit_idx;
@@ -165,4 +172,3 @@ extern int gen_pocsag(signed short *buf, int buflen, struct gen_params *p, struc
 typedef void (*gen_write_t)(void *ctx, const short *samples, int count);
 extern void gen_init_scope(void);
 extern int gen_scope(const char *text, int txtlen, gen_write_t write_cb, void *ctx);
-

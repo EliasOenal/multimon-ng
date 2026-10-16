@@ -19,3 +19,5 @@ jobs:
       run: cd build && make
     - name: Run tests
       run: ./test/run_tests.sh
+    - name: Run CTest regressions
+      run: ctest --test-dir build --output-on-failure --no-tests=error

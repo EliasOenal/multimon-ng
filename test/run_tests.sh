@@ -257,6 +257,15 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
     
     run_gen_decode_test "FLEX_NEXT decoder (gen-ng)" \
         '-f "FLEX_NEXT test" -F 777777' "FLEX_NEXT" "0000777777" "FLEX_NEXT test" || FAILED=1
+
+    # Check the delivery's complete member field and JSON array. Enrollment
+    # output alone must not satisfy these group regressions.
+    TESTS_RUN=$((TESTS_RUN + 1))
+    if python3 "$SCRIPT_DIR/test_flex_groups.py"; then
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        FAILED=1
+    fi
     
     echo
     echo "POCSAG end-to-end tests:"
