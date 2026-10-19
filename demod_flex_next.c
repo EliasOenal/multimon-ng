@@ -1799,19 +1799,21 @@ static int frag_find(struct Flex_Next * flex, int64_t capcode, int type, int msg
 // Allocate a new fragment slot, evicting the oldest if full
 static void frag_partial(struct Flex_Next *flex, int slot);
 static void frag_release(struct Flex_Next *flex, int slot);
+static void flex_group_retire(struct Flex_Next *flex, int g, int retiring_slot) {
+  /* Completion, expiry and eviction must preserve other streams in the assignment. */
+  for (int i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) {
+    struct Flex_Fragment *f = &flex->FragStore.slots[i];
+    if (i != retiring_slot && f->active && f->capcode == FLEX_GROUP_ADDR_MIN + g &&
+        f->generation == flex->GroupHandler.generation[g]) return;
+  }
+  flex_group_reset(&flex->GroupHandler, g);
+}
 static void frag_retire(struct Flex_Next *flex, int slot) {
   struct Flex_Fragment *f = &flex->FragStore.slots[slot];
   if (f->capcode >= FLEX_GROUP_ADDR_MIN && f->capcode <= FLEX_GROUP_ADDR_MAX) {
     int g = (int)(f->capcode - FLEX_GROUP_ADDR_MIN);
-    if (flex->GroupHandler.generation[g] == f->generation) {
-      /* Retiring one stream must not orphan another in the same assignment. */
-      for (int i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) {
-        struct Flex_Fragment *other = &flex->FragStore.slots[i];
-        if (i != slot && other->active && other->capcode == f->capcode &&
-            other->generation == f->generation) return;
-      }
-      flex_group_reset(&flex->GroupHandler, g);
-    }
+    if (flex->GroupHandler.generation[g] == f->generation)
+      flex_group_retire(flex, g, slot);
   }
 }
 static int frag_alloc(struct Flex_Next *flex, int64_t capcode, int type, int msg_n, unsigned int frame) {
@@ -2972,6 +2974,7 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
     // First/middle fragment: buffer it
     unsigned int abs_frame = flex->FIW.cycleno * 128 + flex->FIW.frameno;
     int fslot = frag_find(flex, flex->Decode.capcode, flex->Decode.type, msg_n);
+    int matched = fslot >= 0;
     // A new initial fragment replaces the old stream, as for ALN.
     if (fslot >= 0 && is_initial_hex) {
       verbprintf(3, "FLEX_NEXT: HEX new initial fragment, releasing stale slot %d for cap %" PRId64 " N=%d\n",
@@ -3018,7 +3021,8 @@ static void parse_binary(struct Flex_Next * flex, unsigned int * phaseptr, int *
         verbprintf(0, "%s|%s|%c.%d/%d.N%d.B=%d.%s%s%s|%s\n", flex->line_prefix, flex->line_type_tag, frag_flag, fslot >= 0 ? flex->FragStore.slots[fslot].frag_index : 0, frag, msg_n, blk, dir, hdr, sti, hex);
     } else {
       flex_next_json_emit(flex, flex->Decode.phase, flex->Decode.capcode, flex->Decode.addr_type,
-                          0, flex->Decode.type, flex->line_type_tag, is_initial_hex ? "fragment_start" : "fragment_orphan",
+                          0, flex->Decode.type, flex->line_type_tag,
+                          is_initial_hex ? "fragment_start" : matched ? "fragment_mid" : "fragment_orphan",
                           msg_n, msg_r, msg_m, -1,
                           hex_sig_fail ? 0 : (hex_has_sig ? 1 : -1),
                           hex, NULL, 0, NULL);
@@ -4184,7 +4188,7 @@ instruction_done:
         flex->GroupHandler.GroupLastFragFrame[flex_groupbit] = flex->FIW.cycleno * 128 + flex->FIW.frameno;
         flex->GroupHandler.GroupTimeoutCount[flex_groupbit] = 0;
       } else {
-        flex_group_reset(&flex->GroupHandler, flex_groupbit);
+        flex_group_retire(flex, flex_groupbit, -1);
       }
     }
     }

@@ -425,6 +425,69 @@ static void test_group_retirement(int mode) {
         }
     }
 }
+static void test_interleaved_completion(int mode) {
+    json_mode = mode;
+    const int types[] = {FLEX_PAGETYPE_SECURE, FLEX_PAGETYPE_ALPHANUMERIC, FLEX_PAGETYPE_BINARY};
+    for (size_t t = 0; t < sizeof(types) / sizeof(types[0]); t++) {
+        struct Flex_Next *f = decoder();
+        int type = types[t];
+        flex_group_enroll(f, 0, 1, 11111);
+        f->FIW.frameno = 1;
+        for (int n = 7; n <= 8; n++) {
+            page(f, FLEX_GROUP_ADDR_MIN, type, 3, 1, n);
+            clear_output(); decode_phase(f, 'A');
+            assert(frag_find(f, FLEX_GROUP_ADDR_MIN, type, n) >= 0);
+        }
+        uint64_t generation = f->GroupHandler.generation[0];
+        for (int n = 7; n <= 8; n++) {
+            page(f, FLEX_GROUP_ADDR_MIN, type, 0, 0, n);
+            clear_output(); decode_phase(f, 'A');
+            const char *body = type == FLEX_PAGETYPE_BINARY ? "5432108000A8642" : "A%BA%B";
+            if (mode) {
+                cJSON *j = message(); check_members(j, 11111);
+                assert(!strcmp(cJSON_GetObjectItem(j, "fragment")->valuestring, "reassembled"));
+                assert(!strcmp(cJSON_GetObjectItem(j, "message")->valuestring, body));
+                cJSON_Delete(j);
+            } else {
+                char expected[128];
+                snprintf(expected, sizeof(expected), "|%s\n", body);
+                assert(strstr(output, "|0002029568 0000011111|T|"));
+                assert(strstr(output, expected) && !strstr(output, "ORPHAN"));
+            }
+            assert(f->GroupHandler.generation[0] == generation);
+            assert(f->GroupHandler.GroupFrame[0] == (n == 7 ? 1 : -1));
+            if (n == 7) assert(frag_find(f, FLEX_GROUP_ADDR_MIN, type, 8) >= 0);
+        }
+        for (int i = 0; i < FLEX_FRAG_MAX_SLOTS; i++) assert(!f->FragStore.slots[i].active);
+        Flex_Delete(f);
+    }
+}
+static void test_hex_middle_json(void) {
+    json_mode = 1;
+    for (int group = 0; group < 2; group++) {
+        struct Flex_Next *f = decoder();
+        uint32_t capcode = group ? FLEX_GROUP_ADDR_MIN : 12345;
+        if (group) flex_group_enroll(f, 0, 1, 11111);
+        f->FIW.frameno = 1;
+        for (int step = 0; step < 4; step++) {
+            int frag = step == 0 ? 3 : (step - 1) % 3;
+            page(f, capcode, FLEX_PAGETYPE_BINARY, frag, step < 3, 7);
+            clear_output(); decode_phase(f, 'A');
+            cJSON *j = message();
+            const char *label = step == 0 ? "fragment_start" : step < 3 ? "fragment_mid" : "reassembled";
+            assert(!strcmp(cJSON_GetObjectItem(j, "fragment")->valuestring, label));
+            if (group) check_members(j, 11111);
+            cJSON_Delete(j);
+        }
+        /* A continuation with no matching stream is still an orphan. */
+        page(f, capcode, FLEX_PAGETYPE_BINARY, 0, 1, 8);
+        clear_output(); decode_phase(f, 'A');
+        cJSON *j = message();
+        assert(!strcmp(cJSON_GetObjectItem(j, "fragment")->valuestring, "fragment_orphan"));
+        cJSON_Delete(j);
+        Flex_Delete(f);
+    }
+}
 static void test_failed_dispatch(void) {
     struct Flex_Next *f = decoder();
     json_mode = 0;
@@ -746,7 +809,9 @@ int main(void) {
         test_pending_window(mode);
         test_reserved_short_messages(mode);
         test_group_retirement(mode);
+        test_interleaved_completion(mode);
     }
+    test_hex_middle_json();
     test_dispatch();
     test_fragments();
     test_rollover_and_failures();
