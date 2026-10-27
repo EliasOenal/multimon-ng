@@ -195,8 +195,8 @@ static void fms_print_crc(char crc[7]) {
 
 void fms_print_message_hex(uint64_t message)
 {
-    verbprintf(2, "FMS MESSAGE HIGH: %08x\n", message >> 32);
-    verbprintf(2, "FMS MESSAGE  LOW: %08x\n", message);
+    verbprintf(2, "FMS MESSAGE HIGH: %08x\n", (uint32_t)(message >> 32));
+    verbprintf(2, "FMS MESSAGE  LOW: %08x\n", (uint32_t)message);
 }
 
 
@@ -222,7 +222,7 @@ static char fms_is_crc_correct(uint64_t message)
         // CRC Generation Unit - Linear Feedback Shift Register implementation
         // (c) Kay Gorontzi, GHSi.de, distributed under the terms of LGPL
         // ==========================================================================
-        verbprintf(4, "FMS CRC BIT: %1x\n", ((message >> (16+i)) & 1));
+        verbprintf(4, "FMS CRC BIT: %1x\n", (uint32_t)((message >> (16+i)) & 1));
 
         doinvert = ((message >> (16+i)) & 1) ^ crc[6];         // XOR required?
 
@@ -265,7 +265,7 @@ static void fms_disp_packet(uint64_t message)
 
     fms_print_message_hex(message);
 
-    verbprintf(0, "FMS: %08x%04x", message >> 32, ((uint32_t)message >> 16));
+    verbprintf(0, "FMS: %08x%04x", (uint32_t)(message >> 32), ((uint32_t)message >> 16));
 
     if(!fms_justhex)
     {
@@ -292,12 +292,11 @@ static void fms_disp_packet(uint64_t message)
         short_info = (message >> 54) & 0x3;
         fms_disp_shortinfo(short_info);
 
-        crc = (message >> 55) & 0x3F;
-
         verbprintf(0, ") ");
     }
     else verbprintf(0, " ");
 
+    crc = (message >> 56) & 0x7F;
     if (fms_is_crc_correct(message))
     {
         verbprintf(0, "CRC correct");
@@ -361,11 +360,11 @@ void fms_rxbit(struct demod_state *s, int bit)
                 msg = s->l2.fmsfsk.rxbitstream;
                 while (i <= 47)
                 {
-                    if (fms_is_crc_correct(msg ^ (1 << (i+16))))
+                    if (fms_is_crc_correct(msg ^ (1ULL << (i+16))))
                     {
                         verbprintf(2, "FMS was able to correct a one bit error by swapping bit %d Original packet:\n", i);
                         fms_disp_packet(s->l2.fmsfsk.rxbitstream);
-                        s->l2.fmsfsk.rxbitstream = (msg ^ (1 << (i+16))) | 1; // lowest bit set means that the CRC has been corrected by us
+                        s->l2.fmsfsk.rxbitstream = (msg ^ (1ULL << (i+16))) | 1; // lowest bit set means that the CRC has been corrected by us
                         break;
                     }
                     i++;
