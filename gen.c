@@ -878,7 +878,7 @@ int main(int argc, char *argv[])
 
 		case 'e':
 			if (num_gen <= 0) {
-				fprintf(stderr, "gen: -e requires -f or -P first\n");
+				fprintf(stderr, "gen: -e requires -f, -P or -m first\n");
 				errflg++;
 				break;
 			}
