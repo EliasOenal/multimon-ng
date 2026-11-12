@@ -349,6 +349,64 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
         '-P "InvNorm" -A 66666 -I' "POCSAG1200" "-P normal" || FAILED=1
     
     echo
+    echo "MPT1327 end-to-end tests:"
+
+    # Codewords as 48 information bits: ALH, GTC, ACK, AHYQ, BCAST, CAT 001 address
+    # codeword with two data codewords, MOVE; made-up system and identities
+    MPT1327_CODEWORDS="800004015800,8c0ac83d8a98,8c0acc2054c0,8c0acc5bffd1,96190c70cc00,8c0acc840000,0123456789ab,0fedcba98765,8c0acc6dc828"
+
+    run_gen_decode_test "MPT1327 control channel" \
+        "-m $MPT1327_CODEWORDS -M 0x1234" "MPT1327" \
+        "MPT1327: ALH PFIX=0 IDENT1=DUMMYI CHAN4=5 WT=3 M=0 N=0" \
+        "MPT1327: CCSC SYS=1234" \
+        "MPT1327: GTC PFIX=12 IDENT1=345 D=0 CHAN=123 IDENT2=678 N=0" \
+        "MPT1327: ACK PFIX=12 IDENT1=345 IDENT2=678 QUAL=0 N=0" \
+        "MPT1327: AHYQ PFIX=12 IDENT1=345 IDENT2=TSCI STATUS=17" \
+        "MPT1327: BCAST SYSDEF=5 SYS=4321 CHAN=204 ADJSITE=0" \
+        "MPT1327: CAT=001 PFIX=12 IDENT1=345 PARAMS=0x040000" \
+        "MPT1327: DATA 0x0123456789ab" \
+        "MPT1327: DATA 0x0fedcba98765" \
+        "MPT1327: MOVE PFIX=12 IDENT1=345 CONT=456 M=5" || FAILED=1
+
+    # One data codeword: a filler data codeword keeps the slot structure (3.3.3.2)
+    run_gen_decode_test "MPT1327 odd data codewords" \
+        "-m 800004015800,0123456789ab,8c0acc2054c0 -M 0x1234" "MPT1327" \
+        "MPT1327: DATA 0x0123456789ab" \
+        "MPT1327: DATA 0x000000000000" \
+        "MPT1327: ACK PFIX=12 IDENT1=345 IDENT2=678 QUAL=0 N=0" || FAILED=1
+
+    run_gen_decode_test "MPT1327 1-bit errors" \
+        "-m $MPT1327_CODEWORDS -M 0x1234 -e 1" "MPT1327" \
+        "MPT1327: CCSC SYS=1234" \
+        "MPT1327: GTC PFIX=12 IDENT1=345 D=0 CHAN=123 IDENT2=678 N=0" \
+        "MPT1327: DATA 0x0fedcba98765" \
+        "MPT1327: MOVE PFIX=12 IDENT1=345 CONT=456 M=5" || FAILED=1
+
+    run_gen_decode_expect_fail "MPT1327 2-bit errors (uncorrectable)" \
+        "-m $MPT1327_CODEWORDS -M 0x1234 -e 2" "MPT1327" || FAILED=1
+
+    run_gen_decode_test_with_opts "MPT1327 JSON" \
+        "-m $MPT1327_CODEWORDS -M 0x1234" "MPT1327" "--json" \
+        '{"demod_name":"MPT1327","message":"CCSC","sys":"1234"}' \
+        '{"demod_name":"MPT1327","message":"GTC","pfix":12,"ident1":345,"d":0,"chan":123,"ident2":678,"n":0}' \
+        '{"demod_name":"MPT1327","message":"AHYQ","pfix":12,"ident1":345,"ident2":8190,"status":17}' \
+        '{"demod_name":"MPT1327","message":"UNDECODED","cat":"001","pfix":12,"ident1":345,"params":"0x040000"}' \
+        '{"demod_name":"MPT1327","message":"DATA","info":"0x0fedcba98765"}' || FAILED=1
+
+    # SYS=5422 produces an embedded SYNC in the 48-bit CCSC information field
+    # (MPT1327 5.1.1) and cannot be transmitted as a valid control channel.
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing MPT1327 prohibited system identity... "
+    if run_gen_ng -t raw -m 800004015800 -M 5422 "$TEST_DIR/tmp_$$.raw" >/dev/null 2>&1; then
+        echo -e "${RED}FAILED${NC} (accepted prohibited system identity)"
+        FAILED=1
+    else
+        echo -e "${GREEN}PASSED${NC} (rejected as expected)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+    rm -f "$TEST_DIR/tmp_$$.raw"
+
+    echo
     echo "WAV roundtrip tests (sox integration):"
     
     run_gen_decode_wav_test "POCSAG wav roundtrip" \

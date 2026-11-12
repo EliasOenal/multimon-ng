@@ -129,11 +129,12 @@ typedef void (*t_init_procs)(struct gen_params *, struct gen_state *);
 typedef int (*t_gen_procs)(signed short *, int, struct gen_params *, struct gen_state *);
 
 static const t_init_procs init_procs[] = {
-	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk, gen_init_flex, gen_init_pocsag
+	gen_init_dtmf, gen_init_sine, gen_init_zvei, gen_init_hdlc, gen_init_uart, gen_init_clipfsk, gen_init_flex, gen_init_pocsag,
+	gen_init_mpt1327
 };
 
 static const t_gen_procs gen_procs[] = {
-	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk, gen_flex, gen_pocsag
+	gen_dtmf, gen_sine, gen_zvei, gen_hdlc, gen_uart, gen_clipfsk, gen_flex, gen_pocsag, gen_mpt1327
 };
 
 /* ---------------------------------------------------------------------- */
@@ -227,6 +228,8 @@ static void output_sound(unsigned int sample_rate, const char *ifname)
 #elif DUMMY_AUDIO
 static void output_sound(unsigned int sample_rate, const char *ifname)
 {
+    (void)sample_rate;
+    (void)ifname;
     //printf("DUMMY SOUND OUT!");
     //fflush(stdout);
 }
@@ -585,8 +588,13 @@ static const char usage_str[] = "Generates test signals\n"
 "     -B <baud>    : POCSAG baud rate: 512, 1200, 2400 (default: 1200)\n"
 "     -N           : POCSAG numeric mode (function 0)\n"
 "     -I           : POCSAG inverted output polarity\n"
+"  -m <hex>[,<hex>...] : encode MPT1327 control channel codewords, each given as its\n"
+"                        48 information bits (12 hex digits, up to 32 codewords)\n"
+"     -M <sys>     : MPT1327 system identity code, 0..0x7fff (default: 1);\n"
+"                    embedded-SYNC identities are prohibited by the standard\n"
 "  -S <text>  : encode text for SDL_SCOPE display\n"
 "  -e <0-3>   : inject 0-3 bit errors per codeword (FLEX/POCSAG BCH testing)\n"
+"               MPT1327: 0-2 bit errors in every codeword after the start-up sync.\n"
 "               FLEX: first 10 data codewords; -e 1/2 also corrupt the FIW.\n"
 "               -e 3 leaves the FIW clean to exercise data-error handling.\n"
 "               FLEX group calls (-G) are not modified by -e.\n"
@@ -604,7 +612,7 @@ int main(int argc, char *argv[])
 
 	fprintf(stdout, "gen-ng - (C) 1997 by Tom Sailer HB9JNX/AE4WA\n"
                     "         (C) 2012/2013 by Elias Oenal\n");	
-	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:G:e:P:A:B:S:NIh")) != EOF) {
+	while ((c = getopt(argc, argv, "t:a:d:s:z:p:u:c:f:F:G:e:P:A:B:S:m:M:NIh")) != EOF) {
 		switch (c) {
 		case 'h':
 		case '?':
@@ -871,7 +879,7 @@ int main(int argc, char *argv[])
 
 		case 'e':
 			if (num_gen <= 0) {
-				fprintf(stderr, "gen: -e requires -f or -P first\n");
+				fprintf(stderr, "gen: -e requires -f, -P or -m first\n");
 				errflg++;
 				break;
 			}
@@ -887,8 +895,14 @@ int main(int argc, char *argv[])
 					fprintf(stderr, "gen: -e must be 0-3\n");
 					errflg++;
 				}
+			} else if (params[num_gen-1].type == gentype_mpt1327) {
+				params[num_gen-1].p.mpt1327.errors = atoi(optarg);
+				if (params[num_gen-1].p.mpt1327.errors < 0 || params[num_gen-1].p.mpt1327.errors > 2) {
+					fprintf(stderr, "gen: -e must be 0-2 for MPT1327\n");
+					errflg++;
+				}
 			} else {
-				fprintf(stderr, "gen: -e requires -f or -P first\n");
+				fprintf(stderr, "gen: -e requires -f, -P or -m first\n");
 				errflg++;
 			}
 			break;
@@ -946,6 +960,60 @@ int main(int argc, char *argv[])
 			params[num_gen-1].p.pocsag.function = 0;  /* Numeric mode */
 			break;
 
+		case 'm':
+			if (num_gen >= MAX_GEN) {
+				fprintf(stderr, "gen: too many generators\n");
+				errflg++;
+				break;
+			}
+			num_gen++;
+			params[num_gen-1].type = gentype_mpt1327;
+			params[num_gen-1].ampl = 16384;
+			params[num_gen-1].p.mpt1327.sys = 1;
+			params[num_gen-1].p.mpt1327.count = 0;
+			params[num_gen-1].p.mpt1327.errors = 0;
+			for (cp = optarg; *cp; ) {
+				char *end;
+				unsigned long long info;
+				int max = (int)(sizeof(params[num_gen-1].p.mpt1327.info) /
+				                sizeof(params[num_gen-1].p.mpt1327.info[0]));
+
+				errno = 0;
+				info = strtoull(cp, &end, 16);
+				if (end == cp || errno == ERANGE || info > 0xFFFFFFFFFFFFULL ||
+				    (*end && *end != ',') || params[num_gen-1].p.mpt1327.count >= max) {
+					fprintf(stderr, "gen: -m requires up to %d comma-separated 48-bit hex values\n", max);
+					errflg++;
+					break;
+				}
+				params[num_gen-1].p.mpt1327.info[params[num_gen-1].p.mpt1327.count++] = info;
+				cp = *end ? end + 1 : end;
+			}
+			break;
+		case 'M': {
+			char *end;
+			unsigned long sys;
+
+			if (num_gen <= 0 || params[num_gen-1].type != gentype_mpt1327) {
+				fprintf(stderr, "gen: -M requires -m first\n");
+				errflg++;
+				break;
+			}
+			errno = 0;
+			sys = strtoul(optarg, &end, 0);
+			if (end == optarg || *end || errno == ERANGE || sys > 0x7FFF) {
+				fprintf(stderr, "gen: -M requires a system identity code in 0..0x7fff\n");
+				errflg++;
+				break;
+			}
+			if (!gen_mpt1327_valid_sys((unsigned int)sys)) {
+				fprintf(stderr, "gen: -M system identity creates an embedded SYNC (MPT1327 5.1.1)\n");
+				errflg++;
+				break;
+			}
+			params[num_gen-1].p.mpt1327.sys = (unsigned int)sys;
+			break;
+		}
 		case 'S':
 			scope_text = optarg;
 			break;

@@ -73,6 +73,8 @@ Frequency Shift Keying
 1200 Baud FSK (2300/1100 Hz)
 .IP \(bu 4
 1200 baud FMS FSK
+.IP \(bu 4
+1200 baud MPT 1327 FFSK
 .RE
 .
 .IP \(bu 4
@@ -108,6 +110,9 @@ EAS - Emergency Alert System.
 FLEX - a paging format.
 .br
 GSC (Golay Sequential Code) - a 600 baud paging format using Golay and BCH error correction.
+.br
+MPT1327 - base station (trunking system controller) signalling of trunked private land mobile radio
+systems (MPT 1327), one line per codeword.
 .br
 POCSAG (Post Office Code Standards Advisory Group) is a common paging transmission format.
 .br
@@ -220,10 +225,10 @@ FLEX: Do not add a timestamp to the FLEX demodulator output
 .TP
 .B  \-\-json
 Format output as JSON. Supported by the following demodulators:
-DTMF, EAS, FLEX, POCSAG. (Other demodulators will silently ignore this flag.)
+DTMF, EAS, FLEX, FLEX_NEXT, GSC, MPT1327, POCSAG. (Other demodulators will silently ignore this flag.)
 .PP
 Where <demod> is one of:
-POCSAG512 POCSAG1200 POCSAG2400 FLEX FLEX_NEXT GSC EAS UFSK1200 CLIPFSK FMSFSK AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3 HAPN4800 FSK9600 DTMF DUALTONE ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI EEA EIA CCIR MORSE_CW DUMPCSV X10 SCOPE SDL_SCOPE
+POCSAG512 POCSAG1200 POCSAG2400 FLEX FLEX_NEXT GSC EAS UFSK1200 CLIPFSK FMSFSK MPT1327 AFSK1200 AFSK2400 AFSK2400_2 AFSK2400_3 HAPN4800 FSK9600 DTMF DUALTONE ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI EEA EIA CCIR MORSE_CW DUMPCSV X10 SCOPE SDL_SCOPE
 .br
 The \-a and \-s options may be given multiple times to specify the desired list of demodulators.
 .SH EXAMPLE

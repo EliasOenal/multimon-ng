@@ -183,6 +183,17 @@ struct demod_state {
             unsigned int sphase;
             uint32_t subsamp;
         } fmsfsk;
+
+        struct l1_state_mpt1327 {
+            unsigned int dcd_shreg;
+            unsigned int sphase;
+            uint32_t subsamp;
+            uint64_t shreg;     /* last 64 bits received */
+            int count;          /* bits of the current codeword, -1 while searching for sync */
+            int locked;         /* a codeword has passed since framing started from a search */
+            int sys;            /* last system identity code printed, -1 for none */
+            unsigned int sys_sync; /* SYNC or SYNT of last printed system codeword */
+        } mpt1327;
         
         struct l1_state_afsk12 {
             uint32_t dcd_shreg;
@@ -314,6 +325,7 @@ extern const struct demod_param demod_eas;
 extern const struct demod_param demod_ufsk1200;
 extern const struct demod_param demod_clipfsk;
 extern const struct demod_param demod_fmsfsk;
+extern const struct demod_param demod_mpt1327;
 
 extern const struct demod_param demod_afsk1200;
 extern const struct demod_param demod_afsk2400;
@@ -360,7 +372,7 @@ extern const struct demod_param demod_sdl_scope;
 #define SDL_SCOPE_DEMOD
 #endif
 
-#define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_flex, &demod_flex_next, &demod_gsc, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, \
+#define ALL_DEMOD &demod_poc5, &demod_poc12, &demod_poc24, &demod_flex, &demod_flex_next, &demod_gsc, &demod_eas, &demod_ufsk1200, &demod_clipfsk, &demod_fmsfsk, &demod_mpt1327, \
     &demod_afsk1200, &demod_afsk2400, &demod_afsk2400_2, &demod_afsk2400_3, &demod_hapn4800, \
     &demod_fsk9600, &demod_dtmf, &demod_dualtone, &demod_zvei1, &demod_zvei2, &demod_zvei3, &demod_dzvei, \
     &demod_pzvei, &demod_eea, &demod_eia, &demod_ccir, &demod_morse, &demod_dumpcsv, &demod_x10 SCOPE_DEMOD SDL_SCOPE_DEMOD

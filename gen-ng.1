@@ -36,6 +36,8 @@ FLEX (paging protocol at 1600 baud 2-FSK)
 .IP \(bu 4
 POCSAG (paging protocol at 512, 1200, or 2400 baud)
 .IP \(bu 4
+MPT1327 (trunked radio control channel signalling)
+.IP \(bu 4
 Scope text (waveforms for SDL_SCOPE display)
 .RE
 .SH OPTIONS
@@ -77,7 +79,9 @@ Must be in the range 1 to 2097151.
 Inject bit errors into FLEX or POCSAG codewords for BCH error correction testing.
 0 = no errors, 1 = one-bit errors, 2 = two-bit errors (correctable),
 3 = three-bit errors (uncorrectable, for negative testing).
-This option must follow \-f (FLEX) or \-P (POCSAG).
+This option must follow \-f (FLEX), \-P (POCSAG) or \-m (MPT1327).
+For MPT1327, 0-2 bit errors are injected in every codeword after the start-up
+sync; one is corrected and two are rejected by the decoder.
 .IP
 For FLEX without group calling, the selected number of bits is flipped in each
 of the first ten data codewords, including the block information, address and
@@ -109,6 +113,18 @@ Valid numeric characters: 0-9, space, hyphen (-), period (.), U.
 .B  \-I
 Generate POCSAG signal with inverted polarity. Use this to test the decoder's
 auto-detection of inverted signals.
+.TP
+.B  \-m <hex>[,<hex>...]
+Generate an MPT1327 forward control channel transmission: a start-up sequence,
+then the given codewords, each written as its 48 information bits in hex (up to
+32). The generator adds the check bits and parity, and a control channel system
+codeword (CCSC) before every address codeword after the first. Data codewords
+(first information bit 0) directly follow the codeword before them; after an
+odd number of them, a filler data codeword keeps the slot structure.
+.TP
+.B  \-M <sys>
+Set the MPT1327 system identity code carried by the CCSCs, 0 to 0x7fff
+(default: 1).
 .TP
 .B  \-S <text>
 Generate waveforms that render readable text on the SDL_SCOPE display.
@@ -170,6 +186,14 @@ Generate a POCSAG message with inverted polarity:
 .nf
 gen-ng -t raw -P "Inverted test" -A 12345 -I /tmp/pocsag_inv.raw
 multimon-ng -t raw -a POCSAG1200 /tmp/pocsag_inv.raw
+.fi
+.RE
+.PP
+Generate an MPT1327 Aloha and Go To Channel message for system 1234 (hex):
+.RS
+.nf
+gen-ng -t raw -m 800004015800,8c0ac83d8a98 -M 0x1234 /tmp/mpt1327.raw
+multimon-ng -t raw -a MPT1327 /tmp/mpt1327.raw
 .fi
 .RE
 .PP

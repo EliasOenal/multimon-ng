@@ -12,6 +12,7 @@ multimon-ng is the successor of multimon. It decodes the following digital trans
 - FSK9600
 - DTMF
 - DUALTONE (siren activation dualtone, TR-BOS C 4.6)
+- MPT1327 (trunked radio base station signalling, MPT 1327)
 - ZVEI1 ZVEI2 ZVEI3 DZVEI PZVEI
 - EEA EIA CCIR
 - MORSE_CW
