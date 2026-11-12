@@ -465,11 +465,14 @@ static void mpt1327_system(struct demod_state *s, uint64_t cw)
 }
 
 /*
- * Finds SYNC or SYNT, then checks each following 64-bit codeword. A CCSC
- * (5.1.1) ends with the SYNC of the next slot, so slot framing carries on
- * through it. After a codeword that cannot be corrected, framing resumes
- * after the earliest SYNC or SYNT within it, since each traffic channel
- * message has its own sync (3.3.2).
+ * Finds SYNC or SYNT, then checks each following 64-bit codeword. A system
+ * codeword (5.1.1, 5.1.2) ends with the SYNC or SYNT of the next slot, and
+ * slot framing carries on through it. Until a codeword has passed, framing
+ * from a sync is tentative, and a system codeword is also recognised at any
+ * later sync. Each traffic channel message has its own bit reversals and
+ * sync (3.3.2), so bit reversals followed by SYNC or SYNT always start a new
+ * codeword. After a codeword that cannot be corrected, framing resumes after
+ * the earliest SYNC or SYNT within it.
  */
 static void mpt1327_rxbit(struct demod_state *s, int bit)
 {
@@ -478,10 +481,30 @@ static void mpt1327_rxbit(struct demod_state *s, int bit)
     int i;
 
     s->l1.mpt1327.shreg = (s->l1.mpt1327.shreg << 1) | (bit & 1);
+    sync = (unsigned int)(s->l1.mpt1327.shreg & 0xFFFF);
+    if (sync == SYNC || sync == SYNT) {
+        /* once locked, only at the end of a slot: the end of a codeword, bit
+         * reversals and SYNT between traffic channel messages can pass for a DCSC */
+        cw = s->l1.mpt1327.shreg;
+        if ((!s->l1.mpt1327.locked || s->l1.mpt1327.count == 63) &&
+            mpt1327_correct(&cw) >= 0 &&
+            (mpt1327_is_ccsc(cw) || mpt1327_is_dcsc(cw))) {
+            s->l1.mpt1327.count = 0;
+            s->l1.mpt1327.locked = 1;
+            mpt1327_system(s, cw);
+            return;
+        }
+        if (s->l1.mpt1327.count < 0 ||
+            ((s->l1.mpt1327.shreg >> 16) & 0xFFFF) == 0xAAAA) {
+            s->l1.mpt1327.count = 0;
+            return;
+        }
+    }
     if (s->l1.mpt1327.count >= 0 && ++s->l1.mpt1327.count == 64) {
         cw = s->l1.mpt1327.shreg;
         if (mpt1327_correct(&cw) < 0) {
             s->l1.mpt1327.count = -1;
+            s->l1.mpt1327.locked = 0;
             for (i = 48; i > 0; i--) {
                 sync = (unsigned int)(s->l1.mpt1327.shreg >> i) & 0xFFFF;
                 if (sync == SYNC || sync == SYNT) {
@@ -491,21 +514,12 @@ static void mpt1327_rxbit(struct demod_state *s, int bit)
             }
         } else {
             s->l1.mpt1327.count = 0;
+            s->l1.mpt1327.locked = 1;
             if (mpt1327_is_ccsc(cw) || mpt1327_is_dcsc(cw))
                 mpt1327_system(s, cw);
             else
                 mpt1327_print(cw);
             return;
-        }
-    }
-    if (s->l1.mpt1327.count < 0) {
-        sync = (unsigned int)(s->l1.mpt1327.shreg & 0xFFFF);
-        if (sync == SYNC || sync == SYNT) {
-            s->l1.mpt1327.count = 0;
-            cw = s->l1.mpt1327.shreg;
-            if (mpt1327_correct(&cw) >= 0 &&
-                (mpt1327_is_ccsc(cw) || mpt1327_is_dcsc(cw)))
-                mpt1327_system(s, cw);
         }
     }
 }

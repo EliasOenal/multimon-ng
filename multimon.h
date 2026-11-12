@@ -190,6 +190,7 @@ struct demod_state {
             uint32_t subsamp;
             uint64_t shreg;     /* last 64 bits received */
             int count;          /* bits of the current codeword, -1 while searching for sync */
+            int locked;         /* a codeword has passed since framing started from a search */
             int sys;            /* last system identity code printed, -1 for none */
             unsigned int sys_sync; /* SYNC or SYNT of last printed system codeword */
         } mpt1327;

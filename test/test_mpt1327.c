@@ -71,6 +71,46 @@ static void check_traffic_messages(void) {
     }
 }
 
+/* The 64 bits from a message's bit reversals and SYNT into the next codeword
+ * (here 0xAAAA3B28838E2C40) can pass the codeword check; the bit reversals and
+ * SYNT must start the next codeword instead */
+static void check_message_boundary(void) {
+    static struct demod_state s;
+    const char *expected =
+        "MPT1327: MAINT PFIX=12 IDENT1=345 CHAN=123 OPER=0\n"
+        "MPT1327: AHY PFIX=3 IDENT1=4549 IDENT2=678 D=0 POINT=0 CHECK=0 E=0 AD=0\n";
+
+    mpt1327_init(&s);
+    printed[0] = '\0';
+    feed(&s, 0xAAAA, 16);
+    feed(&s, SYNT, 16);
+    feed(&s, 0x8C0ACC647B009D61ULL, 64);
+    feed(&s, 0xAAAA, 16);
+    feed(&s, SYNT, 16);
+    feed(&s, 0x838E2C4054C09151ULL, 64);
+    if (strcmp(printed, expected) != 0) {
+        fprintf(stderr, "message boundary: printed \"%s\", expected \"%s\"\n",
+                printed, expected);
+        failed = 1;
+    }
+
+    /* After this codeword, its last 32 bits, the bit reversals and SYNT
+     * (0x3403DF2EAAAA3B28) correct to a DCSC; between messages it is not one */
+    mpt1327_init(&s);
+    printed[0] = '\0';
+    feed(&s, 0xAAAA, 16);
+    feed(&s, SYNT, 16);
+    feed(&s, 0xB0A31E793403DF2EULL, 64);
+    feed(&s, 0xAAAA, 16);
+    feed(&s, SYNT, 16);
+    feed(&s, 0x8B904FE969A5A5A9ULL, 64);
+    if (strcmp(printed, "MPT1327: CAT=100 PFIX=48 IDENT1=5219 PARAMS=0x793403\n"
+                        "MPT1327: CAT=111 PFIX=11 IDENT1=4617 PARAMS=0x6969a5\n") != 0) {
+        fprintf(stderr, "message boundary taken for a DCSC: printed \"%s\"\n", printed);
+        failed = 1;
+    }
+}
+
 /* System codewords on control vs. data channels are distinguished even when
  * SYS is unchanged; repeated ones should still be suppressed. */
 static void check_system_codewords(void) {
@@ -100,6 +140,18 @@ static void check_system_codewords(void) {
     feed(&s, dcsc, 64);
     if (strcmp(printed, "MPT1327: DCSC SYS=1234\n") != 0) {
         fprintf(stderr, "DCSC acquisition failed: %s\n", printed);
+        failed = 1;
+    }
+
+    /* A CCSC of system 3B28 starts with SYNT; it must still be recognised at
+     * its own final SYNC, and framing must continue after it. */
+    mpt1327_init(&s);
+    printed[0] = '\0';
+    feed(&s, 0x3B289536AAAAC4D7ULL, 64);
+    feed(&s, 0x8C0ACA3D8A9A901AULL, 64);
+    if (strcmp(printed, "MPT1327: CCSC SYS=3B28\n"
+                        "MPT1327: GTC PFIX=12 IDENT1=345 D=1 CHAN=123 IDENT2=678 N=2\n") != 0) {
+        fprintf(stderr, "CCSC starting with SYNT: printed \"%s\"\n", printed);
         failed = 1;
     }
 }
@@ -207,6 +259,7 @@ int main(void) {
                "\"type\":\"00\",\"func\":\"111\",\"pfix\":12,\"ident1\":345,"
                "\"params\":\"0x00000\"}\n");
     check_traffic_messages();
+    check_message_boundary();
     check_system_codewords();
     check_json_all_functions();
     return failed;
