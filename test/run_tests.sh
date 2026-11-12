@@ -390,7 +390,21 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
         '{"demod_name":"MPT1327","message":"CCSC","sys":"1234"}' \
         '{"demod_name":"MPT1327","message":"GTC","pfix":12,"ident1":345,"d":0,"chan":123,"ident2":678,"n":0}' \
         '{"demod_name":"MPT1327","message":"AHYQ","pfix":12,"ident1":345,"ident2":8190,"status":17}' \
+        '{"demod_name":"MPT1327","message":"UNDECODED","cat":"001","pfix":12,"ident1":345,"params":"0x040000"}' \
         '{"demod_name":"MPT1327","message":"DATA","info":"0x0fedcba98765"}' || FAILED=1
+
+    # SYS=5422 produces an embedded SYNC in the 48-bit CCSC information field
+    # (MPT1327 5.1.1) and cannot be transmitted as a valid control channel.
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing MPT1327 prohibited system identity... "
+    if run_gen_ng -t raw -m 800004015800 -M 5422 "$TEST_DIR/tmp_$$.raw" >/dev/null 2>&1; then
+        echo -e "${RED}FAILED${NC} (accepted prohibited system identity)"
+        FAILED=1
+    else
+        echo -e "${GREEN}PASSED${NC} (rejected as expected)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
+    rm -f "$TEST_DIR/tmp_$$.raw"
 
     echo
     echo "WAV roundtrip tests (sox integration):"

@@ -117,12 +117,22 @@ static int mpt1327_correct(uint64_t *cw)
     return -1;
 }
 
-/* Control channel system codeword (5.1.1) */
-static int mpt1327_is_ccsc(uint64_t cw)
+/* System codewords (5.1.1, 5.1.2): identical layouts, different check bits. */
+static int mpt1327_is_system_codeword(uint64_t cw, unsigned int sync)
 {
     return mpt1327_field(cw, 1, 1) == 0 &&
            mpt1327_field(cw, 33, 48) == 0xAAAA &&
-           mpt1327_field(cw, 49, 64) == SYNC;
+           mpt1327_field(cw, 49, 64) == sync;
+}
+
+static int mpt1327_is_ccsc(uint64_t cw)
+{
+    return mpt1327_is_system_codeword(cw, SYNC);
+}
+
+static int mpt1327_is_dcsc(uint64_t cw)
+{
+    return mpt1327_is_system_codeword(cw, SYNT);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -192,6 +202,15 @@ static void mpt1327_print(uint64_t cw)
                 cJSON_AddStringToObject(json_output, "message", "CCSC");
                 cJSON_AddStringToObject(json_output, "sys", hex);
             }
+        } else if (mpt1327_is_dcsc(cw)) {
+            /* Standard data channel system codeword (5.1.2). */
+            snprintf(hex, sizeof(hex), "%04X", mpt1327_field(cw, 2, 16));
+            if (!json_mode)
+                verbprintf(0, " DCSC SYS=%s", hex);
+            else {
+                cJSON_AddStringToObject(json_output, "message", "DCSC");
+                cJSON_AddStringToObject(json_output, "sys", hex);
+            }
         } else {
             /* information field of a data codeword */
             snprintf(hex, sizeof(hex), "0x%012" PRIx64, (uint64_t)((cw >> 16) & 0x7FFFFFFFFFFFULL));
@@ -226,6 +245,8 @@ static void mpt1327_print(uint64_t cw)
             verbprintf(0, " CAT=%s PFIX=%u IDENT1=%s PARAMS=%s", mpt1327_bits(bits[0], cat, 3),
                        pfix, mpt1327_ident(id1, sizeof(id1), ident1), hex);
         else {
+            /* Classification of an unparsed category, not an OTA mnemonic. */
+            cJSON_AddStringToObject(json_output, "message", "UNDECODED");
             cJSON_AddStringToObject(json_output, "cat", mpt1327_bits(bits[0], cat, 3));
             cJSON_AddNumberToObject(json_output, "pfix", pfix);
             cJSON_AddNumberToObject(json_output, "ident1", ident1);
@@ -241,6 +262,8 @@ static void mpt1327_print(uint64_t cw)
             verbprintf(0, " CAT=%s TYPE=%s FUNC=%s PFIX=%u IDENT1=%s PARAMS=%s", bits[0], bits[1],
                        bits[2], pfix, mpt1327_ident(id1, sizeof(id1), ident1), hex);
         else {
+            /* Unknown function: do not assign a made-up protocol mnemonic. */
+            cJSON_AddStringToObject(json_output, "message", "UNDECODED");
             cJSON_AddStringToObject(json_output, "cat", bits[0]);
             cJSON_AddStringToObject(json_output, "type", bits[1]);
             cJSON_AddStringToObject(json_output, "func", bits[2]);
@@ -427,13 +450,16 @@ static void mpt1327_print(uint64_t cw)
 
 /* ---------------------------------------------------------------------- */
 
-/* Prints a CCSC when its system identity code differs from the last one */
+/* Print system changes, including a change between control/data channels.
+ * A repeated CCSC or DCSC with the same identity is suppressed. */
 static void mpt1327_system(struct demod_state *s, uint64_t cw)
 {
     int sys = (int)mpt1327_field(cw, 2, 16);
+    unsigned int sync = mpt1327_is_ccsc(cw) ? SYNC : SYNT;
 
-    if (sys != s->l1.mpt1327.sys) {
+    if (sys != s->l1.mpt1327.sys || sync != s->l1.mpt1327.sys_sync) {
         s->l1.mpt1327.sys = sys;
+        s->l1.mpt1327.sys_sync = sync;
         mpt1327_print(cw);
     }
 }
@@ -465,7 +491,7 @@ static void mpt1327_rxbit(struct demod_state *s, int bit)
             }
         } else {
             s->l1.mpt1327.count = 0;
-            if (mpt1327_is_ccsc(cw))
+            if (mpt1327_is_ccsc(cw) || mpt1327_is_dcsc(cw))
                 mpt1327_system(s, cw);
             else
                 mpt1327_print(cw);
@@ -477,7 +503,8 @@ static void mpt1327_rxbit(struct demod_state *s, int bit)
         if (sync == SYNC || sync == SYNT) {
             s->l1.mpt1327.count = 0;
             cw = s->l1.mpt1327.shreg;
-            if (mpt1327_correct(&cw) >= 0 && mpt1327_is_ccsc(cw))
+            if (mpt1327_correct(&cw) >= 0 &&
+                (mpt1327_is_ccsc(cw) || mpt1327_is_dcsc(cw)))
                 mpt1327_system(s, cw);
         }
     }
@@ -493,6 +520,7 @@ static void mpt1327_init(struct demod_state *s)
     memset(&s->l1.mpt1327, 0, sizeof(s->l1.mpt1327));
     s->l1.mpt1327.count = -1;
     s->l1.mpt1327.sys = -1;
+    s->l1.mpt1327.sys_sync = 0;
     for (f = 0, i = 0; i < CORRLEN; i++) {
         corr_1_i[i] = cos(f);
         corr_1_q[i] = sin(f);

@@ -71,9 +71,80 @@ static void check_traffic_messages(void) {
     }
 }
 
+/* System codewords on control vs. data channels are distinguished even when
+ * SYS is unchanged; repeated ones should still be suppressed. */
+static void check_system_codewords(void) {
+    static struct demod_state s;
+    const uint64_t ccsc = 0x12344221AAAAC4D7ULL;
+    const uint64_t dcsc = 0x1234013BAAAA3B28ULL;
+    const char *expected =
+        "MPT1327: CCSC SYS=1234\n"
+        "MPT1327: DCSC SYS=1234\n"
+        "MPT1327: CCSC SYS=1234\n";
+
+    mpt1327_init(&s);
+    printed[0] = '\0';
+    feed(&s, ccsc, 64); /* the final SYNC also establishes framing */
+    feed(&s, dcsc, 64);
+    feed(&s, dcsc, 64);
+    feed(&s, ccsc, 64);
+    if (strcmp(printed, expected) != 0) {
+        fprintf(stderr, "system codewords: printed \"%s\", expected \"%s\"\n",
+                printed, expected);
+        failed = 1;
+    }
+
+    /* SYNT search must also recognize the last 16 bits of a DCSC. */
+    mpt1327_init(&s);
+    printed[0] = '\0';
+    feed(&s, dcsc, 64);
+    if (strcmp(printed, "MPT1327: DCSC SYS=1234\n") != 0) {
+        fprintf(stderr, "DCSC acquisition failed: %s\n", printed);
+        failed = 1;
+    }
+}
+
+/* Exercise every CAT/TYPE/FUNC combination, including reserved and spare
+ * values, with maximal idents. All JSON results must have a deliberate
+ * classification; no uninitialized/default message buffer is involved. */
+static void check_json_all_functions(void) {
+    unsigned int cat, type, func;
+
+    json_mode = 1;
+    for (cat = 0; cat < 8; cat++) {
+        for (type = 0; type < 4; type++) {
+            for (func = 0; func < 8; func++) {
+                uint64_t info = (1ULL << 47) | (127ULL << 40) |
+                    (8191ULL << 27) | (1ULL << 26) | ((uint64_t)cat << 23) |
+                    ((uint64_t)type << 21) | ((uint64_t)func << 18) | 0x3FFFF;
+                cJSON *json, *message;
+
+                printed[0] = '\0';
+                mpt1327_print(info << 16); /* test presentation, not CRC */
+                json = cJSON_Parse(printed);
+                message = json ? cJSON_GetObjectItemCaseSensitive(json, "message") : NULL;
+                if (!cJSON_IsString(message) || !message->valuestring ||
+                    !message->valuestring[0]) {
+                    fprintf(stderr, "missing JSON message for CAT=%u TYPE=%u FUNC=%u: %s\n",
+                            cat, type, func, printed);
+                    failed = 1;
+                }
+                if (cat != 0 && cJSON_IsString(message) &&
+                    strcmp(message->valuestring, "UNDECODED") != 0) {
+                    fprintf(stderr, "invented mnemonic for CAT=%u: %s\n", cat, printed);
+                    failed = 1;
+                }
+                cJSON_Delete(json);
+            }
+        }
+    }
+    json_mode = 0;
+}
+
 int main(void) {
     /* CCSC of system 1234 hex, completion sequence by the algorithm of MPT 1327 appendix 3 */
     const uint64_t ccsc = 0x12344221AAAAC4D7ULL;
+    const uint64_t dcsc = 0x1234013BAAAA3B28ULL;
     const uint64_t gtc = 0x8C0ACA3D8A9A901AULL;
     uint64_t cw;
     int a, b;
@@ -84,8 +155,12 @@ int main(void) {
         fprintf(stderr, "codeword 3 not valid\n");
         failed = 1;
     }
-    if (!mpt1327_valid(ccsc) || !mpt1327_is_ccsc(ccsc)) {
+    if (!mpt1327_valid(ccsc) || !mpt1327_is_ccsc(ccsc) || mpt1327_is_dcsc(ccsc)) {
         fprintf(stderr, "CCSC not recognised\n");
+        failed = 1;
+    }
+    if (!mpt1327_valid(dcsc) || !mpt1327_is_dcsc(dcsc) || mpt1327_is_ccsc(dcsc)) {
+        fprintf(stderr, "DCSC not recognised\n");
         failed = 1;
     }
     for (a = 0; a < 64; a++) {
@@ -104,13 +179,18 @@ int main(void) {
     }
 
     check_line(ccsc, "MPT1327: CCSC SYS=1234\n");
+    check_line(dcsc, "MPT1327: DCSC SYS=1234\n");
     check_line(gtc, "MPT1327: GTC PFIX=12 IDENT1=345 D=1 CHAN=123 IDENT2=678 N=2\n");
     check_line(0x80000402B800565EULL, "MPT1327: ALH PFIX=0 IDENT1=DUMMYI CHAN4=10 WT=7 M=0 N=0\n");
     check_line(0x8C0ACC5BFFD1B4DDULL, "MPT1327: AHYQ PFIX=12 IDENT1=345 IDENT2=TSCI STATUS=17\n");
     check_line(0x96190C70CC0004CEULL, "MPT1327: BCAST SYSDEF=5 SYS=4321 CHAN=204 ADJSITE=0\n");
     check_line(0x0123456789ABC13DULL, "MPT1327: DATA 0x0123456789ab\n");
+    check_line(0x8C0ACC8400009340ULL, "MPT1327: CAT=001 PFIX=12 IDENT1=345 PARAMS=0x040000\n");
+    check_line(0x8C0ACC1C0000FEECULL,
+               "MPT1327: CAT=000 TYPE=00 FUNC=111 PFIX=12 IDENT1=345 PARAMS=0x00000\n");
 
     check_json(ccsc, "{\"demod_name\":\"MPT1327\",\"message\":\"CCSC\",\"sys\":\"1234\"}\n");
+    check_json(dcsc, "{\"demod_name\":\"MPT1327\",\"message\":\"DCSC\",\"sys\":\"1234\"}\n");
     check_json(gtc, "{\"demod_name\":\"MPT1327\",\"message\":\"GTC\",\"pfix\":12,\"ident1\":345,"
                     "\"d\":1,\"chan\":123,\"ident2\":678,\"n\":2}\n");
     check_json(0x8C0ACC5BFFD1B4DDULL,
@@ -119,6 +199,15 @@ int main(void) {
     check_json(0x0123456789ABC13DULL,
                "{\"demod_name\":\"MPT1327\",\"message\":\"DATA\",\"info\":\"0x0123456789ab\"}\n");
 
+    check_json(0x8C0ACC8400009340ULL,
+               "{\"demod_name\":\"MPT1327\",\"message\":\"UNDECODED\",\"cat\":\"001\","
+               "\"pfix\":12,\"ident1\":345,\"params\":\"0x040000\"}\n");
+    check_json(0x8C0ACC1C0000FEECULL,
+               "{\"demod_name\":\"MPT1327\",\"message\":\"UNDECODED\",\"cat\":\"000\","
+               "\"type\":\"00\",\"func\":\"111\",\"pfix\":12,\"ident1\":345,"
+               "\"params\":\"0x00000\"}\n");
     check_traffic_messages();
+    check_system_codewords();
+    check_json_all_functions();
     return failed;
 }

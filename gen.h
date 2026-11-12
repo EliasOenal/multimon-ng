@@ -179,6 +179,7 @@ extern int gen_flex(signed short *buf, int buflen, struct gen_params *p, struct 
 extern void gen_init_pocsag(struct gen_params *p, struct gen_state *s);
 extern int gen_pocsag(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
 
+extern int gen_mpt1327_valid_sys(unsigned int sys);
 extern void gen_init_mpt1327(struct gen_params *p, struct gen_state *s);
 extern int gen_mpt1327(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
 

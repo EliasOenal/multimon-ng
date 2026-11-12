@@ -85,6 +85,24 @@ static uint64_t ccsc(unsigned int sys)
 	return codeword(((uint64_t)sys << 32) | (ccs << 16) | 0xAAAA);
 }
 
+/* MPT 1327 section 5.1.1 forbids SYS identities whose CCSC contains
+ * SYNC anywhere inside its 48 information bits. The generator's output is
+ * otherwise a valid codeword, but such a system cannot be transmitted. */
+int gen_mpt1327_valid_sys(unsigned int sys)
+{
+	uint64_t info;
+	int offset;
+
+	if (sys > 0x7FFFu)
+		return 0;
+	info = ccsc(sys) >> 16;
+	for (offset = 0; offset <= 32; offset++) {
+		if (((info >> offset) & 0xFFFFu) == MPT1327_SYNC)
+			return 0;
+	}
+	return 1;
+}
+
 /* Appends the n low bits of value, most significant first */
 static void put_bits(struct gen_state *s, uint64_t value, int n)
 {

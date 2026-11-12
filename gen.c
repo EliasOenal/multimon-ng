@@ -590,7 +590,8 @@ static const char usage_str[] = "Generates test signals\n"
 "     -I           : POCSAG inverted output polarity\n"
 "  -m <hex>[,<hex>...] : encode MPT1327 control channel codewords, each given as its\n"
 "                        48 information bits (12 hex digits, up to 32 codewords)\n"
-"     -M <sys>     : MPT1327 system identity code, 0..0x7fff (default: 1)\n"
+"     -M <sys>     : MPT1327 system identity code, 0..0x7fff (default: 1);\n"
+"                    embedded-SYNC identities are prohibited by the standard\n"
 "  -S <text>  : encode text for SDL_SCOPE display\n"
 "  -e <0-3>   : inject 0-3 bit errors per codeword (FLEX/POCSAG BCH testing)\n"
 "               MPT1327: 0-2 bit errors in every codeword after the start-up sync.\n"
@@ -1002,6 +1003,11 @@ int main(int argc, char *argv[])
 			sys = strtoul(optarg, &end, 0);
 			if (end == optarg || *end || errno == ERANGE || sys > 0x7FFF) {
 				fprintf(stderr, "gen: -M requires a system identity code in 0..0x7fff\n");
+				errflg++;
+				break;
+			}
+			if (!gen_mpt1327_valid_sys((unsigned int)sys)) {
+				fprintf(stderr, "gen: -M system identity creates an embedded SYNC (MPT1327 5.1.1)\n");
 				errflg++;
 				break;
 			}

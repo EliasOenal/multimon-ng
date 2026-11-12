@@ -191,6 +191,7 @@ struct demod_state {
             uint64_t shreg;     /* last 64 bits received */
             int count;          /* bits of the current codeword, -1 while searching for sync */
             int sys;            /* last system identity code printed, -1 for none */
+            unsigned int sys_sync; /* SYNC or SYNT of last printed system codeword */
         } mpt1327;
         
         struct l1_state_afsk12 {
