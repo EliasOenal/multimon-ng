@@ -26,6 +26,8 @@ filter_wine_output() {
 run_multimon() {
     if [ -n "$WINE_CMD" ]; then
         $WINE_CMD "$MULTIMON" "$@" 2>&1 | filter_wine_output
+        # The filter can succeed even if Wine/the decoder fails. Keep its status.
+        return "${PIPESTATUS[0]}"
     else
         "$MULTIMON" "$@" 2>&1
     fi
@@ -35,6 +37,8 @@ run_multimon() {
 run_gen_ng() {
     if [ -n "$WINE_CMD" ]; then
         $WINE_CMD "$GEN_NG" "$@" 2>&1 | filter_wine_output
+        # In particular, negative generator tests must observe its exit code.
+        return "${PIPESTATUS[0]}"
     else
         "$GEN_NG" "$@" 2>&1
     fi
