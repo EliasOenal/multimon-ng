@@ -393,20 +393,51 @@ if [ $GEN_NG_AVAILABLE -eq 1 ]; then
         '{"demod_name":"MPT1327","message":"UNDECODED","cat":"001","pfix":12,"ident1":345,"params":"0x040000"}' \
         '{"demod_name":"MPT1327","message":"DATA","info":"0x0fedcba98765"}' || FAILED=1
 
-    # SYS=5422 produces an embedded SYNC in the 48-bit CCSC information field
-    # (MPT1327 5.1.1) and cannot be transmitted as a valid control channel.
+    # Reject malformed options with the documented parse-error status and
+    # diagnostic. A crash or failed Wine launch must not count as success.
+    expect_mpt_gen_rejection() {
+        local expected="$1"
+        local output status
+        shift
+        if output=$(run_gen_ng -t raw "$@" "$TEST_DIR/tmp_$$.raw" 2>&1); then
+            status=0
+        else
+            status=$?
+        fi
+        if [ "$status" -ne 2 ] || [[ "$output" != *"$expected"* ]]; then
+            echo "  Expected exit 2 and '$expected'; got exit $status:"
+            printf '    %s\n' "$output"
+            return 1
+        fi
+        return 0
+    }
+
+    # SYS=5422 produces an embedded SYNC in the CCSC information field.
     TESTS_RUN=$((TESTS_RUN + 1))
     echo -n "Testing MPT1327 prohibited system identity... "
-    if run_gen_ng -t raw -m 800004015800 -M 5422 "$TEST_DIR/tmp_$$.raw" >/dev/null 2>&1; then
-        echo -e "${RED}FAILED${NC} (accepted prohibited system identity)"
-        FAILED=1
-    else
+    if expect_mpt_gen_rejection 'gen: -M system identity creates an embedded SYNC' \
+        -m 800004015800 -M 5422; then
         echo -e "${GREEN}PASSED${NC} (rejected as expected)"
         TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "${RED}FAILED${NC}"
+        FAILED=1
     fi
     rm -f "$TEST_DIR/tmp_$$.raw"
 
-    echo
+    TESTS_RUN=$((TESTS_RUN + 1))
+    echo -n "Testing MPT1327 malformed generator options... "
+    if expect_mpt_gen_rejection 'gen: -m requires up to' -m '800004015800,' &&
+       expect_mpt_gen_rejection 'gen: -m requires at least one' -m '' &&
+       expect_mpt_gen_rejection 'gen: -e must be 0-2' -m 800004015800 -e junk; then
+        echo -e "${GREEN}PASSED${NC} (rejected as expected)"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        echo -e "${RED}FAILED${NC}"
+        FAILED=1
+    fi
+    rm -f "$TEST_DIR/tmp_$$.raw"
+
     echo "WAV roundtrip tests (sox integration):"
     
     run_gen_decode_wav_test "POCSAG wav roundtrip" \

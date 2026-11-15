@@ -896,10 +896,16 @@ int main(int argc, char *argv[])
 					errflg++;
 				}
 			} else if (params[num_gen-1].type == gentype_mpt1327) {
-				params[num_gen-1].p.mpt1327.errors = atoi(optarg);
-				if (params[num_gen-1].p.mpt1327.errors < 0 || params[num_gen-1].p.mpt1327.errors > 2) {
+				char *end;
+				long errors;
+
+				errno = 0;
+				errors = strtol(optarg, &end, 10);
+				if (end == optarg || *end || errno == ERANGE || errors < 0 || errors > 2) {
 					fprintf(stderr, "gen: -e must be 0-2 for MPT1327\n");
 					errflg++;
+				} else {
+					params[num_gen-1].p.mpt1327.errors = (int)errors;
 				}
 			} else {
 				fprintf(stderr, "gen: -e requires -f, -P or -m first\n");
@@ -972,6 +978,11 @@ int main(int argc, char *argv[])
 			params[num_gen-1].p.mpt1327.sys = 1;
 			params[num_gen-1].p.mpt1327.count = 0;
 			params[num_gen-1].p.mpt1327.errors = 0;
+			if (!*optarg) {
+				fprintf(stderr, "gen: -m requires at least one 48-bit hex value\n");
+				errflg++;
+				break;
+			}
 			for (cp = optarg; *cp; ) {
 				char *end;
 				unsigned long long info;
@@ -981,7 +992,8 @@ int main(int argc, char *argv[])
 				errno = 0;
 				info = strtoull(cp, &end, 16);
 				if (end == cp || errno == ERANGE || info > 0xFFFFFFFFFFFFULL ||
-				    (*end && *end != ',') || params[num_gen-1].p.mpt1327.count >= max) {
+				    (*end && *end != ',') || (*end == ',' && end[1] == '\0') ||
+				    params[num_gen-1].p.mpt1327.count >= max) {
 					fprintf(stderr, "gen: -m requires up to %d comma-separated 48-bit hex values\n", max);
 					errflg++;
 					break;
