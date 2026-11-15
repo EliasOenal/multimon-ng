@@ -34,7 +34,7 @@ extern const int costabi[0x400];
 
 #define COS(x) costabi[(((x)>>6)&0x3ffu)]
 
-enum gen_type { gentype_dtmf, gentype_sine, gentype_zvei, gentype_hdlc, gentype_uart, gentype_clipfsk, gentype_flex, gentype_pocsag };
+enum gen_type { gentype_dtmf, gentype_sine, gentype_zvei, gentype_hdlc, gentype_uart, gentype_clipfsk, gentype_flex, gentype_pocsag, gentype_mpt1327 };
 
 struct gen_params {
 	enum gen_type type;
@@ -90,6 +90,12 @@ struct gen_params {
 			int invert;        /* Invert output polarity */
 			char message[256];
 		} pocsag;
+		struct {
+			uint64_t info[32]; /* information bits 1-48 of each codeword */
+			int count;
+			unsigned int sys;  /* system identity code for the CCSCs */
+			int errors;        /* bit errors to inject in every codeword (0-2) */
+		} mpt1327;
 	} p;
 };
 
@@ -141,6 +147,11 @@ struct gen_state {
 			unsigned int datalen;
 			unsigned char data[2048];
 		} pocsag;
+		struct {
+			unsigned int ph, phinc, bitph;
+			unsigned int bit_idx, nbits;
+			unsigned char data[1024];
+		} mpt1327;
 	} s;
 };
 
@@ -167,6 +178,10 @@ extern int gen_flex(signed short *buf, int buflen, struct gen_params *p, struct 
 
 extern void gen_init_pocsag(struct gen_params *p, struct gen_state *s);
 extern int gen_pocsag(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
+
+extern int gen_mpt1327_valid_sys(unsigned int sys);
+extern void gen_init_mpt1327(struct gen_params *p, struct gen_state *s);
+extern int gen_mpt1327(signed short *buf, int buflen, struct gen_params *p, struct gen_state *s);
 
 /* Scope text generator - uses callback-based API */
 typedef void (*gen_write_t)(void *ctx, const short *samples, int count);
