@@ -543,6 +543,16 @@ struct Flex_OTA_Time {
   unsigned int tmode_anchor_frame;
   unsigned int tmode_anchor_cycle;
   int          tmode_anchor_valid;
+
+  /* --- Age of each component, in frames since it was confirmed ---
+   * Counted frame by frame (flextime_tick): a frame position within the
+   * hour (0-1919) wraps every hour, so the distance between two positions
+   * cannot tell an age over an hour. */
+  unsigned int age_date;
+  unsigned int age_time;
+  unsigned int age_tz;
+  unsigned int last_frame;     // cycle*128+frame of the last frame counted
+  int          last_frame_valid;
 };
 
 /* Frame space: 15 cycles x 128 frames = 1920 frames per full hour cycle.
@@ -561,21 +571,52 @@ static unsigned int flextime_age_frames(unsigned int cur, unsigned int stored) {
  * If a component's age exceeds FLEX_FLEXTIME_EXPIRE, invalidate it.
  * Also resets the corresponding vote streak so stale data doesn't
  * carry over if the component reappears later. */
-static void flextime_expire(struct Flex_OTA_Time *ot, unsigned int cur_frame) {
-  if (ot->has_date && flextime_age_frames(cur_frame, ot->frame_date) >= FLEX_FLEXTIME_EXPIRE) {
+static void flextime_expire(struct Flex_OTA_Time *ot) {
+  if (ot->has_date && ot->age_date >= FLEX_FLEXTIME_EXPIRE) {
     ot->has_date = 0;
     ot->date_ring_count = 0;
     ot->date_ring_idx = 0;
   }
-  if (ot->has_time && flextime_age_frames(cur_frame, ot->frame_time) >= FLEX_FLEXTIME_EXPIRE) {
+  if (ot->has_time && ot->age_time >= FLEX_FLEXTIME_EXPIRE) {
     ot->has_time = 0;
     ot->vote_time_count = 0;
   }
-  if (ot->has_tz && flextime_age_frames(cur_frame, ot->frame_tz) >= FLEX_FLEXTIME_EXPIRE) {
+  if (ot->has_tz && ot->age_tz >= FLEX_FLEXTIME_EXPIRE) {
     ot->has_tz = 0;
     ot->tz_ring_count = 0;
     ot->tz_ring_idx = 0;
   }
+}
+
+/* A frame was received: the components age by the frames since the last
+ * one (frames not received in between count too, up to the hour the frame
+ * position can tell).  Called for every frame with a valid FIW. */
+static void flextime_tick(struct Flex_OTA_Time *ot, unsigned int cur_frame) {
+  unsigned int elapsed = ot->last_frame_valid ? flextime_age_frames(cur_frame, ot->last_frame) : 0;
+
+  ot->last_frame = cur_frame;
+  ot->last_frame_valid = 1;
+  ot->age_date += elapsed;
+  ot->age_time += elapsed;
+  ot->age_tz += elapsed;
+  flextime_expire(ot);
+}
+
+/* The network time now, in seconds of the day.  The time word is the time
+ * of frame 0 of the cycle it came in (standard) or of the frame that
+ * carried it (direct): in standard mode the offset of that frame within
+ * its cycle is added.  Then the time goes on with the frames since. */
+static double flextime_seconds_of_day(const struct Flex_OTA_Time *ot) {
+  double sec = (double)ot->hour * 3600.0 + (double)ot->min * 60.0 + (double)ot->sec_coarse * 7.5;
+
+  if (ot->has_tz)
+    sec += (double)ot->sec_ext * 0.9375;
+  if (ot->tmode_detected == 0)
+    sec += (double)(ot->frame_time % 128) * 1.875;
+  sec += (double)ot->age_time * 1.875;
+  while (sec >= 86400.0)
+    sec -= 86400.0;
+  return sec;
 }
 
 /* Convert hour:minute to minutes-since-midnight for easy comparison. */
@@ -765,6 +806,7 @@ static int flextime_vote_time(struct Flex_OTA_Time *ot,
     ot->sec_coarse = sec;
     ot->has_time = 1;
     ot->frame_time = cur_abs_frame;
+    ot->age_time = 0;
     verbprintf(3, "FLEX_NEXT: flextime TIME confirmed after %d votes: %02u:%02u:%04.1f\n",
                FLEX_VOTE_THRESHOLD, hour, min, sec * 7.5);
     return 1;
@@ -849,6 +891,7 @@ static int flextime_vote_date(struct Flex_OTA_Time *ot,
     ot->day = day;
     ot->has_date = 1;
     ot->frame_date = cur_abs_frame;
+    ot->age_date = 0;
     verbprintf(3, "FLEX_NEXT: flextime DATE confirmed (%d/%d agree): %04u-%02u-%02u\n",
                agree, ot->date_ring_count, year, mon, day);
     return 1;
@@ -912,6 +955,7 @@ static int flextime_vote_tz(struct Flex_OTA_Time *ot,
     ot->sec_ext = esec;
     ot->has_tz = 1;
     ot->frame_tz = cur_abs_frame;
+    ot->age_tz = 0;
     verbprintf(3, "FLEX_NEXT: flextime TZ confirmed (%d/%d agree): zone=%u (%+dmin) DST=%d esec=%u\n",
                agree, ot->tz_ring_count, zone, tz_offset_min, dst, esec);
     return 1;
@@ -1135,18 +1179,10 @@ static void flextime_emit(struct Flex_Next *flex, char phase) {
                     ot->year, ot->month, ot->day);
   }
   if (ot->has_time) {
-    /* Compute seconds: coarse*7.5 + ext*0.9375 (ext adds to coarse).
-     * In standard mode, also add frame*1.875s offset. */
-    double base_sec = (double)ot->min * 60.0 + (double)ot->sec_coarse * 7.5;
-    if (ot->has_tz)
-      base_sec += (double)ot->sec_ext * 0.9375;
-    if (ot->tmode_detected == 0)
-      base_sec += (double)flex->FIW.frameno * 1.875;
-
-    unsigned int out_hour = ot->hour;
-    unsigned int out_min = (unsigned int)(base_sec / 60.0);
-    double out_sec = base_sec - (double)out_min * 60.0;
-    if (out_min >= 60) { out_min -= 60; out_hour = (out_hour + 1) % 24; }
+    double day_sec = flextime_seconds_of_day(ot);
+    unsigned int out_hour = (unsigned int)(day_sec / 3600.0);
+    unsigned int out_min = (unsigned int)((day_sec - out_hour * 3600.0) / 60.0);
+    double out_sec = day_sec - out_hour * 3600.0 - out_min * 60.0;
 
     if (pos > 0) ota[pos++] = ' ';
     pos += snprintf(ota + pos, sizeof(ota) - pos, "%02u:%02u:%05.2f",
@@ -1350,27 +1386,18 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
   // Structured object with per-component status, age, and received_at.
   // Only included when at least one component has been received.
   if (flex->ota_time.has_date || flex->ota_time.has_time || flex->ota_time.has_tz) {
-    unsigned int cur_frame = flex->FIW.cycleno * 128 + flex->FIW.frameno;
     // Expire stale components before emitting
-    flextime_expire(&flex->ota_time, cur_frame);
+    flextime_expire(&flex->ota_time);
     // Re-check after expiry - might have nothing left
     if (flex->ota_time.has_date || flex->ota_time.has_time || flex->ota_time.has_tz) {
     cJSON *ft = cJSON_CreateObject();
 
     // Combined timestamp string (only when date+time both available)
     if (flex->ota_time.has_date && flex->ota_time.has_time) {
-      /* Compute corrected seconds: coarse*7.5 + ext*0.9375.
-       * In standard mode, add frame*1.875s offset. */
-      double base_sec = (double)flex->ota_time.min * 60.0 +
-                        (double)flex->ota_time.sec_coarse * 7.5;
-      if (flex->ota_time.has_tz)
-        base_sec += (double)flex->ota_time.sec_ext * 0.9375;
-      if (flex->ota_time.tmode_detected == 0)
-        base_sec += (double)flex->FIW.frameno * 1.875;
-      unsigned int j_hour = flex->ota_time.hour;
-      unsigned int j_min = (unsigned int)(base_sec / 60.0);
-      double j_sec = base_sec - (double)j_min * 60.0;
-      if (j_min >= 60) { j_min -= 60; j_hour = (j_hour + 1) % 24; }
+      double day_sec = flextime_seconds_of_day(&flex->ota_time);
+      unsigned int j_hour = (unsigned int)(day_sec / 3600.0);
+      unsigned int j_min = (unsigned int)((day_sec - j_hour * 3600.0) / 60.0);
+      double j_sec = day_sec - j_hour * 3600.0 - j_min * 60.0;
 
       char ota_ts[80];
       int ota_pos = snprintf(ota_ts, sizeof(ota_ts), "%04u-%02u-%02u %02u:%02u:%05.2f",
@@ -1395,7 +1422,7 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
       char dval[16];
       snprintf(dval, sizeof(dval), "%04u-%02u-%02u", flex->ota_time.year, flex->ota_time.month, flex->ota_time.day);
       cJSON_AddStringToObject(d, "value", dval);
-      int af = (int)flextime_age_frames(cur_frame, flex->ota_time.frame_date);
+      int af = (int)flex->ota_time.age_date;
       cJSON_AddNumberToObject(d, "age_frames", af);
       cJSON_AddNumberToObject(d, "age_seconds", ((int)(af * 187.5)) / 100.0);
       cJSON_AddItemToObject(ft, "date", d);
@@ -1408,7 +1435,7 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
       snprintf(tval, sizeof(tval), "%02u:%02u", flex->ota_time.hour, flex->ota_time.min);
       cJSON_AddStringToObject(t, "value", tval);
       cJSON_AddNumberToObject(t, "sec_coarse", flex->ota_time.sec_coarse);
-      int af = (int)flextime_age_frames(cur_frame, flex->ota_time.frame_time);
+      int af = (int)flex->ota_time.age_time;
       cJSON_AddNumberToObject(t, "age_frames", af);
       cJSON_AddNumberToObject(t, "age_seconds", ((int)(af * 187.5)) / 100.0);
       cJSON_AddItemToObject(ft, "time", t);
@@ -1436,7 +1463,7 @@ static void flex_next_json_emit(struct Flex_Next *flex, char phase,
                               (double)flex->ota_time.sec_ext * 0.9375;
         cJSON_AddNumberToObject(tz, "sec_combined", sec_combined);
       }
-      int af = (int)flextime_age_frames(cur_frame, flex->ota_time.frame_tz);
+      int af = (int)flex->ota_time.age_tz;
       cJSON_AddNumberToObject(tz, "age_frames", af);
       cJSON_AddNumberToObject(tz, "age_seconds", ((int)(af * 187.5)) / 100.0);
       cJSON_AddItemToObject(ft, "tz", tz);
@@ -1637,6 +1664,8 @@ static int decode_fiw(struct Flex_Next * flex) {
   checksum &= 0xF;
 
   if (checksum == 0xF) {
+    // The network time components age with every frame received
+    flextime_tick(&flex->ota_time, flex->FIW.cycleno * 128 + flex->FIW.frameno);
     int timeseconds = flex->FIW.cycleno*4*60 + flex->FIW.frameno*4*60/128;
     if (flex->FIW.repeat) {
       verbprintf(2, "FLEX_NEXT: FrameInfoWord: cycleno=%02i frameno=%03i roaming=%u repeat=%ux time=%02i:%02i\n",

@@ -804,7 +804,76 @@ static void test_reserved_short_messages(int mode) {
         Flex_Delete(f);
     }
 }
+/* The network time goes on with the frames after its time word, past the
+ * cycle it came in, and is forgotten an hour after it. */
+static void test_flextime_age(void) {
+    struct Flex_OTA_Time ot;
+    double sec;
+
+    /* Standard: 12:00:00 is the time of frame 0 of cycle 0, confirmed at
+     * cycle 0 frame 0.  At cycle 3 frame 10 it is 12:12:18.75. */
+    memset(&ot, 0, sizeof(ot));
+    flextime_tick(&ot, 0);
+    ot.hour = 12;
+    ot.has_time = 1;
+    ot.frame_time = 0;
+    ot.age_time = 0;
+    for (unsigned int f = 1; f <= 3 * 128 + 10; f++)
+        flextime_tick(&ot, f);
+    sec = flextime_seconds_of_day(&ot);
+    assert(ot.has_time);
+    assert(sec > 12 * 3600 + 12 * 60 + 18.74 && sec < 12 * 3600 + 12 * 60 + 18.76);
+
+    /* Standard, confirmed at cycle 5 frame 40 (the time of frame 0 of
+     * cycle 5): 20 frames later it is the time of frame 60. */
+    memset(&ot, 0, sizeof(ot));
+    flextime_tick(&ot, 5 * 128 + 40);
+    ot.hour = 9;
+    ot.min = 20;
+    ot.has_time = 1;
+    ot.frame_time = 5 * 128 + 40;
+    ot.age_time = 0;
+    for (unsigned int f = 5 * 128 + 41; f <= 5 * 128 + 60; f++)
+        flextime_tick(&ot, f);
+    sec = flextime_seconds_of_day(&ot);
+    assert(sec > 9 * 3600 + 20 * 60 + 60 * 1.875 - 0.01 && sec < 9 * 3600 + 20 * 60 + 60 * 1.875 + 0.01);
+
+    /* Direct: the time of the frame that carried it, 8 frames ago */
+    ot.tmode_detected = 1;
+    ot.min = 0;
+    ot.sec_coarse = 4;          /* 30 s */
+    ot.age_time = 8;
+    sec = flextime_seconds_of_day(&ot);
+    assert(sec > 9 * 3600 + 30 + 15 - 0.01 && sec < 9 * 3600 + 30 + 15 + 0.01);
+
+    /* Frames missed between two received count; the time is forgotten
+     * one hour (1920 frames) and 5 frames after it was received */
+    memset(&ot, 0, sizeof(ot));
+    flextime_tick(&ot, 100);
+    ot.has_time = 1;
+    ot.frame_time = 100;
+    flextime_tick(&ot, 1000);
+    assert(ot.has_time && ot.age_time == 900);
+    flextime_tick(&ot, 1900);
+    assert(ot.has_time && ot.age_time == 1800);
+    flextime_tick(&ot, 104);   /* one hour and 4 frames */
+    assert(ot.has_time && ot.age_time == 1924);
+    flextime_tick(&ot, 105);
+    assert(!ot.has_time);
+
+    /* Past midnight the time of day wraps */
+    memset(&ot, 0, sizeof(ot));
+    ot.hour = 23;
+    ot.min = 59;
+    ot.has_time = 1;
+    ot.tmode_detected = 1;
+    ot.age_time = 64;           /* 120 s */
+    sec = flextime_seconds_of_day(&ot);
+    assert(sec > 60 - 0.01 && sec < 60 + 0.01);
+}
+
 int main(void) {
+    test_flextime_age();
     for (int mode = 0; mode < 2; mode++) {
         test_pending_window(mode);
         test_reserved_short_messages(mode);
